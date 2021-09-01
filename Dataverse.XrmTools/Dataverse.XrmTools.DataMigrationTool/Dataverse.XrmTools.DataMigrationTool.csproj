@@ -297,6 +297,9 @@
     <Content Include="Resources\directory20_colorful.png" />
     <Content Include="Resources\export.png" />
     <Content Include="Resources\filters20_colorful.png" />
+    <Content Include="Resources\icon.png" />
+    <Content Include="Resources\icon32.png" />
+    <Content Include="Resources\icon80.png" />
     <Content Include="Resources\import.png" />
     <Content Include="Resources\json.png" />
     <Content Include="Resources\load16_colorful.png" />
@@ -304,9 +307,7 @@
     <Content Include="Resources\preview.png" />
     <Content Include="Resources\save16_colorful.png" />
   </ItemGroup>
-  <ItemGroup>
-    <Folder Include="Data\" />
-  </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
     <PostBuildEvent>if $(ConfigurationName) == Debug (
