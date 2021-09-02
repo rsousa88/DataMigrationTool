@@ -28,6 +28,8 @@ using Dataverse.XrmTools.DataMigrationTool.AppSettings;
 using Dataverse.XrmTools.DataMigrationTool.Repositories;
 using Dataverse.XrmTools.DataMigrationTool.Forms;
 using Dataverse.XrmTools.DataMigrationTool.Handlers;
+using Microsoft.Crm.Sdk.Messages;
+using Microsoft.Xrm.Tooling.Connector;
 
 namespace Dataverse.XrmTools.DataMigrationTool
 {
@@ -38,7 +40,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private Settings _settings;
 
         // service
-        private IOrganizationService _targetSvc;
+        private CrmServiceClient _sourceClient;
+        private CrmServiceClient _targetClient;
 
         // main objects
         private Instance _instance;
@@ -59,6 +62,11 @@ namespace Dataverse.XrmTools.DataMigrationTool
             InitializeComponent();
         }
 
+        public void DataMigrationControl_Load(object sender, EventArgs e)
+        {
+            ExecuteMethod(WhoAmI);
+        }
+
         #region Interface Methods
         /// <summary>
         /// This event occurs when the connection has been updated in XrmToolBox
@@ -66,6 +74,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
         public override void UpdateConnection(IOrganizationService newService, ConnectionDetail detail, string actionName, object parameter)
         {
             base.UpdateConnection(newService, detail, actionName, parameter);
+            _sourceClient = Service as CrmServiceClient;
 
             if (actionName != "AdditionalOrganization")
             {
@@ -90,6 +99,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 RenderConnectionLabel(ConnectionType.Source, _instance.Name);
                 RenderMappingsButton();
                 txtExportDirPath.Text = _settings.ExportPath;
+                EnableComponentsOnMainConnection();
 
                 // save settings file
                 SettingsHandler.SetSettings(_settings);
@@ -104,8 +114,17 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (args.Action.Equals(NotifyCollectionChangedAction.Add))
             {
                 var detail = (ConnectionDetail)args.NewItems[0];
+                _targetClient = detail.ServiceClient;
+
+                if (_sourceClient == null) { throw new Exception("Source connection is invalid"); }
+                if (_targetClient == null) { throw new Exception("Target connection is invalid"); }
+                if (_sourceClient.ConnectedOrgId.Equals(_targetClient.ConnectedOrgId))
+                {
+                    throw new Exception("Source and Target connections must refer to different Dataverse instances");
+                }
+
                 RenderConnectionLabel(ConnectionType.Target, detail.ConnectionName);
-                _targetSvc = detail.ServiceClient;
+                EnableComponentsOnSecondaryConnection();
 
                 SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Target Connection ready"));
             }
@@ -113,8 +132,19 @@ namespace Dataverse.XrmTools.DataMigrationTool
         #endregion Interface Methods
 
         #region Private Main Methods
+        private void WhoAmI()
+        {
+            Service.Execute(new WhoAmIRequest());
+        }
+
         private void LoadTables()
         {
+            if (Service == null)
+            {
+                ExecuteMethod(WhoAmI);
+                return;
+            }
+
             if (_working) { return; }
 
             lvTables.Items.Clear();
@@ -150,6 +180,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         // load tables list
                         _tables = args.Result as IEnumerable<Table>;
                         LoadTablesList();
+
+                        SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Tables reload complete"));
                     }
                 }
             });
@@ -333,7 +365,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     // check mappings
                     var mappings = GetMappings(uiSettings);
 
-                    var logic = new DataLogic(worker, Service, _targetSvc);
+                    var logic = new DataLogic(worker, Service, _targetClient);
                     var result = Task.Run(() => logic.Preview(data, uiSettings));
 
                     evt.Result = result.Result;
@@ -398,7 +430,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 {
                     var data = evt.Argument as TableData;
 
-                    var logic = new DataLogic(worker, Service, _targetSvc);
+                    var logic = new DataLogic(worker, Service, _targetClient);
                     logic.Export(data, uiSettings, path);
                 },
                 PostWorkCallBack = evt =>
@@ -446,7 +478,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 {
                     var data = evt.Argument as TableData;
 
-                    var logic = new DataLogic(worker, Service, _targetSvc);
+                    var logic = new DataLogic(worker, Service, _targetClient);
 
                     var result = Task.Run(() => logic.Import(data, path, uiSettings));
 
@@ -532,7 +564,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private List<Mapping> GetMappings(UiSettings ui)
         {
             var mappings = new List<Mapping>(_instance.Mappings);
-            var mappingsLogic = new MappingsLogic(Service, _targetSvc);
+            var mappingsLogic = new MappingsLogic(Service, _targetClient);
 
             if (ui.MapUsers)
             {
@@ -561,7 +593,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private TableData GetSelectedTableItemData(bool targetRequired = true, bool attributeRequired = false)
         {
-            if (Service == null || (targetRequired && _targetSvc == null))
+            if (Service == null || (targetRequired && _targetClient == null))
             {
                 throw new Exception("You must select both a source and a target organization");
             }
@@ -617,6 +649,22 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private void RenderMappingsButton()
         {
             btnMappings.Font = _instance.Mappings.Any() ? new Font(btnMappings.Font.Name, btnMappings.Font.Size, FontStyle.Bold) : new Font(btnMappings.Font.Name, btnMappings.Font.Size, FontStyle.Regular);
+        }
+
+        private void EnableComponentsOnMainConnection()
+        {
+            btnSelectTarget.Enabled = true;
+            gbImportExport.Enabled = true;
+            gbOrgSettings.Enabled = true;
+            gbOpSettings.Enabled = true;
+            gbTables.Visible = true;
+        }
+
+        private void EnableComponentsOnSecondaryConnection()
+        {
+            tsbPreview.Visible = true;
+            tsbExport.Visible = true;
+            tsbImport.Visible = true;
         }
 
         private void RenderFilterButton(string logicalName)
@@ -717,7 +765,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             try
             {
                 LoadTables();
-                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Tables reload complete"));
             }
             catch (Exception ex)
             {
@@ -916,6 +963,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void btnMappings_Click(object sender, EventArgs e)
         {
+            if(Service == null) { return; }
+
             try
             {
                 var mappingsDlg = new Mappings(Service, _instance, _tables, _settings);

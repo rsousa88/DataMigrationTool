@@ -30,7 +30,6 @@
             this.tsbPreview = new System.Windows.Forms.ToolStripButton();
             this.tsbExport = new System.Windows.Forms.ToolStripButton();
             this.tsbImport = new System.Windows.Forms.ToolStripButton();
-            this.tsSeparator2 = new System.Windows.Forms.ToolStripSeparator();
             this.tsbAbort = new System.Windows.Forms.ToolStripButton();
             this.pnlHeader = new System.Windows.Forms.Panel();
             this.gbImportExport = new System.Windows.Forms.GroupBox();
@@ -94,7 +93,6 @@
             this.tsbPreview,
             this.tsbExport,
             this.tsbImport,
-            this.tsSeparator2,
             this.tsbAbort});
             this.tsMain.Location = new System.Drawing.Point(0, 0);
             this.tsMain.Name = "tsMain";
@@ -124,6 +122,7 @@
             this.tsbPreview.Name = "tsbPreview";
             this.tsbPreview.Size = new System.Drawing.Size(72, 22);
             this.tsbPreview.Text = "Preview";
+            this.tsbPreview.Visible = false;
             this.tsbPreview.Click += new System.EventHandler(this.tsbPreview_Click);
             // 
             // tsbExport
@@ -133,6 +132,7 @@
             this.tsbExport.Name = "tsbExport";
             this.tsbExport.Size = new System.Drawing.Size(65, 22);
             this.tsbExport.Text = "Export";
+            this.tsbExport.Visible = false;
             this.tsbExport.Click += new System.EventHandler(this.tsbExport_Click);
             // 
             // tsbImport
@@ -142,12 +142,8 @@
             this.tsbImport.Name = "tsbImport";
             this.tsbImport.Size = new System.Drawing.Size(67, 22);
             this.tsbImport.Text = "Import";
+            this.tsbImport.Visible = false;
             this.tsbImport.Click += new System.EventHandler(this.tsbImport_Click);
-            // 
-            // tsSeparator2
-            // 
-            this.tsSeparator2.Name = "tsSeparator2";
-            this.tsSeparator2.Size = new System.Drawing.Size(6, 25);
             // 
             // tsbAbort
             // 
@@ -179,6 +175,7 @@
             this.gbImportExport.Controls.Add(this.txtExportDirPath);
             this.gbImportExport.Controls.Add(this.lblExportDir);
             this.gbImportExport.Controls.Add(this.btnSelectExportDir);
+            this.gbImportExport.Enabled = false;
             this.gbImportExport.Location = new System.Drawing.Point(302, 4);
             this.gbImportExport.MinimumSize = new System.Drawing.Size(250, 0);
             this.gbImportExport.Name = "gbImportExport";
@@ -228,6 +225,7 @@
             this.gbOrgSettings.Controls.Add(this.cbMapTeams);
             this.gbOrgSettings.Controls.Add(this.btnMappings);
             this.gbOrgSettings.Controls.Add(this.cbMapBu);
+            this.gbOrgSettings.Enabled = false;
             this.gbOrgSettings.Location = new System.Drawing.Point(1040, 4);
             this.gbOrgSettings.Name = "gbOrgSettings";
             this.gbOrgSettings.Size = new System.Drawing.Size(361, 94);
@@ -291,6 +289,7 @@
             this.gbOpSettings.Controls.Add(this.cbUpdate);
             this.gbOpSettings.Controls.Add(this.cbDelete);
             this.gbOpSettings.Controls.Add(this.cbCreate);
+            this.gbOpSettings.Enabled = false;
             this.gbOpSettings.Location = new System.Drawing.Point(1407, 4);
             this.gbOpSettings.Name = "gbOpSettings";
             this.gbOpSettings.Size = new System.Drawing.Size(190, 94);
@@ -417,6 +416,7 @@
             // 
             // btnSelectTarget
             // 
+            this.btnSelectTarget.Enabled = false;
             this.btnSelectTarget.FlatAppearance.BorderSize = 0;
             this.btnSelectTarget.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
             this.btnSelectTarget.Image = global::Dataverse.XrmTools.DataMigrationTool.Properties.Resources.connect16_colorful;
@@ -586,6 +586,7 @@
             this.gbTables.TabIndex = 93;
             this.gbTables.TabStop = false;
             this.gbTables.Text = "Tables";
+            this.gbTables.Visible = false;
             // 
             // txtTableFilter
             // 
@@ -653,6 +654,7 @@
             this.Controls.Add(this.tsMain);
             this.Name = "DataMigrationControl";
             this.Size = new System.Drawing.Size(1610, 788);
+            this.Load += new System.EventHandler(this.DataMigrationControl_Load);
             this.tsMain.ResumeLayout(false);
             this.tsMain.PerformLayout();
             this.pnlHeader.ResumeLayout(false);
@@ -682,7 +684,6 @@
         private System.Windows.Forms.ToolStripButton tsbPreview;
         private System.Windows.Forms.ToolStripButton tsbExport;
         private System.Windows.Forms.ToolStripButton tsbImport;
-        private System.Windows.Forms.ToolStripSeparator tsSeparator2;
         private System.Windows.Forms.ToolStripButton tsbAbort;
 
         // Header
