@@ -70,7 +70,6 @@
             this.lvTables = new System.Windows.Forms.ListView();
             this.chTblDisplayName = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
             this.chTblLogicalName = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
-            this.chTblDescription = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
             this.tsMain.SuspendLayout();
             this.pnlHeader.SuspendLayout();
             this.gbImportExport.SuspendLayout();
@@ -122,7 +121,7 @@
             this.tsbPreview.Name = "tsbPreview";
             this.tsbPreview.Size = new System.Drawing.Size(72, 22);
             this.tsbPreview.Text = "Preview";
-            this.tsbPreview.Visible = false;
+            this.tsbPreview.Enabled = false;
             this.tsbPreview.Click += new System.EventHandler(this.tsbPreview_Click);
             // 
             // tsbExport
@@ -132,7 +131,7 @@
             this.tsbExport.Name = "tsbExport";
             this.tsbExport.Size = new System.Drawing.Size(65, 22);
             this.tsbExport.Text = "Export";
-            this.tsbExport.Visible = false;
+            this.tsbExport.Enabled = false;
             this.tsbExport.Click += new System.EventHandler(this.tsbExport_Click);
             // 
             // tsbImport
@@ -142,7 +141,7 @@
             this.tsbImport.Name = "tsbImport";
             this.tsbImport.Size = new System.Drawing.Size(67, 22);
             this.tsbImport.Text = "Import";
-            this.tsbImport.Visible = false;
+            this.tsbImport.Enabled = false;
             this.tsbImport.Click += new System.EventHandler(this.tsbImport_Click);
             // 
             // tsbAbort
@@ -443,8 +442,8 @@
             // pnlBody
             // 
             this.pnlBody.ColumnCount = 2;
-            this.pnlBody.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 45F));
-            this.pnlBody.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 55F));
+            this.pnlBody.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 30F));
+            this.pnlBody.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 70F));
             this.pnlBody.Controls.Add(this.gbAttributes, 1, 0);
             this.pnlBody.Controls.Add(this.gbTables, 0, 0);
             this.pnlBody.Dock = System.Windows.Forms.DockStyle.Fill;
@@ -465,9 +464,9 @@
             this.gbAttributes.Controls.Add(this.lvAttributes);
             this.gbAttributes.Dock = System.Windows.Forms.DockStyle.Fill;
             this.gbAttributes.Font = new System.Drawing.Font("Segoe UI", 8.25F);
-            this.gbAttributes.Location = new System.Drawing.Point(727, 3);
+            this.gbAttributes.Location = new System.Drawing.Point(486, 3);
             this.gbAttributes.Name = "gbAttributes";
-            this.gbAttributes.Size = new System.Drawing.Size(880, 657);
+            this.gbAttributes.Size = new System.Drawing.Size(1121, 657);
             this.gbAttributes.TabIndex = 92;
             this.gbAttributes.TabStop = false;
             this.gbAttributes.Text = "Attributes";
@@ -480,7 +479,7 @@
             this.btnLoadTableSettings.FlatStyle = System.Windows.Forms.FlatStyle.Popup;
             this.btnLoadTableSettings.Image = ((System.Drawing.Image)(resources.GetObject("btnLoadTableSettings.Image")));
             this.btnLoadTableSettings.ImageAlign = System.Drawing.ContentAlignment.MiddleLeft;
-            this.btnLoadTableSettings.Location = new System.Drawing.Point(734, 12);
+            this.btnLoadTableSettings.Location = new System.Drawing.Point(975, 12);
             this.btnLoadTableSettings.Name = "btnLoadTableSettings";
             this.btnLoadTableSettings.Size = new System.Drawing.Size(140, 28);
             this.btnLoadTableSettings.TabIndex = 104;
@@ -495,7 +494,7 @@
             this.btnSaveTableSettings.FlatStyle = System.Windows.Forms.FlatStyle.Popup;
             this.btnSaveTableSettings.Image = global::Dataverse.XrmTools.DataMigrationTool.Properties.Resources.save16_colorful;
             this.btnSaveTableSettings.ImageAlign = System.Drawing.ContentAlignment.MiddleLeft;
-            this.btnSaveTableSettings.Location = new System.Drawing.Point(588, 12);
+            this.btnSaveTableSettings.Location = new System.Drawing.Point(829, 12);
             this.btnSaveTableSettings.Name = "btnSaveTableSettings";
             this.btnSaveTableSettings.Size = new System.Drawing.Size(140, 28);
             this.btnSaveTableSettings.TabIndex = 103;
@@ -510,7 +509,7 @@
             this.btnTableFilters.FlatStyle = System.Windows.Forms.FlatStyle.Popup;
             this.btnTableFilters.Image = global::Dataverse.XrmTools.DataMigrationTool.Properties.Resources.filters20_colorful;
             this.btnTableFilters.ImageAlign = System.Drawing.ContentAlignment.MiddleLeft;
-            this.btnTableFilters.Location = new System.Drawing.Point(442, 12);
+            this.btnTableFilters.Location = new System.Drawing.Point(683, 12);
             this.btnTableFilters.Name = "btnTableFilters";
             this.btnTableFilters.Size = new System.Drawing.Size(140, 28);
             this.btnTableFilters.TabIndex = 101;
@@ -546,7 +545,7 @@
             this.lvAttributes.HideSelection = false;
             this.lvAttributes.Location = new System.Drawing.Point(6, 44);
             this.lvAttributes.Name = "lvAttributes";
-            this.lvAttributes.Size = new System.Drawing.Size(868, 607);
+            this.lvAttributes.Size = new System.Drawing.Size(1109, 607);
             this.lvAttributes.Sorting = System.Windows.Forms.SortOrder.Ascending;
             this.lvAttributes.TabIndex = 64;
             this.lvAttributes.UseCompatibleStateImageBehavior = false;
@@ -582,11 +581,11 @@
             this.gbTables.Dock = System.Windows.Forms.DockStyle.Fill;
             this.gbTables.Location = new System.Drawing.Point(3, 3);
             this.gbTables.Name = "gbTables";
-            this.gbTables.Size = new System.Drawing.Size(718, 657);
+            this.gbTables.Size = new System.Drawing.Size(477, 657);
             this.gbTables.TabIndex = 93;
             this.gbTables.TabStop = false;
             this.gbTables.Text = "Tables";
-            this.gbTables.Visible = false;
+            this.gbTables.Enabled = false;
             // 
             // txtTableFilter
             // 
@@ -594,7 +593,7 @@
             | System.Windows.Forms.AnchorStyles.Right)));
             this.txtTableFilter.Location = new System.Drawing.Point(48, 17);
             this.txtTableFilter.Name = "txtTableFilter";
-            this.txtTableFilter.Size = new System.Drawing.Size(665, 20);
+            this.txtTableFilter.Size = new System.Drawing.Size(424, 20);
             this.txtTableFilter.TabIndex = 66;
             this.txtTableFilter.TextChanged += new System.EventHandler(this.txtTableFilter_TextChanged);
             // 
@@ -614,14 +613,13 @@
             | System.Windows.Forms.AnchorStyles.Right)));
             this.lvTables.Columns.AddRange(new System.Windows.Forms.ColumnHeader[] {
             this.chTblDisplayName,
-            this.chTblLogicalName,
-            this.chTblDescription});
+            this.chTblLogicalName});
             this.lvTables.FullRowSelect = true;
             this.lvTables.HideSelection = false;
             this.lvTables.Location = new System.Drawing.Point(7, 44);
             this.lvTables.MultiSelect = false;
             this.lvTables.Name = "lvTables";
-            this.lvTables.Size = new System.Drawing.Size(706, 607);
+            this.lvTables.Size = new System.Drawing.Size(465, 607);
             this.lvTables.Sorting = System.Windows.Forms.SortOrder.Ascending;
             this.lvTables.TabIndex = 64;
             this.lvTables.UseCompatibleStateImageBehavior = false;
@@ -638,11 +636,6 @@
             // 
             this.chTblLogicalName.Text = "Logical Name";
             this.chTblLogicalName.Width = 200;
-            // 
-            // chTblDescription
-            // 
-            this.chTblDescription.Text = "Description";
-            this.chTblDescription.Width = 300;
             // 
             // DataMigrationControl
             // 
@@ -728,7 +721,6 @@
         private System.Windows.Forms.ListView lvTables;
         private System.Windows.Forms.ColumnHeader chTblDisplayName;
         private System.Windows.Forms.ColumnHeader chTblLogicalName;
-        private System.Windows.Forms.ColumnHeader chTblDescription;
 
         // Attributes Group
         private System.Windows.Forms.GroupBox gbAttributes;

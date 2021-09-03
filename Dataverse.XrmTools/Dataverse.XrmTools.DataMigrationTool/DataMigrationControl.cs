@@ -205,10 +205,9 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
 
             // re-render list view columns
-            var maxWidth = lvTables.Width >= 300 ? lvTables.Width : 300;
-            chTblDisplayName.Width = (int)Math.Floor(maxWidth * 0.29);
-            chTblLogicalName.Width = (int)Math.Floor(maxWidth * 0.29);
-            chTblDescription.Width = (int)Math.Floor(maxWidth * 0.39);
+            var maxWidth = lvTables.Width >= 150 ? lvTables.Width * 2 : 300;
+            chTblDisplayName.Width = (int)Math.Floor(maxWidth * 0.50);
+            chTblLogicalName.Width = (int)Math.Floor(maxWidth * 0.50);
 
             ManageWorkingState(false);
         }
@@ -301,20 +300,11 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
 
             // re-render list view columns
-            var maxWidth = lvAttributes.Width >= 300 ? lvAttributes.Width : 300;
-            chAttrDisplayName.Width = (int)Math.Floor(maxWidth * 0.24);
-            chAttrLogicalName.Width = (int)Math.Floor(maxWidth * 0.24);
-            chAttrType.Width = (int)Math.Floor(maxWidth * 0.19);
-            chAttrDescription.Width = (int)Math.Floor(maxWidth * 0.29);
-
-            //// render UI components
-            //lvAttributes.AutoResizeColumns(ColumnHeaderAutoResizeStyle.ColumnContent);
-
-            //// ensure minimum width
-            //if (chAttrDisplayName.Width < 200) { chAttrDisplayName.Width = 200; }
-            //if (chAttrLogicalName.Width < 200) { chAttrLogicalName.Width = 200; }
-            //if (chAttrType.Width < 160) { chAttrType.Width = 160; }
-            //if (chAttrDescription.Width < 300) { chAttrDescription.Width = 300; }
+            var maxWidth = lvAttributes.Width >= 500 ? lvAttributes.Width : 500;
+            chAttrDisplayName.Width = (int)Math.Floor(maxWidth * 0.25);
+            chAttrLogicalName.Width = (int)Math.Floor(maxWidth * 0.25);
+            chAttrType.Width = (int)Math.Floor(maxWidth * 0.20);
+            chAttrDescription.Width = (int)Math.Floor(maxWidth * 0.30);
 
             gbAttributes.Visible = true;
 
@@ -657,14 +647,14 @@ namespace Dataverse.XrmTools.DataMigrationTool
             gbImportExport.Enabled = true;
             gbOrgSettings.Enabled = true;
             gbOpSettings.Enabled = true;
-            gbTables.Visible = true;
+            gbTables.Enabled = true;
         }
 
         private void EnableComponentsOnSecondaryConnection()
         {
-            tsbPreview.Visible = true;
-            tsbExport.Visible = true;
-            tsbImport.Visible = true;
+            tsbPreview.Enabled = true;
+            tsbExport.Enabled = true;
+            tsbImport.Enabled = true;
         }
 
         private void RenderFilterButton(string logicalName)
