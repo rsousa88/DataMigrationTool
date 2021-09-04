@@ -2,6 +2,8 @@
 .vs
 
 #[Bb]in
+**/[Bb]in/**/Logs
+**/[Bb]in/**/NugetPlugins
 **/[Bb]in/**/Connections
 **/[Bb]in/**/Metadata
 **/[Bb]in/**/Plugins

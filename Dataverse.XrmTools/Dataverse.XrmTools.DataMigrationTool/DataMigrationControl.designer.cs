@@ -57,7 +57,6 @@
             this.gbAttributes = new System.Windows.Forms.GroupBox();
             this.btnLoadTableSettings = new System.Windows.Forms.Button();
             this.btnSaveTableSettings = new System.Windows.Forms.Button();
-            this.btnTableFilters = new System.Windows.Forms.Button();
             this.cbSelectAll = new System.Windows.Forms.CheckBox();
             this.lvAttributes = new System.Windows.Forms.ListView();
             this.chAttrDisplayName = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
@@ -70,6 +69,10 @@
             this.lvTables = new System.Windows.Forms.ListView();
             this.chTblDisplayName = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
             this.chTblLogicalName = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
+            this.gbFilters = new System.Windows.Forms.GroupBox();
+            this.btnFetchXmlBuilder = new System.Windows.Forms.Button();
+            this.rtbFilter = new System.Windows.Forms.RichTextBox();
+            this.lblFetchDescription = new System.Windows.Forms.Label();
             this.tsMain.SuspendLayout();
             this.pnlHeader.SuspendLayout();
             this.gbImportExport.SuspendLayout();
@@ -80,6 +83,7 @@
             this.pnlBody.SuspendLayout();
             this.gbAttributes.SuspendLayout();
             this.gbTables.SuspendLayout();
+            this.gbFilters.SuspendLayout();
             this.SuspendLayout();
             // 
             // tsMain
@@ -116,32 +120,32 @@
             // 
             // tsbPreview
             // 
+            this.tsbPreview.Enabled = false;
             this.tsbPreview.Image = global::Dataverse.XrmTools.DataMigrationTool.Properties.Resources.preview;
             this.tsbPreview.ImageTransparentColor = System.Drawing.Color.Magenta;
             this.tsbPreview.Name = "tsbPreview";
             this.tsbPreview.Size = new System.Drawing.Size(72, 22);
             this.tsbPreview.Text = "Preview";
-            this.tsbPreview.Enabled = false;
             this.tsbPreview.Click += new System.EventHandler(this.tsbPreview_Click);
             // 
             // tsbExport
             // 
+            this.tsbExport.Enabled = false;
             this.tsbExport.Image = ((System.Drawing.Image)(resources.GetObject("tsbExport.Image")));
             this.tsbExport.ImageTransparentColor = System.Drawing.Color.Magenta;
             this.tsbExport.Name = "tsbExport";
             this.tsbExport.Size = new System.Drawing.Size(65, 22);
             this.tsbExport.Text = "Export";
-            this.tsbExport.Enabled = false;
             this.tsbExport.Click += new System.EventHandler(this.tsbExport_Click);
             // 
             // tsbImport
             // 
+            this.tsbImport.Enabled = false;
             this.tsbImport.Image = global::Dataverse.XrmTools.DataMigrationTool.Properties.Resources.import;
             this.tsbImport.ImageTransparentColor = System.Drawing.Color.Magenta;
             this.tsbImport.Name = "tsbImport";
             this.tsbImport.Size = new System.Drawing.Size(67, 22);
             this.tsbImport.Text = "Import";
-            this.tsbImport.Enabled = false;
             this.tsbImport.Click += new System.EventHandler(this.tsbImport_Click);
             // 
             // tsbAbort
@@ -446,12 +450,13 @@
             this.pnlBody.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 70F));
             this.pnlBody.Controls.Add(this.gbAttributes, 1, 0);
             this.pnlBody.Controls.Add(this.gbTables, 0, 0);
+            this.pnlBody.Controls.Add(this.gbFilters, 1, 1);
             this.pnlBody.Dock = System.Windows.Forms.DockStyle.Fill;
             this.pnlBody.Location = new System.Drawing.Point(0, 125);
             this.pnlBody.Name = "pnlBody";
             this.pnlBody.RowCount = 1;
-            this.pnlBody.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 50F));
-            this.pnlBody.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 50F));
+            this.pnlBody.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 68.92911F));
+            this.pnlBody.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 31.07089F));
             this.pnlBody.Size = new System.Drawing.Size(1610, 663);
             this.pnlBody.TabIndex = 104;
             // 
@@ -459,14 +464,13 @@
             // 
             this.gbAttributes.Controls.Add(this.btnLoadTableSettings);
             this.gbAttributes.Controls.Add(this.btnSaveTableSettings);
-            this.gbAttributes.Controls.Add(this.btnTableFilters);
             this.gbAttributes.Controls.Add(this.cbSelectAll);
             this.gbAttributes.Controls.Add(this.lvAttributes);
             this.gbAttributes.Dock = System.Windows.Forms.DockStyle.Fill;
             this.gbAttributes.Font = new System.Drawing.Font("Segoe UI", 8.25F);
             this.gbAttributes.Location = new System.Drawing.Point(486, 3);
             this.gbAttributes.Name = "gbAttributes";
-            this.gbAttributes.Size = new System.Drawing.Size(1121, 657);
+            this.gbAttributes.Size = new System.Drawing.Size(1121, 450);
             this.gbAttributes.TabIndex = 92;
             this.gbAttributes.TabStop = false;
             this.gbAttributes.Text = "Attributes";
@@ -502,21 +506,6 @@
             this.btnSaveTableSettings.UseVisualStyleBackColor = true;
             this.btnSaveTableSettings.Click += new System.EventHandler(this.btnExportTableSettings_Click);
             // 
-            // btnTableFilters
-            // 
-            this.btnTableFilters.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.btnTableFilters.FlatAppearance.BorderSize = 0;
-            this.btnTableFilters.FlatStyle = System.Windows.Forms.FlatStyle.Popup;
-            this.btnTableFilters.Image = global::Dataverse.XrmTools.DataMigrationTool.Properties.Resources.filters20_colorful;
-            this.btnTableFilters.ImageAlign = System.Drawing.ContentAlignment.MiddleLeft;
-            this.btnTableFilters.Location = new System.Drawing.Point(683, 12);
-            this.btnTableFilters.Name = "btnTableFilters";
-            this.btnTableFilters.Size = new System.Drawing.Size(140, 28);
-            this.btnTableFilters.TabIndex = 101;
-            this.btnTableFilters.Text = "Set Filters";
-            this.btnTableFilters.UseVisualStyleBackColor = true;
-            this.btnTableFilters.Click += new System.EventHandler(this.btnFilter_Click);
-            // 
             // cbSelectAll
             // 
             this.cbSelectAll.AutoSize = true;
@@ -545,7 +534,7 @@
             this.lvAttributes.HideSelection = false;
             this.lvAttributes.Location = new System.Drawing.Point(6, 44);
             this.lvAttributes.Name = "lvAttributes";
-            this.lvAttributes.Size = new System.Drawing.Size(1109, 607);
+            this.lvAttributes.Size = new System.Drawing.Size(1109, 400);
             this.lvAttributes.Sorting = System.Windows.Forms.SortOrder.Ascending;
             this.lvAttributes.TabIndex = 64;
             this.lvAttributes.UseCompatibleStateImageBehavior = false;
@@ -579,13 +568,14 @@
             this.gbTables.Controls.Add(this.lblTableFilter);
             this.gbTables.Controls.Add(this.lvTables);
             this.gbTables.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.gbTables.Enabled = false;
             this.gbTables.Location = new System.Drawing.Point(3, 3);
             this.gbTables.Name = "gbTables";
+            this.pnlBody.SetRowSpan(this.gbTables, 2);
             this.gbTables.Size = new System.Drawing.Size(477, 657);
             this.gbTables.TabIndex = 93;
             this.gbTables.TabStop = false;
             this.gbTables.Text = "Tables";
-            this.gbTables.Enabled = false;
             // 
             // txtTableFilter
             // 
@@ -637,6 +627,58 @@
             this.chTblLogicalName.Text = "Logical Name";
             this.chTblLogicalName.Width = 200;
             // 
+            // gbFilters
+            // 
+            this.gbFilters.Controls.Add(this.lblFetchDescription);
+            this.gbFilters.Controls.Add(this.btnFetchXmlBuilder);
+            this.gbFilters.Controls.Add(this.rtbFilter);
+            this.gbFilters.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.gbFilters.Font = new System.Drawing.Font("Segoe UI", 8.25F);
+            this.gbFilters.Location = new System.Drawing.Point(486, 459);
+            this.gbFilters.Name = "gbFilters";
+            this.gbFilters.Size = new System.Drawing.Size(1121, 201);
+            this.gbFilters.TabIndex = 93;
+            this.gbFilters.TabStop = false;
+            this.gbFilters.Text = "Filters";
+            this.gbFilters.Visible = false;
+            // 
+            // btnFetchXmlBuilder
+            // 
+            this.btnFetchXmlBuilder.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
+            this.btnFetchXmlBuilder.FlatAppearance.BorderSize = 0;
+            this.btnFetchXmlBuilder.FlatStyle = System.Windows.Forms.FlatStyle.Popup;
+            this.btnFetchXmlBuilder.Image = global::Dataverse.XrmTools.DataMigrationTool.Properties.Resources.fetchXmlBuilder20;
+            this.btnFetchXmlBuilder.ImageAlign = System.Drawing.ContentAlignment.MiddleLeft;
+            this.btnFetchXmlBuilder.Location = new System.Drawing.Point(921, 11);
+            this.btnFetchXmlBuilder.Name = "btnFetchXmlBuilder";
+            this.btnFetchXmlBuilder.Size = new System.Drawing.Size(194, 28);
+            this.btnFetchXmlBuilder.TabIndex = 102;
+            this.btnFetchXmlBuilder.Text = "Edit in FetchXML Builder";
+            this.btnFetchXmlBuilder.UseVisualStyleBackColor = true;
+            this.btnFetchXmlBuilder.Click += new System.EventHandler(this.btnFetchXmlBuilder_Click);
+            // 
+            // rtbFilter
+            // 
+            this.rtbFilter.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
+            | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.rtbFilter.Location = new System.Drawing.Point(6, 42);
+            this.rtbFilter.Margin = new System.Windows.Forms.Padding(20);
+            this.rtbFilter.Name = "rtbFilter";
+            this.rtbFilter.Size = new System.Drawing.Size(1109, 153);
+            this.rtbFilter.TabIndex = 6;
+            this.rtbFilter.Text = "";
+            this.rtbFilter.TextChanged += new System.EventHandler(this.rtbFilter_TextChanged);
+            // 
+            // lblFetchDescription
+            // 
+            this.lblFetchDescription.AutoSize = true;
+            this.lblFetchDescription.Location = new System.Drawing.Point(6, 19);
+            this.lblFetchDescription.Name = "lblFetchDescription";
+            this.lblFetchDescription.Size = new System.Drawing.Size(258, 13);
+            this.lblFetchDescription.TabIndex = 106;
+            this.lblFetchDescription.Text = "Records will be filtered using query defined here";
+            // 
             // DataMigrationControl
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
@@ -665,6 +707,8 @@
             this.gbAttributes.PerformLayout();
             this.gbTables.ResumeLayout(false);
             this.gbTables.PerformLayout();
+            this.gbFilters.ResumeLayout(false);
+            this.gbFilters.PerformLayout();
             this.ResumeLayout(false);
 
         }
@@ -725,7 +769,6 @@
         // Attributes Group
         private System.Windows.Forms.GroupBox gbAttributes;
         private System.Windows.Forms.CheckBox cbSelectAll;
-        private System.Windows.Forms.Button btnTableFilters;
         private System.Windows.Forms.Button btnSaveTableSettings;
         private System.Windows.Forms.Button btnLoadTableSettings;
         private System.Windows.Forms.ListView lvAttributes;
@@ -733,5 +776,11 @@
         private System.Windows.Forms.ColumnHeader chAttrLogicalName;
         private System.Windows.Forms.ColumnHeader chAttrType;
         private System.Windows.Forms.ColumnHeader chAttrDescription;
+
+        // Filters Group
+        private System.Windows.Forms.GroupBox gbFilters;
+        private System.Windows.Forms.RichTextBox rtbFilter;
+        private System.Windows.Forms.Button btnFetchXmlBuilder;
+        private System.Windows.Forms.Label lblFetchDescription;
     }
 }

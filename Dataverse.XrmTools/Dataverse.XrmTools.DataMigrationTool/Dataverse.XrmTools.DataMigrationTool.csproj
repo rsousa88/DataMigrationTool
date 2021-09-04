@@ -220,12 +220,6 @@
     <Compile Include="Forms\AttributeMapping.Designer.cs">
       <DependentUpon>AttributeMapping.cs</DependentUpon>
     </Compile>
-    <Compile Include="Forms\Filters.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="Forms\Filters.Designer.cs">
-      <DependentUpon>Filters.cs</DependentUpon>
-    </Compile>
     <Compile Include="Forms\Mappings.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -244,10 +238,8 @@
     <Compile Include="Forms\ValueMapping.Designer.cs">
       <DependentUpon>ValueMapping.cs</DependentUpon>
     </Compile>
-    <Compile Include="Handlers\ListViewComparer.cs" />
-    <Compile Include="Handlers\ProgressHandler.cs" />
-    <Compile Include="Handlers\SettingsHandler.cs" />
-    <Compile Include="Handlers\StatusHandler.cs" />
+    <Compile Include="Helpers\ListViewComparer.cs" />
+    <Compile Include="Helpers\SettingsHelper.cs" />
     <Compile Include="Helpers\Utils.cs" />
     <Compile Include="Logic\DataLogic.cs" />
     <Compile Include="Logic\MappingsLogic.cs" />
@@ -261,7 +253,11 @@
     <Compile Include="Models\TableData.cs" />
     <Compile Include="Models\UiSettings.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="Properties\Resources.Designer.cs" />
+    <Compile Include="Properties\Resources.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DesignTime>True</DesignTime>
+      <DependentUpon>Resources.resx</DependentUpon>
+    </Compile>
     <Compile Include="RepoInterfaces\ICrmRepo.cs" />
     <Compile Include="Repositories\CrmRepo.cs" />
   </ItemGroup>
@@ -276,9 +272,6 @@
     <EmbeddedResource Include="Forms\AttributeMapping.resx">
       <DependentUpon>AttributeMapping.cs</DependentUpon>
     </EmbeddedResource>
-    <EmbeddedResource Include="Forms\Filters.resx">
-      <DependentUpon>Filters.cs</DependentUpon>
-    </EmbeddedResource>
     <EmbeddedResource Include="Forms\Mappings.resx">
       <DependentUpon>Mappings.cs</DependentUpon>
     </EmbeddedResource>
@@ -288,7 +281,11 @@
     <EmbeddedResource Include="Forms\ValueMapping.resx">
       <DependentUpon>ValueMapping.cs</DependentUpon>
     </EmbeddedResource>
-    <EmbeddedResource Include="Properties\Resources.resx" />
+    <EmbeddedResource Include="Properties\Resources.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>
     <Content Include="LICENSE.txt" />
@@ -296,6 +293,7 @@
     <Content Include="Resources\database.png" />
     <Content Include="Resources\directory20_colorful.png" />
     <Content Include="Resources\export.png" />
+    <Content Include="Resources\fetchXmlBuilder20.png" />
     <Content Include="Resources\filters20_colorful.png" />
     <Content Include="Resources\icon.png" />
     <Content Include="Resources\icon32.png" />

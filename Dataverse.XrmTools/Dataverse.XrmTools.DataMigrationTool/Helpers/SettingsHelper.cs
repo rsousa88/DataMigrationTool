@@ -7,9 +7,9 @@ using Dataverse.XrmTools.DataMigrationTool.AppSettings;
 // 3rd Party
 using XrmToolBox.Extensibility;
 
-namespace Dataverse.XrmTools.DataMigrationTool.Handlers
+namespace Dataverse.XrmTools.DataMigrationTool.Helpers
 {
-    public class SettingsHandler
+    public class SettingsHelper
     {
         public static void GetSettings(out Settings settings)
         {

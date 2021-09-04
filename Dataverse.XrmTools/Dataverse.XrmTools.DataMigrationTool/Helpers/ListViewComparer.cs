@@ -2,7 +2,7 @@
 using System.Collections;
 using System.Windows.Forms;
 
-namespace Dataverse.XrmTools.DataMigrationTool.Handlers
+namespace Dataverse.XrmTools.DataMigrationTool.Helpers
 {
     public class ListViewComparer : IComparer
     {

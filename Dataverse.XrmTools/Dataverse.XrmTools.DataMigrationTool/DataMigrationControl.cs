@@ -1,6 +1,7 @@
 ﻿// System
 using System;
 using System.IO;
+using System.Xml;
 using System.Data;
 using System.Linq;
 using System.Drawing;
@@ -12,6 +13,8 @@ using System.Collections.Specialized;
 
 // Microsoft
 using Microsoft.Xrm.Sdk;
+using Microsoft.Crm.Sdk.Messages;
+using Microsoft.Xrm.Tooling.Connector;
 
 // 3rd Party
 using McTools.Xrm.Connection;
@@ -27,13 +30,10 @@ using Dataverse.XrmTools.DataMigrationTool.Helpers;
 using Dataverse.XrmTools.DataMigrationTool.AppSettings;
 using Dataverse.XrmTools.DataMigrationTool.Repositories;
 using Dataverse.XrmTools.DataMigrationTool.Forms;
-using Dataverse.XrmTools.DataMigrationTool.Handlers;
-using Microsoft.Crm.Sdk.Messages;
-using Microsoft.Xrm.Tooling.Connector;
 
 namespace Dataverse.XrmTools.DataMigrationTool
 {
-    public partial class DataMigrationControl : MultipleConnectionsPluginControlBase, IStatusBarMessenger
+    public partial class DataMigrationControl : MultipleConnectionsPluginControlBase, IStatusBarMessenger, IMessageBusHost
     {
         #region Variables
         // settings
@@ -54,11 +54,12 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         #region Handlers
         public event EventHandler<StatusBarMessageEventArgs> SendMessageToStatusBar;
+        public event EventHandler<MessageBusEventArgs> OnOutgoingMessage;
         #endregion Variables
 
         public DataMigrationControl()
         {
-            SettingsHandler.GetSettings(out _settings);
+            SettingsHelper.GetSettings(out _settings);
             InitializeComponent();
         }
 
@@ -102,7 +103,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 EnableComponentsOnMainConnection();
 
                 // save settings file
-                SettingsHandler.SetSettings(_settings);
+                SettingsHelper.SetSettings(_settings);
 
                 // load tables when source connection changes
                 LoadTables();
@@ -127,6 +128,28 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 EnableComponentsOnSecondaryConnection();
 
                 SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Target Connection ready"));
+            }
+        }
+
+        public void OnIncomingMessage(MessageBusEventArgs message)
+        {
+            if (message.SourcePlugin.Equals("FetchXML Builder") && message.TargetArgument is string fetchXml && !string.IsNullOrWhiteSpace(fetchXml))
+            {
+                var filters = ExtractFilterNode(fetchXml);
+
+                var tableData = GetSelectedTableItemData(false);
+                if (tableData == null)
+                {
+                    SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Error setting filters from FetchXML Builder"));
+                    return;
+                }
+
+                // save settings
+                tableData.Settings.Filter = filters;
+                SettingsHelper.SetSettings(_settings);
+
+                // set text box
+                rtbFilter.Text = filters;
             }
         }
         #endregion Interface Methods
@@ -227,8 +250,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 return;
             }
 
-            RenderFilterButton(tableData.Table.LogicalName);
-
             WorkAsync(new WorkAsyncInfo
             {
                 Message = $"Loading {tableData.Table.DisplayName} attributes...",
@@ -255,6 +276,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     if (args.Error != null)
                     {
                         gbAttributes.Visible = false;
+                        gbFilters.Visible = false;
                         MessageBox.Show(this, $"An error occurred: {args.Error.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     }
                     else
@@ -262,7 +284,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         // save settings
                         tableData.Settings.DisplayName = tableData.Table.DisplayName;
                         tableData.Settings.IsCustomizable = tableData.Table.IsCustomizable;
-                        SettingsHandler.SetSettings(_settings);
+                        SettingsHelper.SetSettings(_settings);
 
                         // load attributes
                         tableData.Table.AllAttributes = args.Result as List<Models.Attribute>;
@@ -282,7 +304,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
                 // save settings
                 tableData.Settings.DeselectedAttributes = deselected;
-                SettingsHandler.SetSettings(_settings);
+                SettingsHelper.SetSettings(_settings);
             }
 
             foreach (var att in tableData.Table.AllAttributes)
@@ -309,6 +331,22 @@ namespace Dataverse.XrmTools.DataMigrationTool
             gbAttributes.Visible = true;
 
             ManageWorkingState(false);
+        }
+
+        private void LoadFilters(TableData tableData)
+        {
+            rtbFilter.Text = string.Empty;
+
+            tableData = tableData != null ? tableData : GetSelectedTableItemData(false);
+            if (tableData == null || tableData.Settings == null)
+            {
+                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Error loading filters"));
+                return;
+            }
+
+            rtbFilter.Text = tableData.Settings.Filter;
+
+            gbFilters.Visible = true;
         }
 
         private void PreviewData()
@@ -370,7 +408,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         var prvwDialog = new Results(result.Items, _settings);
                         prvwDialog.ShowDialog(ParentForm);
 
-                        SettingsHandler.SetSettings(_settings);
+                        SettingsHelper.SetSettings(_settings);
                     }
 
                     tsbAbort.Text = "Abort";
@@ -484,7 +522,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         var resDialog = new Results(result.Items, _settings);
                         resDialog.ShowDialog(ParentForm);
 
-                        SettingsHandler.SetSettings(_settings);
+                        SettingsHelper.SetSettings(_settings);
                     }
 
                     tsbAbort.Text = "Abort";
@@ -540,10 +578,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         tableData.Settings.Filter = deserialized.Filter;
                         tableData.Settings.DeselectedAttributes = deserialized.DeselectedAttributes;
 
-                        // re-render UI
-                        RenderFilterButton(tableData.Table.LogicalName);
-
                         LoadAttributes();
+                        LoadFilters(tableData);
 
                         SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Successfully imported settings for table '{tableData.Table.DisplayName}'"));
                     }
@@ -657,18 +693,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             tsbImport.Enabled = true;
         }
 
-        private void RenderFilterButton(string logicalName)
-        {
-            var tableSettings = _settings.GetTableSettings(_tables, logicalName);
-            if(tableSettings == null)
-            {
-                MessageBox.Show("Invalid Table: Please reload tables and try again", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-
-            btnTableFilters.Font = !string.IsNullOrEmpty(tableSettings.Filter) ? new Font(btnTableFilters.Font.Name, btnTableFilters.Font.Size, FontStyle.Bold) : new Font(btnTableFilters.Font.Name, btnTableFilters.Font.Size, FontStyle.Regular);
-        }
-
         public UiSettings ReadSettings(Enums.Action initial)
         {
             var mode = initial;
@@ -684,6 +708,72 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 MapTeams = cbMapTeams.Checked,
                 MapBu = cbMapBu.Checked
             };
+        }
+
+        private string ExtractFilterNode(string fetchXml)
+        {
+            var doc = new XmlDocument();
+
+            var filters = string.Empty;
+
+            if(!string.IsNullOrWhiteSpace(fetchXml))
+            {
+                // load xml
+                doc.LoadXml(fetchXml);
+
+                var filterNodes = doc.SelectNodes("/fetch/entity/filter");
+                if (filterNodes.Count > 0)
+                {
+                    filters = filterNodes[0].OuterXml;
+                }
+            }
+
+            return filters.FormatXml();
+        }
+
+        private string ParseFetchQuery(string filters)
+        {
+            var tableData = GetSelectedTableItemData(false);
+            if (tableData == null)
+            {
+                throw new Exception("Error parsing query to FetchXML Builder");
+            }
+
+            // create new document
+            var newDoc = new XmlDocument();
+
+            // fetch node (root)
+            var root = newDoc.CreateElement("fetch");
+            newDoc.AppendChild(root);
+
+            // entity node
+            var entity = newDoc.CreateElement("entity");
+
+            // entity node attributes
+            var entityNameAttr = newDoc.CreateAttribute("name");
+            entityNameAttr.Value = tableData.Table.LogicalName;
+            entity.Attributes.Append(entityNameAttr);
+
+            // append to root
+            root.AppendChild(entity);
+
+            if(!string.IsNullOrWhiteSpace(filters))
+            {
+                // load document from filters xml
+                var filtersDoc = new XmlDocument();
+                filtersDoc.LoadXml(filters);
+
+                // get node
+                var filtersNode = filtersDoc.FirstChild;
+
+                // need to import node to newDoc document before append
+                var importNode = newDoc.ImportNode(filtersNode, true);
+
+                // append to new document
+                entity.AppendChild(importNode);
+            }
+
+            return newDoc.OuterXml;
         }
         #endregion Private Helper Methods
 
@@ -725,6 +815,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 if (lvTables.SelectedItems.Count > 0)
                 {
                     LoadAttributes();
+                    LoadFilters(null);
                 }
             }
             catch (Exception ex)
@@ -859,33 +950,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
         }
 
-        private void btnFilter_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                var tableData = GetSelectedTableItemData(false);
-                if (tableData == null)
-                {
-                    SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Error loading filters"));
-                    return;
-                }
-
-                var filtersDlg = new Filters(tableData.Table, tableData.Settings);
-                filtersDlg.ShowDialog(ParentForm);
-
-                if (filtersDlg.Updated) // filter was updated
-                {
-                    RenderFilterButton(tableData.Table.LogicalName);
-                    SettingsHandler.SetSettings(_settings);
-                    SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Successfully updated filters for table '{tableData.Table.DisplayName}'"));
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.Message, "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            }
-        }
-
         private void btnExportTableSettings_Click(object sender, EventArgs e)
         {
             try
@@ -943,7 +1007,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 }
 
                 ImportExportTableSettings(ImportExportAction.Import, dialog, tableData);
-                SettingsHandler.SetSettings(_settings);
+                SettingsHelper.SetSettings(_settings);
             }
             catch (Exception ex)
             {
@@ -962,7 +1026,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
                 if (mappingsDlg.Updated)
                 {
-                    SettingsHandler.SetSettings(_settings);
+                    SettingsHelper.SetSettings(_settings);
                     SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Succesfully updated Organization Mappings"));
                 }
             }
@@ -982,7 +1046,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     {
                         txtExportDirPath.Text = fbd.SelectedPath;
                         _settings.ExportPath = fbd.SelectedPath;
-                        SettingsHandler.SetSettings(_settings);
+                        SettingsHelper.SetSettings(_settings);
 
                         SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Successfully updated Export directory"));
                     }
@@ -1009,10 +1073,37 @@ namespace Dataverse.XrmTools.DataMigrationTool
             else
             {
                 _settings.ExportPath = path;
-                SettingsHandler.SetSettings(_settings);
+                SettingsHelper.SetSettings(_settings);
 
                 SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Successfully updated Export directory"));
             }
+        }
+
+        private void btnFetchXmlBuilder_Click(object sender, EventArgs e)
+        {
+            var filters = rtbFilter.Text;
+            var fetch = ParseFetchQuery(filters);
+
+            OnOutgoingMessage(this, new MessageBusEventArgs("FetchXML Builder")
+            {
+                TargetArgument = fetch
+            });
+        }
+
+        private void rtbFilter_TextChanged(object sender, EventArgs e)
+        {
+            var filters = rtbFilter.Text;
+
+            var tableData = GetSelectedTableItemData(false);
+            if (tableData == null)
+            {
+                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Error saving filters"));
+                return;
+            }
+
+            // save settings
+            tableData.Settings.Filter = filters;
+            SettingsHelper.SetSettings(_settings);
         }
         #endregion Form events
     }

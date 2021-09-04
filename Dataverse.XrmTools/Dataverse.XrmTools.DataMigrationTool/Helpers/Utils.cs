@@ -2,9 +2,9 @@
 using System;
 using System.IO;
 using System.Xml;
+using System.Text;
 using System.Linq;
 using System.Data;
-using System.Text;
 using System.Windows.Forms;
 using System.Collections.Generic;
 using System.Runtime.Serialization.Json;
@@ -15,7 +15,6 @@ using Microsoft.Xrm.Sdk;
 // DataMigrationTool
 using Dataverse.XrmTools.DataMigrationTool.Enums;
 using Dataverse.XrmTools.DataMigrationTool.Models;
-using Dataverse.XrmTools.DataMigrationTool.Handlers;
 using Dataverse.XrmTools.DataMigrationTool.AppSettings;
 
 namespace Dataverse.XrmTools.DataMigrationTool.Helpers
@@ -275,8 +274,40 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
                 settings.TableSettings.Add(tableSettings);
             }
 
-            SettingsHandler.SetSettings(settings);
+            SettingsHelper.SetSettings(settings);
             return tableSettings;
+        }
+
+        public static string FormatXml(this string xml)
+        {
+            try
+            {
+                using (var ms = new MemoryStream())
+                {
+                    using (var writer = new XmlTextWriter(ms, Encoding.Unicode))
+                    {
+                        var doc = new XmlDocument();
+                        doc.LoadXml(xml);
+
+                        writer.Formatting = Formatting.Indented;
+                        doc.WriteContentTo(writer);
+
+                        writer.Flush();
+                        ms.Flush();
+
+                        ms.Position = 0;
+
+                        using (var sReader = new StreamReader(ms))
+                        {
+                            return sReader.ReadToEnd();
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                throw;
+            }
         }
     }
 }

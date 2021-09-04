@@ -15,14 +15,13 @@ using Microsoft.Xrm.Sdk.Query;
 using Dataverse.XrmTools.DataMigrationTool.Enums;
 using Dataverse.XrmTools.DataMigrationTool.Models;
 using Dataverse.XrmTools.DataMigrationTool.Helpers;
-using Dataverse.XrmTools.DataMigrationTool.Handlers;
 using Dataverse.XrmTools.DataMigrationTool.Repositories;
 
 namespace Dataverse.XrmTools.DataMigrationTool.Logic
 {
     public class DataLogic
     {
-        #region Global Variables
+        #region Variables
         private BackgroundWorker _worker;
 
         private readonly IOrganizationService _sourceSvc;
@@ -33,7 +32,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
         private RecordCollection _recordCollection;
 
         private List<ListViewItem> _resultsData = new List<ListViewItem>();
-        #endregion Global Variables
+        #endregion Variables
 
         #region Constructors
         public DataLogic(BackgroundWorker worker, IOrganizationService sourceSvc, IOrganizationService targetSvc)
@@ -43,22 +42,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             _targetSvc = targetSvc;
         }
         #endregion Constructors
-
-        #region Handlers
-        public event EventHandler OnStatus;
-        private void SetStatus(string message)
-        {
-            if (OnStatus == null) { return; }
-            OnStatus(this, new StatusHandler(message));
-        }
-
-        public event EventHandler OnProgress;
-        private void SetProgress(int progress, string message)
-        {
-            if (OnProgress == null) { return; }
-            OnProgress(this, new ProgressHandler(progress, message));
-        }
-        #endregion Handlers
 
         #region Public Methods
         public OperationResult Preview(TableData tableData, UiSettings uiSettings)
@@ -122,11 +105,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
             // retrieve source records
             var sourceRepo = new CrmRepo(_sourceSvc, _worker);
-            SetProgress(0, "Retrieving source records...");
             _sourceCollection = sourceRepo.GetCollectionByFetchXml(fetch, batchSize);
-
-            if (_sourceCollection == null) { SetProgress(100, $"Operation aborted"); return; }
-            SetProgress(100, $"Retrieved {_sourceCollection.Entities.Count} records from source");
         }
 
         private void RetrieveTargetData(string logicalName, string idAttribute, int batchSize)
@@ -136,11 +115,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
             // retrieve target records
             var targetRepo = new CrmRepo(_targetSvc, _worker);
-            SetProgress(0, "Retrieving target records...");
             _targetCollection = targetRepo.GetCollectionByExpression(query, batchSize);
-
-            if(_targetCollection == null) { SetProgress(100, $"Operation aborted"); return; }
-            SetProgress(100, $"Retrieved {_targetCollection.Entities.Count} records from target");
         }
 
         private void PerformDataOperations(UiSettings uiSettings, Table table, bool isPreview)
@@ -168,7 +143,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
             // execute
             var diffCount = migrationItems.Count();
-            SetStatus($"Performing {uiSettings.Action} operations for {diffCount} records...");
 
             var done = 0;
             var items = new List<ListViewItem>();
@@ -178,7 +152,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 if (_worker.CancellationPending) return;
 
                 var batchNum = i + 1;
-                SetProgress(batchNum / maxBatch, $"Executing batch {batchNum}/{maxBatch}");
 
                 var batchRows = migrationItems.Skip(done).Take(uiSettings.BatchSize);
 
@@ -274,8 +247,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     var collection = new RecordCollection(_sourceCollection, tableData.Metadata);
                     var json = collection.SerializeObject<RecordCollection>();
                     File.WriteAllText($"{path}/{tableData.Table.LogicalName}.json", json);
-
-                    SetStatus($"File saved");
                 }
             }
 
