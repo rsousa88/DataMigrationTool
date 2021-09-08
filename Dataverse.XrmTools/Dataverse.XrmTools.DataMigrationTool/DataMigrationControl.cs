@@ -59,7 +59,12 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         public DataMigrationControl()
         {
+            LogInfo("----- Starting Data Migration Tool -----");
+
+            LogInfo("Loading Settings...");
             SettingsHelper.GetSettings(out _settings);
+
+            LogInfo("Initializing components...");
             InitializeComponent();
         }
 
@@ -74,82 +79,116 @@ namespace Dataverse.XrmTools.DataMigrationTool
         /// </summary>
         public override void UpdateConnection(IOrganizationService newService, ConnectionDetail detail, string actionName, object parameter)
         {
-            base.UpdateConnection(newService, detail, actionName, parameter);
-            _sourceClient = Service as CrmServiceClient;
-
-            if (actionName != "AdditionalOrganization")
+            try
             {
-                var orgId = detail.ConnectionId.Value;
-                _instance = _settings.Instances.FirstOrDefault(org => org.Id.Equals(orgId));
-                if (_instance == null)
+                LogInfo($"Updating connection: {actionName}...");
+                base.UpdateConnection(newService, detail, actionName, parameter);
+                _sourceClient = Service as CrmServiceClient;
+
+                if (actionName != "AdditionalOrganization")
                 {
-                    _instance = new Instance
+                    var orgId = detail.ConnectionId.Value;
+                    _instance = _settings.Instances.FirstOrDefault(org => org.Id.Equals(orgId));
+                    if (_instance == null)
                     {
-                        Id = orgId,
-                        Name = detail.ConnectionName,
-                        Mappings = new List<Mapping>()
-                    };
+                        _instance = new Instance
+                        {
+                            Id = orgId,
+                            Name = detail.ConnectionName,
+                            Mappings = new List<Mapping>()
+                        };
 
-                    _settings.Instances.Add(_instance);
+                        _settings.Instances.Add(_instance);
+                    }
+
+                    // load UI settings
+                    _sorts = _settings.Sorts;
+
+                    // render UI components
+                    LogInfo($"Rendering UI components...");
+                    RenderConnectionLabel(ConnectionType.Source, _instance.Name);
+                    RenderMappingsButton();
+                    txtExportDirPath.Text = _settings.ExportPath;
+                    EnableComponentsOnMainConnection();
+
+                    // save settings file
+                    SettingsHelper.SetSettings(_settings);
+
+                    // load tables when source connection changes
+                    LoadTables();
                 }
-
-                // load UI settings
-                _sorts = _settings.Sorts;
-
-                // render UI components
-                RenderConnectionLabel(ConnectionType.Source, _instance.Name);
-                RenderMappingsButton();
-                txtExportDirPath.Text = _settings.ExportPath;
-                EnableComponentsOnMainConnection();
-
-                // save settings file
-                SettingsHelper.SetSettings(_settings);
-
-                // load tables when source connection changes
-                LoadTables();
+            }
+            catch (Exception ex)
+            {
+                LogError(ex.Message);
+                MessageBox.Show(this, $"An error occurred: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
         protected override void ConnectionDetailsUpdated(NotifyCollectionChangedEventArgs args)
         {
-            if (args.Action.Equals(NotifyCollectionChangedAction.Add))
+            try
             {
-                var detail = (ConnectionDetail)args.NewItems[0];
-                _targetClient = detail.ServiceClient;
-
-                if (_sourceClient == null) { throw new Exception("Source connection is invalid"); }
-                if (_targetClient == null) { throw new Exception("Target connection is invalid"); }
-                if (_sourceClient.ConnectedOrgId.Equals(_targetClient.ConnectedOrgId))
+                if (args.Action.Equals(NotifyCollectionChangedAction.Add))
                 {
-                    throw new Exception("Source and Target connections must refer to different Dataverse instances");
+                    var detail = (ConnectionDetail)args.NewItems[0];
+                    _targetClient = detail.ServiceClient;
+
+                    if (_sourceClient == null) { throw new Exception("Source connection is invalid"); }
+                    LogInfo($"Source OrgId: {_sourceClient.ConnectedOrgId}");
+                    LogInfo($"Source OrgName: {_sourceClient.ConnectedOrgUniqueName}");
+                    LogInfo($"Source EnvId: {_sourceClient.EnvironmentId}");
+
+                    if (_targetClient == null) { throw new Exception("Target connection is invalid"); }
+                    LogInfo($"Target OrgId: {_targetClient.ConnectedOrgId}");
+                    LogInfo($"Target OrgName: {_targetClient.ConnectedOrgUniqueName}");
+                    LogInfo($"Target EnvId: {_targetClient.EnvironmentId}");
+
+                    if (_sourceClient.ConnectedOrgId.Equals(_targetClient.ConnectedOrgId) && _sourceClient.EnvironmentId.Equals(_targetClient.EnvironmentId))
+                    {
+                        throw new Exception("Source and Target connections must refer to different Dataverse instances");
+                    }
+
+                    RenderConnectionLabel(ConnectionType.Target, detail.ConnectionName);
+                    EnableComponentsOnSecondaryConnection();
+
+                    SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Target Connection ready"));
                 }
-
-                RenderConnectionLabel(ConnectionType.Target, detail.ConnectionName);
-                EnableComponentsOnSecondaryConnection();
-
-                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Target Connection ready"));
+            }
+            catch (Exception ex)
+            {
+                LogError(ex.Message);
+                MessageBox.Show(this, $"An error occurred: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
         public void OnIncomingMessage(MessageBusEventArgs message)
         {
-            if (message.SourcePlugin.Equals("FetchXML Builder") && message.TargetArgument is string fetchXml && !string.IsNullOrWhiteSpace(fetchXml))
+            try
             {
-                var filters = ExtractFilterNode(fetchXml);
-
-                var tableData = GetSelectedTableItemData(false);
-                if (tableData == null)
+                if (message.SourcePlugin.Equals("FetchXML Builder") && message.TargetArgument is string fetchXml && !string.IsNullOrWhiteSpace(fetchXml))
                 {
-                    SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Error setting filters from FetchXML Builder"));
-                    return;
+                    var filters = ExtractFilterNode(fetchXml);
+
+                    var tableData = GetSelectedTableItemData(false);
+                    if (tableData == null)
+                    {
+                        SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Error setting filters from FetchXML Builder"));
+                        return;
+                    }
+
+                    // save settings
+                    tableData.Settings.Filter = filters;
+                    SettingsHelper.SetSettings(_settings);
+
+                    // set text box
+                    rtbFilter.Text = filters;
                 }
-
-                // save settings
-                tableData.Settings.Filter = filters;
-                SettingsHelper.SetSettings(_settings);
-
-                // set text box
-                rtbFilter.Text = filters;
+            }
+            catch (Exception ex)
+            {
+                LogError(ex.Message);
+                MessageBox.Show(this, $"An error occurred: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
         #endregion Interface Methods
@@ -162,6 +201,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void LoadTables()
         {
+            LogInfo($"Loading tables...");
+
             if (Service == null)
             {
                 ExecuteMethod(WhoAmI);
@@ -204,7 +245,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         _tables = args.Result as IEnumerable<Table>;
                         LoadTablesList();
 
-                        SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Tables reload complete"));
+                        SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Tables load complete"));
                     }
                 }
             });
@@ -212,6 +253,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void LoadTablesList()
         {
+            LogInfo($"Rendering tables list view...");
+
             var textFilter = txtTableFilter.Text;
             var filtered = _tables.Where(tbl => string.IsNullOrWhiteSpace(textFilter) || tbl.MatchFilter(textFilter));
 
@@ -237,6 +280,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void LoadAttributes()
         {
+            LogInfo($"Loading attributes...");
+
             if (_working) { return; }
 
             lvAttributes.Items.Clear();
@@ -289,6 +334,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         // load attributes
                         tableData.Table.AllAttributes = args.Result as List<Models.Attribute>;
                         LoadAttributesList(tableData);
+
+                        SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Attributes load complete"));
                     }
                 }
             });
@@ -296,6 +343,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void LoadAttributesList(TableData tableData)
         {
+            LogInfo($"Rendering attributes list view...");
+
             var deselected = tableData.Settings.DeselectedAttributes;
             if (deselected == null)
             {
@@ -335,6 +384,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void LoadFilters(TableData tableData)
         {
+            LogInfo($"Loading table filters...");
+
             rtbFilter.Text = string.Empty;
 
             tableData = tableData != null ? tableData : GetSelectedTableItemData(false);
@@ -351,6 +402,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void PreviewData()
         {
+            LogInfo($"Previewing operation...");
+
             var tableData = GetSelectedTableItemData(attributeRequired: true);
             if(tableData == null) {
                 SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Preview operation aborted"));
@@ -383,7 +436,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
             WorkAsync(new WorkAsyncInfo
             {
-                Message = "Previewing migration...",
+                Message = "Previewing operation...",
                 AsyncArgument = tableData,
                 IsCancelable = true,
                 Work = (worker, evt) =>
@@ -424,6 +477,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void Export()
         {
+            LogInfo($"Export operation...");
+
             var tableData = GetSelectedTableItemData(false, true);
             if (tableData == null)
             {
@@ -442,12 +497,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 .ToList();
 
             var path = txtExportDirPath.Text;
-            //var validDir = Directory.Exists(path);
-            //if (!validDir)
-            //{
-            //    MessageBox.Show("You selected an invalid export directory", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            //    return;
-            //}
 
             WorkAsync(new WorkAsyncInfo
             {
@@ -465,12 +514,15 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 {
                     tsbAbort.Text = "Abort";
                     ManageWorkingState(false);
+                    SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Export complete"));
                 }
             });
         }
 
         private void Import()
         {
+            LogInfo($"Import operation...");
+
             var tableData = GetSelectedTableItemData(attributeRequired: true);
             if (tableData == null)
             {
@@ -527,6 +579,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
                     tsbAbort.Text = "Abort";
                     ManageWorkingState(false);
+                    SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Import complete"));
                 }
             });
         }
@@ -589,6 +642,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private List<Mapping> GetMappings(UiSettings ui)
         {
+            LogInfo($"Parsing automatic mappings...");
+
             var mappings = new List<Mapping>(_instance.Mappings);
             var mappingsLogic = new MappingsLogic(Service, _targetClient);
 
@@ -619,6 +674,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private TableData GetSelectedTableItemData(bool targetRequired = true, bool attributeRequired = false)
         {
+            LogInfo($"Parsing table data...");
+
             if (Service == null || (targetRequired && _targetClient == null))
             {
                 throw new Exception("You must select both a source and a target organization");
@@ -800,7 +857,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally
             {
@@ -820,13 +877,20 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
         private void listView_ColumnClick(object sender, ColumnClickEventArgs e)
         {
-            (sender as ListView).Sort(_settings, e.Column);
+            try
+            {
+                (sender as ListView).Sort(_settings, e.Column);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private void btnSelectTarget_Click(object sender, EventArgs e)
@@ -837,7 +901,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -849,7 +913,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -861,7 +925,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -873,7 +937,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -885,7 +949,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -898,29 +962,36 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
         private void cbAllAttributes_CheckedChanged(object sender, EventArgs e)
         {
-            if (lvAttributes.Items.Count == 0) { return; }
-
-            var allAttributes = (sender as CheckBox).Checked;
-
-            var tableData = GetSelectedTableItemData(false);
-            if (tableData == null)
+            try
             {
-                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Error saving selected attributes"));
-                return;
+                if (lvAttributes.Items.Count == 0) { return; }
+
+                var allAttributes = (sender as CheckBox).Checked;
+
+                var tableData = GetSelectedTableItemData(false);
+                if (tableData == null)
+                {
+                    SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Error saving selected attributes"));
+                    return;
+                }
+
+                // check/uncheck all attributes
+                lvAttributes.Items.Cast<ListViewItem>().ToList().ForEach(item => item.Checked = allAttributes);
+
+                // save settings
+                if (allAttributes) { tableData.Settings.DeselectedAttributes.Clear(); }
+                else { tableData.Settings.DeselectedAttributes = tableData.Table.AllAttributes.Select(attr => attr.LogicalName).ToList(); }
             }
-
-            // check/uncheck all attributes
-            lvAttributes.Items.Cast<ListViewItem>().ToList().ForEach(item => item.Checked = allAttributes);
-
-            // save settings
-            if (allAttributes) { tableData.Settings.DeselectedAttributes.Clear(); }
-            else { tableData.Settings.DeselectedAttributes = tableData.Table.AllAttributes.Select(attr => attr.LogicalName).ToList(); }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private void lvAttributes_ItemChecked(object sender, ItemCheckedEventArgs e)
@@ -946,7 +1017,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -978,7 +1049,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -1011,7 +1082,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -1030,9 +1101,9 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Succesfully updated Organization Mappings"));
                 }
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -1054,56 +1125,77 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
         private void txtExportDirPath_Validating(object sender, CancelEventArgs e)
         {
-            var txtBox = sender as TextBox;
-            var path = txtBox.Text;
-
-            var validDir = Directory.Exists(path);
-            if (!validDir)
+            try
             {
-                MessageBox.Show("You selected an invalid export directory", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                txtBox.Text = _settings.ExportPath;
-                e.Cancel = true;
+                var txtBox = sender as TextBox;
+                var path = txtBox.Text;
+
+                var validDir = Directory.Exists(path);
+                if (!validDir)
+                {
+                    MessageBox.Show("You selected an invalid export directory", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    txtBox.Text = _settings.ExportPath;
+                    e.Cancel = true;
+                }
+                else
+                {
+                    _settings.ExportPath = path;
+                    SettingsHelper.SetSettings(_settings);
+
+                    SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Successfully updated Export directory"));
+                }
             }
-            else
+            catch (Exception ex)
             {
-                _settings.ExportPath = path;
-                SettingsHelper.SetSettings(_settings);
-
-                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Successfully updated Export directory"));
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
         private void btnFetchXmlBuilder_Click(object sender, EventArgs e)
         {
-            var filters = rtbFilter.Text;
-            var fetch = ParseFetchQuery(filters);
-
-            OnOutgoingMessage(this, new MessageBusEventArgs("FetchXML Builder")
+            try
             {
-                TargetArgument = fetch
-            });
+                var filters = rtbFilter.Text;
+                var fetch = ParseFetchQuery(filters);
+
+                OnOutgoingMessage(this, new MessageBusEventArgs("FetchXML Builder")
+                {
+                    TargetArgument = fetch
+                });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private void rtbFilter_TextChanged(object sender, EventArgs e)
         {
-            var filters = rtbFilter.Text;
-
-            var tableData = GetSelectedTableItemData(false);
-            if (tableData == null)
+            try
             {
-                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Error saving filters"));
-                return;
-            }
+                var filters = rtbFilter.Text;
 
-            // save settings
-            tableData.Settings.Filter = filters;
-            SettingsHelper.SetSettings(_settings);
+                var tableData = GetSelectedTableItemData(false);
+                if (tableData == null)
+                {
+                    SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Error saving filters"));
+                    return;
+                }
+
+                // save settings
+                tableData.Settings.Filter = filters;
+                SettingsHelper.SetSettings(_settings);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
         #endregion Form events
     }
