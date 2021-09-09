@@ -144,7 +144,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     LogInfo($"Target OrgName: {_targetClient.ConnectedOrgUniqueName}");
                     LogInfo($"Target EnvId: {_targetClient.EnvironmentId}");
 
-                    if (_sourceClient.ConnectedOrgId.Equals(_targetClient.ConnectedOrgId) && _sourceClient.EnvironmentId.Equals(_targetClient.EnvironmentId))
+                    if (_sourceClient.ConnectedOrgUniqueName.Equals(_targetClient.ConnectedOrgUniqueName))
                     {
                         throw new Exception("Source and Target connections must refer to different Dataverse instances");
                     }
