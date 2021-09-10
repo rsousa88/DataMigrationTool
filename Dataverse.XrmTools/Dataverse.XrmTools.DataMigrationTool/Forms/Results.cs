@@ -22,24 +22,10 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             InitializeComponent();
         }
 
-        private void btnClose_Click(object sender, EventArgs e)
-        {
-            Close();
-        }
-
         private void LoadRecords(object sender, EventArgs e)
         {
             lvItems.Items.Clear();
             lvItems.Items.AddRange(_recordItems.ToArray());
-
-            // re-render list view columns
-            lvItems.AutoResizeColumns(ColumnHeaderAutoResizeStyle.ColumnContent);
-
-            // ensure minimum width
-            if(chResAction.Width < 100) { chResAction.Width = 100; }
-            if(chResRecordId.Width < 250) { chResRecordId.Width = 250; }
-            if(chResRecordName.Width < 400) { chResRecordName.Width = 400; }
-            if(chResDescription.Width < 750) { chResDescription.Width = 750; }
 
             // Set summary
             SetSummary();
@@ -51,8 +37,10 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             var updateCount = _recordItems.Where(prv => prv.Text.Equals("Update")).Count();
             var deleteCount = _recordItems.Where(prv => prv.Text.Equals("Delete")).Count();
 
-            var message = $"Create: {createCount} | Update: {updateCount} | Delete: {deleteCount} | Total: {createCount + updateCount + deleteCount}";
-            lblSummary.Text = message;
+            lblSumCreateValue.Text = createCount.ToString();
+            lblSumUpdateValue.Text = updateCount.ToString();
+            lblSumDeleteValue.Text = deleteCount.ToString();
+            lblSumTotalValue.Text = (createCount + updateCount + deleteCount).ToString();
         }
 
         private void listView_ColumnClick(object sender, ColumnClickEventArgs e)
@@ -68,6 +56,21 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             {
                 CopySelectedValuesToClipboard();
             }
+        }
+
+        private void Results_Resize(object sender, EventArgs e)
+        {
+            // re-render list view columns
+            var maxWidth = lvItems.Width >= 500 ? lvItems.Width : 500;
+            chResAction.Width = (int)Math.Floor(maxWidth * 0.07);
+            chResRecordId.Width = (int)Math.Floor(maxWidth * 0.25);
+            chResRecordName.Width = (int)Math.Floor(maxWidth * 0.30);
+            chResDescription.Width = (int)Math.Floor(maxWidth * 0.37);
+        }
+
+        private void btnClose_Click(object sender, EventArgs e)
+        {
+            Close();
         }
 
         private void CopySelectedValuesToClipboard()

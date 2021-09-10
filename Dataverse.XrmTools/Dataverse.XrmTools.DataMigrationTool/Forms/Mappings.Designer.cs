@@ -80,16 +80,18 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             this.pnlHeader1.Controls.Add(this.lblATitle);
             this.pnlHeader1.Dock = System.Windows.Forms.DockStyle.Top;
             this.pnlHeader1.Location = new System.Drawing.Point(0, 0);
+            this.pnlHeader1.Margin = new System.Windows.Forms.Padding(4);
             this.pnlHeader1.Name = "pnlHeader1";
-            this.pnlHeader1.Size = new System.Drawing.Size(1272, 58);
+            this.pnlHeader1.Size = new System.Drawing.Size(1696, 71);
             this.pnlHeader1.TabIndex = 0;
             // 
             // btnNewAttribute
             // 
             this.btnNewAttribute.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.btnNewAttribute.Location = new System.Drawing.Point(1070, 16);
+            this.btnNewAttribute.Location = new System.Drawing.Point(1427, 20);
+            this.btnNewAttribute.Margin = new System.Windows.Forms.Padding(4);
             this.btnNewAttribute.Name = "btnNewAttribute";
-            this.btnNewAttribute.Size = new System.Drawing.Size(190, 23);
+            this.btnNewAttribute.Size = new System.Drawing.Size(253, 28);
             this.btnNewAttribute.TabIndex = 6;
             this.btnNewAttribute.Text = "New Attribute Mapping";
             this.btnNewAttribute.UseVisualStyleBackColor = true;
@@ -99,9 +101,10 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             // 
             this.lblADescription.AutoSize = true;
             this.lblADescription.Font = new System.Drawing.Font("Segoe UI", 8.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.lblADescription.Location = new System.Drawing.Point(5, 34);
+            this.lblADescription.Location = new System.Drawing.Point(7, 42);
+            this.lblADescription.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
             this.lblADescription.Name = "lblADescription";
-            this.lblADescription.Size = new System.Drawing.Size(143, 13);
+            this.lblADescription.Size = new System.Drawing.Size(173, 19);
             this.lblADescription.TabIndex = 2;
             this.lblADescription.Text = "Match records by attribute";
             // 
@@ -109,9 +112,10 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             // 
             this.lblATitle.AutoSize = true;
             this.lblATitle.Font = new System.Drawing.Font("Segoe UI", 14F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.lblATitle.Location = new System.Drawing.Point(3, 7);
+            this.lblATitle.Location = new System.Drawing.Point(4, 9);
+            this.lblATitle.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
             this.lblATitle.Name = "lblATitle";
-            this.lblATitle.Size = new System.Drawing.Size(175, 25);
+            this.lblATitle.Size = new System.Drawing.Size(222, 32);
             this.lblATitle.TabIndex = 1;
             this.lblATitle.Text = "Attribute Mappings";
             // 
@@ -120,9 +124,10 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             this.pnlMain1.BackColor = System.Drawing.Color.White;
             this.pnlMain1.Controls.Add(this.lvAttributeMappings);
             this.pnlMain1.Dock = System.Windows.Forms.DockStyle.Top;
-            this.pnlMain1.Location = new System.Drawing.Point(0, 58);
+            this.pnlMain1.Location = new System.Drawing.Point(0, 71);
+            this.pnlMain1.Margin = new System.Windows.Forms.Padding(4);
             this.pnlMain1.Name = "pnlMain1";
-            this.pnlMain1.Size = new System.Drawing.Size(1272, 268);
+            this.pnlMain1.Size = new System.Drawing.Size(1696, 300);
             this.pnlMain1.TabIndex = 1;
             // 
             // lvAttributeMappings
@@ -135,13 +140,14 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             this.chAMapAttributeLogical,
             this.chAMapState});
             this.lvAttributeMappings.ContextMenuStrip = this.cms_ContextMenu;
-            this.lvAttributeMappings.Dock = System.Windows.Forms.DockStyle.Top;
+            this.lvAttributeMappings.Dock = System.Windows.Forms.DockStyle.Fill;
             this.lvAttributeMappings.FullRowSelect = true;
             this.lvAttributeMappings.HideSelection = false;
             this.lvAttributeMappings.LabelEdit = true;
             this.lvAttributeMappings.Location = new System.Drawing.Point(0, 0);
+            this.lvAttributeMappings.Margin = new System.Windows.Forms.Padding(4);
             this.lvAttributeMappings.Name = "lvAttributeMappings";
-            this.lvAttributeMappings.Size = new System.Drawing.Size(1272, 262);
+            this.lvAttributeMappings.Size = new System.Drawing.Size(1696, 300);
             this.lvAttributeMappings.Sorting = System.Windows.Forms.SortOrder.Ascending;
             this.lvAttributeMappings.TabIndex = 5;
             this.lvAttributeMappings.UseCompatibleStateImageBehavior = false;
@@ -191,20 +197,20 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             this.cmsi_Delete,
             this.cmsi_UndoDelete});
             this.cms_ContextMenu.Name = "cms_ContextMenu";
-            this.cms_ContextMenu.Size = new System.Drawing.Size(140, 48);
+            this.cms_ContextMenu.Size = new System.Drawing.Size(163, 52);
             this.cms_ContextMenu.Opening += new System.ComponentModel.CancelEventHandler(this.cms_ContextMenu_Opening);
             // 
             // cmsi_Delete
             // 
             this.cmsi_Delete.Name = "cmsi_Delete";
-            this.cmsi_Delete.Size = new System.Drawing.Size(139, 22);
+            this.cmsi_Delete.Size = new System.Drawing.Size(162, 24);
             this.cmsi_Delete.Text = "Delete";
             this.cmsi_Delete.Click += new System.EventHandler(this.cmsi_Delete_Click);
             // 
             // cmsi_UndoDelete
             // 
             this.cmsi_UndoDelete.Name = "cmsi_UndoDelete";
-            this.cmsi_UndoDelete.Size = new System.Drawing.Size(139, 22);
+            this.cmsi_UndoDelete.Size = new System.Drawing.Size(162, 24);
             this.cmsi_UndoDelete.Text = "Undo Delete";
             this.cmsi_UndoDelete.Click += new System.EventHandler(this.cmsi_UndoDelete_Click);
             // 
@@ -214,17 +220,18 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             this.pnlFooter.Controls.Add(this.btnCancel);
             this.pnlFooter.Controls.Add(this.btnClose);
             this.pnlFooter.Dock = System.Windows.Forms.DockStyle.Bottom;
-            this.pnlFooter.Location = new System.Drawing.Point(0, 658);
+            this.pnlFooter.Location = new System.Drawing.Point(0, 747);
+            this.pnlFooter.Margin = new System.Windows.Forms.Padding(4);
             this.pnlFooter.Name = "pnlFooter";
-            this.pnlFooter.Size = new System.Drawing.Size(1272, 52);
+            this.pnlFooter.Size = new System.Drawing.Size(1696, 64);
             this.pnlFooter.TabIndex = 3;
             // 
             // btnCancel
             // 
-            this.btnCancel.Location = new System.Drawing.Point(10, 15);
-            this.btnCancel.Margin = new System.Windows.Forms.Padding(4);
+            this.btnCancel.Location = new System.Drawing.Point(13, 18);
+            this.btnCancel.Margin = new System.Windows.Forms.Padding(5);
             this.btnCancel.Name = "btnCancel";
-            this.btnCancel.Size = new System.Drawing.Size(100, 28);
+            this.btnCancel.Size = new System.Drawing.Size(133, 34);
             this.btnCancel.TabIndex = 7;
             this.btnCancel.Text = "Cancel";
             this.btnCancel.UseVisualStyleBackColor = true;
@@ -233,9 +240,10 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             // btnClose
             // 
             this.btnClose.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.btnClose.Location = new System.Drawing.Point(1185, 18);
+            this.btnClose.Location = new System.Drawing.Point(1580, 22);
+            this.btnClose.Margin = new System.Windows.Forms.Padding(4);
             this.btnClose.Name = "btnClose";
-            this.btnClose.Size = new System.Drawing.Size(75, 23);
+            this.btnClose.Size = new System.Drawing.Size(100, 28);
             this.btnClose.TabIndex = 5;
             this.btnClose.Text = "OK";
             this.btnClose.UseVisualStyleBackColor = true;
@@ -248,17 +256,19 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             this.pnlHeader2.Controls.Add(this.lblVDescription);
             this.pnlHeader2.Controls.Add(this.lblVTitle);
             this.pnlHeader2.Dock = System.Windows.Forms.DockStyle.Top;
-            this.pnlHeader2.Location = new System.Drawing.Point(0, 326);
+            this.pnlHeader2.Location = new System.Drawing.Point(0, 371);
+            this.pnlHeader2.Margin = new System.Windows.Forms.Padding(4);
             this.pnlHeader2.Name = "pnlHeader2";
-            this.pnlHeader2.Size = new System.Drawing.Size(1272, 58);
+            this.pnlHeader2.Size = new System.Drawing.Size(1696, 71);
             this.pnlHeader2.TabIndex = 5;
             // 
             // btnNewValue
             // 
             this.btnNewValue.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.btnNewValue.Location = new System.Drawing.Point(1070, 16);
+            this.btnNewValue.Location = new System.Drawing.Point(1427, 20);
+            this.btnNewValue.Margin = new System.Windows.Forms.Padding(4);
             this.btnNewValue.Name = "btnNewValue";
-            this.btnNewValue.Size = new System.Drawing.Size(190, 23);
+            this.btnNewValue.Size = new System.Drawing.Size(253, 28);
             this.btnNewValue.TabIndex = 7;
             this.btnNewValue.Text = "New Value Mapping";
             this.btnNewValue.UseVisualStyleBackColor = true;
@@ -268,9 +278,10 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             // 
             this.lblVDescription.AutoSize = true;
             this.lblVDescription.Font = new System.Drawing.Font("Segoe UI", 8.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.lblVDescription.Location = new System.Drawing.Point(5, 34);
+            this.lblVDescription.Location = new System.Drawing.Point(7, 42);
+            this.lblVDescription.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
             this.lblVDescription.Name = "lblVDescription";
-            this.lblVDescription.Size = new System.Drawing.Size(125, 13);
+            this.lblVDescription.Size = new System.Drawing.Size(152, 19);
             this.lblVDescription.TabIndex = 2;
             this.lblVDescription.Text = "Match records by value";
             // 
@@ -278,9 +289,10 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             // 
             this.lblVTitle.AutoSize = true;
             this.lblVTitle.Font = new System.Drawing.Font("Segoe UI", 14F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.lblVTitle.Location = new System.Drawing.Point(3, 7);
+            this.lblVTitle.Location = new System.Drawing.Point(4, 9);
+            this.lblVTitle.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
             this.lblVTitle.Name = "lblVTitle";
-            this.lblVTitle.Size = new System.Drawing.Size(148, 25);
+            this.lblVTitle.Size = new System.Drawing.Size(186, 32);
             this.lblVTitle.TabIndex = 1;
             this.lblVTitle.Text = "Value Mappings";
             // 
@@ -289,9 +301,10 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             this.pnlMain2.BackColor = System.Drawing.Color.White;
             this.pnlMain2.Controls.Add(this.lvValueMappings);
             this.pnlMain2.Dock = System.Windows.Forms.DockStyle.Top;
-            this.pnlMain2.Location = new System.Drawing.Point(0, 384);
+            this.pnlMain2.Location = new System.Drawing.Point(0, 442);
+            this.pnlMain2.Margin = new System.Windows.Forms.Padding(4);
             this.pnlMain2.Name = "pnlMain2";
-            this.pnlMain2.Size = new System.Drawing.Size(1272, 268);
+            this.pnlMain2.Size = new System.Drawing.Size(1696, 300);
             this.pnlMain2.TabIndex = 7;
             // 
             // lvValueMappings
@@ -306,13 +319,14 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             this.chVMapTargetId,
             this.chVMapState});
             this.lvValueMappings.ContextMenuStrip = this.cms_ContextMenu;
-            this.lvValueMappings.Dock = System.Windows.Forms.DockStyle.Top;
+            this.lvValueMappings.Dock = System.Windows.Forms.DockStyle.Fill;
             this.lvValueMappings.FullRowSelect = true;
             this.lvValueMappings.HideSelection = false;
             this.lvValueMappings.LabelEdit = true;
             this.lvValueMappings.Location = new System.Drawing.Point(0, 0);
+            this.lvValueMappings.Margin = new System.Windows.Forms.Padding(4);
             this.lvValueMappings.Name = "lvValueMappings";
-            this.lvValueMappings.Size = new System.Drawing.Size(1272, 269);
+            this.lvValueMappings.Size = new System.Drawing.Size(1696, 300);
             this.lvValueMappings.Sorting = System.Windows.Forms.SortOrder.Ascending;
             this.lvValueMappings.TabIndex = 5;
             this.lvValueMappings.UseCompatibleStateImageBehavior = false;
@@ -372,14 +386,16 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             // 
             // Mappings
             // 
-            this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
+            this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 16F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(1272, 710);
+            this.ClientSize = new System.Drawing.Size(1696, 811);
+            this.Controls.Add(this.pnlFooter);
             this.Controls.Add(this.pnlMain2);
             this.Controls.Add(this.pnlHeader2);
-            this.Controls.Add(this.pnlFooter);
             this.Controls.Add(this.pnlMain1);
             this.Controls.Add(this.pnlHeader1);
+            this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.Fixed3D;
+            this.Margin = new System.Windows.Forms.Padding(4);
             this.MaximizeBox = false;
             this.MinimizeBox = false;
             this.Name = "Mappings";

@@ -29,7 +29,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
         private EntityCollection _sourceCollection;
         private EntityCollection _targetCollection;
-        private RecordCollection _recordCollection;
 
         private List<ListViewItem> _resultsData = new List<ListViewItem>();
         #endregion Variables
@@ -61,19 +60,15 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             };
         }
 
-        public void Export(TableData tableData, UiSettings uiSettings, string path)
+        public bool Export(TableData tableData, UiSettings uiSettings, string filePath)
         {
             RetrieveSourceData(tableData, uiSettings.BatchSize);
-            ExecuteJson(tableData, path, ImportExportAction.Export);
-
-            MessageBox.Show("Records successfully exported", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return SaveJsonFile(tableData, filePath);
         }
 
-        public OperationResult Import(TableData tableData, string path, UiSettings uiSettings)
+        public OperationResult Import(TableData tableData, RecordCollection collection, UiSettings uiSettings)
         {
-            ExecuteJson(null, path, ImportExportAction.Import);
-            ImportFileDataChecks(tableData);
-
+            _sourceCollection = collection.ToEntityCollection();
             RetrieveTargetData(tableData.Table.LogicalName, tableData.Table.IdAttribute, uiSettings.BatchSize);
 
             var msg = $"You are about to import {_sourceCollection.Entities.Count} {tableData.Table.DisplayName} records. Continue?";
@@ -234,50 +229,24 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             return responses;
         }
 
-        private void ExecuteJson(TableData tableData, string path, ImportExportAction operation)
+        private bool SaveJsonFile(TableData tableData, string path)
         {
+            var success = false;
+
             // export -> serialize source records to json and save file
-            if (operation.Equals(ImportExportAction.Export))
+            _sourceCollection.EntityName = tableData.Table.LogicalName;
+            var msg = $"You are about to export {_sourceCollection.Entities.Count} {tableData.Table.DisplayName} records. Continue?";
+            var result = MessageBox.Show(msg, "Info", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            if (result.Equals(DialogResult.Yes))
             {
-                _sourceCollection.EntityName = tableData.Table.LogicalName;
-                var msg = $"You are about to export {_sourceCollection.Entities.Count} {tableData.Table.DisplayName} records. Continue?";
-                var result = MessageBox.Show(msg, "Info", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-                if (result.Equals(DialogResult.Yes))
-                {
-                    var collection = new RecordCollection(_sourceCollection, tableData.Metadata);
-                    var json = collection.SerializeObject<RecordCollection>();
-                    File.WriteAllText($"{path}/{tableData.Table.LogicalName}.json", json);
-                }
+                var collection = new RecordCollection(_sourceCollection, tableData.Metadata);
+                var json = collection.SerializeObject<RecordCollection>();
+                File.WriteAllText(path, json);
+
+                success = true;
             }
 
-            // import -> deserialize json and set source records
-            if (operation.Equals(ImportExportAction.Import))
-            {
-                var json = File.ReadAllText(path);
-
-                _recordCollection = json.DeserializeObject<RecordCollection>();
-                _sourceCollection = _recordCollection.ToEntityCollection();
-            }
-        }
-
-        private void ImportFileDataChecks(TableData tableData)
-        {
-            if (_recordCollection == null)
-            {
-                throw new Exception($"Invalid import file: Invalid structure");
-            }
-            if (!tableData.Table.LogicalName.Equals(_recordCollection.LogicalName))
-            {
-                throw new Exception($"Invalid import file: Unexpected table '{_recordCollection.LogicalName}'");
-            }
-            if (!tableData.Table.IdAttribute.Equals(_recordCollection.PrimaryIdAttribute))
-            {
-                throw new Exception($"Invalid import file: Unexpected primary ID attribute '{_recordCollection.PrimaryIdAttribute}'");
-            }
-            if (_recordCollection.Count == 0 || !_recordCollection.Records.Any())
-            {
-                throw new Exception($"Invalid import file: No records");
-            }
+            return success;
         }
 
         private string ParseFetchQuery(string logicalName, List<string> columns, string filter)

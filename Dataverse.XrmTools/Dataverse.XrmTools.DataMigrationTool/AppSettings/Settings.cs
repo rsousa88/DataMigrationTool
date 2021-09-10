@@ -7,10 +7,10 @@ namespace Dataverse.XrmTools.DataMigrationTool.AppSettings
 {
     public class Settings
     {
-        public string ExportPath { get; set; }
         public List<Instance> Instances { get; set; }
         public List<TableSettings> TableSettings { get; set; }
         public List<Sort> Sorts { get; set; }
+        public string LastDataFile { get; set; }
 
         public Instance this[Guid orgId]
         {

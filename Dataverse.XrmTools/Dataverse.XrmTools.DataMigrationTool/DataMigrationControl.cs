@@ -6,7 +6,6 @@ using System.Data;
 using System.Linq;
 using System.Drawing;
 using System.Windows.Forms;
-using System.ComponentModel;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Collections.Specialized;
@@ -20,16 +19,17 @@ using Microsoft.Xrm.Tooling.Connector;
 using McTools.Xrm.Connection;
 using XrmToolBox.Extensibility;
 using XrmToolBox.Extensibility.Args;
+using WK.Libraries.BetterFolderBrowserNS;
 using XrmToolBox.Extensibility.Interfaces;
 
 // DataMigrationTool
 using Dataverse.XrmTools.DataMigrationTool.Enums;
 using Dataverse.XrmTools.DataMigrationTool.Logic;
+using Dataverse.XrmTools.DataMigrationTool.Forms;
 using Dataverse.XrmTools.DataMigrationTool.Models;
 using Dataverse.XrmTools.DataMigrationTool.Helpers;
 using Dataverse.XrmTools.DataMigrationTool.AppSettings;
 using Dataverse.XrmTools.DataMigrationTool.Repositories;
-using Dataverse.XrmTools.DataMigrationTool.Forms;
 
 namespace Dataverse.XrmTools.DataMigrationTool
 {
@@ -85,7 +85,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 base.UpdateConnection(newService, detail, actionName, parameter);
                 _sourceClient = Service as CrmServiceClient;
 
-                if (actionName != "AdditionalOrganization")
+                if (!actionName.Equals("AdditionalOrganization"))
                 {
                     var orgId = detail.ConnectionId.Value;
                     _instance = _settings.Instances.FirstOrDefault(org => org.Id.Equals(orgId));
@@ -108,8 +108,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     LogInfo($"Rendering UI components...");
                     RenderConnectionLabel(ConnectionType.Source, _instance.Name);
                     RenderMappingsButton();
-                    txtExportDirPath.Text = _settings.ExportPath;
-                    EnableComponentsOnMainConnection();
+
+                    ReRenderComponents(true);
 
                     // save settings file
                     SettingsHelper.SetSettings(_settings);
@@ -120,6 +120,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
             catch (Exception ex)
             {
+                ManageWorkingState(false);
                 LogError(ex.Message);
                 MessageBox.Show(this, $"An error occurred: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
@@ -149,14 +150,15 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         throw new Exception("Source and Target connections must refer to different Dataverse instances");
                     }
 
+                    ReRenderComponents(true);
                     RenderConnectionLabel(ConnectionType.Target, detail.ConnectionName);
-                    EnableComponentsOnSecondaryConnection();
 
                     SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Target Connection ready"));
                 }
             }
             catch (Exception ex)
             {
+                ManageWorkingState(false);
                 LogError(ex.Message);
                 MessageBox.Show(this, $"An error occurred: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
@@ -187,6 +189,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
             catch (Exception ex)
             {
+                ManageWorkingState(false);
                 LogError(ex.Message);
                 MessageBox.Show(this, $"An error occurred: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
@@ -202,6 +205,9 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private void LoadTables()
         {
             LogInfo($"Loading tables...");
+
+            gbAttributes.Enabled = false;
+            gbFilters.Enabled = false;
 
             if (Service == null)
             {
@@ -237,7 +243,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 {
                     if (args.Error != null)
                     {
-                        MessageBox.Show(this, $"An error occurred: {args.Error.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        throw new Exception(args.Error.Message);
                     }
                     else
                     {
@@ -270,11 +276,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 lvTables.Items.Add(item);
             }
 
-            // re-render list view columns
-            var maxWidth = lvTables.Width >= 150 ? lvTables.Width * 2 : 300;
-            chTblDisplayName.Width = (int)Math.Floor(maxWidth * 0.50);
-            chTblLogicalName.Width = (int)Math.Floor(maxWidth * 0.50);
-
             ManageWorkingState(false);
         }
 
@@ -285,6 +286,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (_working) { return; }
 
             lvAttributes.Items.Clear();
+            cbSelectAll.Checked = false;
 
             ManageWorkingState(true);
 
@@ -300,8 +302,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 Message = $"Loading {tableData.Table.DisplayName} attributes...",
                 Work = (worker, args) =>
                 {
-                    cbSelectAll.Checked = false;
-
                     // filter valid attributes
                     args.Result = tableData.Metadata.Attributes
                         .Where(att => att.IsValidForRead != null && att.IsValidForRead.Value)
@@ -320,9 +320,10 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 {
                     if (args.Error != null)
                     {
-                        gbAttributes.Visible = false;
-                        gbFilters.Visible = false;
-                        MessageBox.Show(this, $"An error occurred: {args.Error.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        ReRenderComponents(false);
+
+                        gbFilters.Enabled = false;
+                        throw new Exception(args.Error.Message);
                     }
                     else
                     {
@@ -370,14 +371,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 lvAttributes.Items.Add(item);
             }
 
-            // re-render list view columns
-            var maxWidth = lvAttributes.Width >= 500 ? lvAttributes.Width : 500;
-            chAttrDisplayName.Width = (int)Math.Floor(maxWidth * 0.25);
-            chAttrLogicalName.Width = (int)Math.Floor(maxWidth * 0.25);
-            chAttrType.Width = (int)Math.Floor(maxWidth * 0.20);
-            chAttrDescription.Width = (int)Math.Floor(maxWidth * 0.30);
-
-            gbAttributes.Visible = true;
+            ReRenderComponents(true);
 
             ManageWorkingState(false);
         }
@@ -397,7 +391,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
             rtbFilter.Text = tableData.Settings.Filter;
 
-            gbFilters.Visible = true;
+            gbFilters.Enabled = true;
         }
 
         private void PreviewData()
@@ -464,7 +458,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         SettingsHelper.SetSettings(_settings);
                     }
 
-                    tsbAbort.Text = "Abort";
                     ManageWorkingState(false);
                 },
                 ProgressChanged = evt =>
@@ -475,9 +468,33 @@ namespace Dataverse.XrmTools.DataMigrationTool
             });
         }
 
-        private void Export()
+        private void ExportSettings(string dirPath)
         {
-            LogInfo($"Export operation...");
+            LogInfo($"Exporting table settings...");
+
+            if (string.IsNullOrEmpty(dirPath)) { return; }
+
+            var tableData = GetSelectedTableItemData(false);
+            if (tableData == null)
+            {
+                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Error exporting table settings"));
+                return;
+            }
+
+            // save serialized json with settings
+            var filename = $"{dirPath}\\{tableData.Table.LogicalName}.settings.json";
+
+            var json = tableData.Settings.SerializeObject<TableSettings>();
+            File.WriteAllText(filename, json);
+        }
+
+        private void Export(string dirPath)
+        {
+            LogInfo($"Export data operation...");
+
+            if (string.IsNullOrEmpty(dirPath)) { return; }
+
+            ManageWorkingState(true);
 
             var tableData = GetSelectedTableItemData(false, true);
             if (tableData == null)
@@ -486,7 +503,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 return;
             }
 
-            ManageWorkingState(true);
+            var filePath = $"{dirPath}/{tableData.Table.LogicalName}.json";
 
             var uiSettings = ReadSettings(Enums.Action.None);
 
@@ -495,8 +512,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 .Select(lvi => lvi.ToObject(new Models.Attribute()) as Models.Attribute)
                 .Select(attr => tableData.Table.AllAttributes.FirstOrDefault(tblAttr => tblAttr.LogicalName.Equals(attr.LogicalName)))
                 .ToList();
-
-            var path = txtExportDirPath.Text;
 
             WorkAsync(new WorkAsyncInfo
             {
@@ -508,46 +523,93 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     var data = evt.Argument as TableData;
 
                     var logic = new DataLogic(worker, Service, _targetClient);
-                    logic.Export(data, uiSettings, path);
+                    var success = logic.Export(data, uiSettings, filePath);
+                    if (success)
+                    {
+                        _settings.LastDataFile = filePath;
+                        MessageBox.Show("Records successfully exported", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
                 },
                 PostWorkCallBack = evt =>
                 {
-                    tsbAbort.Text = "Abort";
                     ManageWorkingState(false);
+                    ReRenderComponents(true);
                     SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Export complete"));
                 }
             });
         }
 
-        private void Import()
+        private void LoadSettings()
         {
-            LogInfo($"Import operation...");
+            LogInfo($"Loading table settings...");
 
-            var tableData = GetSelectedTableItemData(attributeRequired: true);
+            // get file path
+            var dialog = new OpenFileDialog
+            {
+                Title = "Select settings file...",
+                Filter = "Json files (*.json)|*.settings.json",
+                FilterIndex = 2,
+                RestoreDirectory = true
+            };
+
+            var path = GetFileDialogPath(ImportExportAction.Import, dialog);
+            if(string.IsNullOrEmpty(path)) { return; }
+
+            ManageWorkingState(true);
+
+            var json = File.ReadAllText(path);
+            var loadedSettings = json.DeserializeObject<TableSettings>();
+
+            // get table data by logical name
+            var tableData = GetTableDataByLogicalName(loadedSettings.LogicalName, false);
             if (tableData == null)
             {
                 SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Import operation aborted"));
                 return;
             }
 
-            ManageWorkingState(true);
+            // re-set settings from json file
+            tableData.Settings.Filter = loadedSettings.Filter;
+            tableData.Settings.DeselectedAttributes = loadedSettings.DeselectedAttributes;
 
-            var uiSettings = ReadSettings(Enums.Action.None);
+            ManageWorkingState(false);
+            SetSelectedTableItem(tableData);
+            SettingsHelper.SetSettings(_settings);
 
+            SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Successfully imported settings for table '{tableData.Table.DisplayName}'"));
+        }
+
+        private void Import(string path = null)
+        {
+            LogInfo($"Import operation...");
+
+            // get file path
             var dialog = new OpenFileDialog
             {
-                FileName = $"{tableData.Table.LogicalName}.json",
+                Title = "Select data file...",
                 Filter = "Json files (*.json)|*.json",
                 FilterIndex = 2,
                 RestoreDirectory = true
             };
 
-            if (!string.IsNullOrWhiteSpace(txtExportDirPath.Text))
+            path = path is null ? GetFileDialogPath(ImportExportAction.Import, dialog) : path;
+            if (string.IsNullOrEmpty(path)) { return; }
+
+            ManageWorkingState(true);
+
+            var json = File.ReadAllText(path);
+            var importData = json.DeserializeObject<RecordCollection>();
+            ImportFileDataChecks(importData);
+
+            var tableData = GetTableDataByLogicalName(importData.LogicalName);
+            if (tableData == null)
             {
-                dialog.InitialDirectory = txtExportDirPath.Text;
+                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Import operation aborted"));
+                return;
             }
 
-            var path = GetJsonFilePath(dialog);
+            // get ui settings
+            var uiSettings = ReadSettings(Enums.Action.None);
 
             WorkAsync(new WorkAsyncInfo
             {
@@ -560,7 +622,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
                     var logic = new DataLogic(worker, Service, _targetClient);
 
-                    var result = Task.Run(() => logic.Import(data, path, uiSettings));
+                    var result = Task.Run(() => logic.Import(data, importData, uiSettings));
 
                     evt.Result = result.Result;
                 },
@@ -577,41 +639,40 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         SettingsHelper.SetSettings(_settings);
                     }
 
-                    tsbAbort.Text = "Abort";
                     ManageWorkingState(false);
                     SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Import complete"));
                 }
             });
         }
 
-        private string GetJsonFilePath(FileDialog dialog)
+        private string GetExportDirectoryPath()
         {
             var path = string.Empty;
-            using (var ofd = dialog as OpenFileDialog)
+
+            using (var bfb = new BetterFolderBrowser())
             {
-                if (ofd.ShowDialog() == DialogResult.OK)
+                bfb.Title = "Select export directory";
+
+                if (bfb.ShowDialog(this) == DialogResult.OK)
                 {
-                    path = ofd.FileName;
+                    path = bfb.SelectedPath;
                 }
             }
 
             return path;
         }
 
-        private void ImportExportTableSettings(ImportExportAction action, FileDialog dialog, TableData tableData)
+        private string GetFileDialogPath(ImportExportAction action, FileDialog dialog)
         {
+            var path = string.Empty;
+
             if (action.Equals(ImportExportAction.Export))
             {
                 using (var sfd = dialog as SaveFileDialog)
                 {
                     if (sfd.ShowDialog() == DialogResult.OK)
                     {
-                        // save serialized json with settings
-                        var path = sfd.FileName;
-                        var json = tableData.Settings.SerializeObject<TableSettings>();
-                        File.WriteAllText(path, json);
-
-                        SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Successfully exported settings for table '{tableData.Table.DisplayName}'"));
+                        path = sfd.FileName;
                     }
                 }
             }
@@ -619,25 +680,14 @@ namespace Dataverse.XrmTools.DataMigrationTool
             {
                 using (var ofd = dialog as OpenFileDialog)
                 {
-                    if (ofd.ShowDialog() == DialogResult.OK)
+                    if (ofd.ShowDialog(this) == DialogResult.OK)
                     {
-                        // get deserialized settings object from json
-                        var path = ofd.FileName;
-                        var json = File.ReadAllText(path);
-
-                        var deserialized = json.DeserializeObject<TableSettings>();
-
-                        // re-set settings from json file
-                        tableData.Settings.Filter = deserialized.Filter;
-                        tableData.Settings.DeselectedAttributes = deserialized.DeselectedAttributes;
-
-                        LoadAttributes();
-                        LoadFilters(tableData);
-
-                        SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Successfully imported settings for table '{tableData.Table.DisplayName}'"));
+                        path = ofd.FileName;
                     }
                 }
             }
+
+            return path;
         }
 
         private List<Mapping> GetMappings(UiSettings ui)
@@ -712,6 +762,66 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
             return new TableData { Table = table, Settings = tableSettings, Metadata = metadata };
         }
+
+        private TableData GetTableDataByLogicalName(string logicalName, bool targetRequired = true)
+        {
+            LogInfo($"Parsing table data...");
+
+            if (Service == null || (targetRequired && _targetClient == null))
+            {
+                throw new Exception("You must select both a source and a target organization");
+            }
+            if (targetRequired && !(cbCreate.Checked || cbUpdate.Checked || cbDelete.Checked))
+            {
+                throw new Exception("You must select at least one setting for transporting the data");
+            }
+
+            var table = _tables.FirstOrDefault(tbl => tbl.LogicalName.Equals(logicalName));
+
+            var repo = new CrmRepo(Service);
+            var metadata = repo.GetTableMetadata(table.LogicalName);
+
+            var tableSettings = _settings.GetTableSettings(_tables, table.LogicalName);
+            if (tableSettings == null)
+            {
+                throw new Exception("Invalid Table: Please reload tables and try again");
+            }
+
+            return new TableData { Table = table, Settings = tableSettings, Metadata = metadata };
+        }
+
+        private void SetSelectedTableItem(TableData tableData)
+        {
+            LogInfo($"Loading table data...");
+
+            var tableItems = lvTables.Items.Cast<ListViewItem>();
+            var tableItem = tableItems.FirstOrDefault(lvi => lvi.SubItems[1].Text.Equals(tableData.Table.LogicalName));
+            if (tableItem == null)
+            {
+                throw new Exception("Invalid Table: Please reload tables and try again");
+            }
+
+            tableItem.Focused = true;
+            tableItem.EnsureVisible();
+            tableItem.Selected = true;
+            lvTables.Select();
+        }
+
+        private void ImportFileDataChecks(RecordCollection collection)
+        {
+            if (collection == null)
+            {
+                throw new Exception($"Invalid import file: Invalid structure");
+            }
+            if (string.IsNullOrEmpty(collection.LogicalName))
+            {
+                throw new Exception($"Invalid import file: Invalid table logical name");
+            }
+            if (collection.Count == 0 || !collection.Records.Any())
+            {
+                throw new Exception($"Invalid import file: No records");
+            }
+        }
         #endregion Private Main Methods
 
         #region Private Helper Methods
@@ -719,6 +829,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             _working = working;
             Cursor = working ? Cursors.WaitCursor : Cursors.Default;
+            tsbAbort.Text = "Abort";
             tsbAbort.Visible = working;
         }
 
@@ -734,20 +845,43 @@ namespace Dataverse.XrmTools.DataMigrationTool
             btnMappings.Font = _instance.Mappings.Any() ? new Font(btnMappings.Font.Name, btnMappings.Font.Size, FontStyle.Bold) : new Font(btnMappings.Font.Name, btnMappings.Font.Size, FontStyle.Regular);
         }
 
-        private void EnableComponentsOnMainConnection()
+        private void ReRenderComponents(bool enable)
         {
-            btnSelectTarget.Enabled = true;
-            gbImportExport.Enabled = true;
-            gbOrgSettings.Enabled = true;
-            gbOpSettings.Enabled = true;
-            gbTables.Enabled = true;
-        }
+            var sourceReady = _sourceClient != null && _sourceClient.IsReady;
+            var targetReady = _targetClient != null && _targetClient.IsReady;
+            var tableSelected = lvTables.SelectedItems.Count > 0;
 
-        private void EnableComponentsOnSecondaryConnection()
-        {
-            tsbPreview.Enabled = true;
-            tsbExport.Enabled = true;
-            tsbImport.Enabled = true;
+            if (sourceReady) // source connection is available
+            {
+                btnSelectTarget.Enabled = enable;
+                gbOrgSettings.Enabled = enable;
+                gbOpSettings.Enabled = enable;
+                gbTables.Enabled = enable;
+
+                if (targetReady) // source and target connection is available
+                {
+                    tsmiImportData.Enabled = enable;
+
+                    if (!string.IsNullOrEmpty(_settings.LastDataFile)) // source and target connection is available and a a file was already exported since tool loading
+                    {
+                        tsmiImportLastFile.Enabled = true;
+                    }
+
+                    if (tableSelected) // source and target connection is available and a table is selected
+                    {
+                        tsbPreview.Enabled = enable;
+                    }
+                }
+
+                if(tableSelected) // source connection is available and table is selected
+                {
+                    gbAttributes.Enabled = true;
+                    tsmiExport.Enabled = enable;
+                    tsmiExportData.Enabled = enable;
+                    tsmiExportSettings.Enabled = enable;
+                    tsmiExportWithSettings.Enabled = enable;
+                }
+            }
         }
 
         public UiSettings ReadSettings(Enums.Action initial)
@@ -835,6 +969,46 @@ namespace Dataverse.XrmTools.DataMigrationTool
         #endregion Private Helper Methods
 
         #region Form events
+        private void DataMigrationControl_Resize(object sender, EventArgs e)
+        {
+            // re-render main panel
+            var firstColumn = pnlMain.ColumnStyles[0];
+            firstColumn.SizeType = SizeType.Absolute;
+            firstColumn.Width = 200;
+
+            // re-render settings panel
+            var settingsRows = pnlSettings.RowStyles;
+            settingsRows[0].SizeType = SizeType.Absolute;
+            settingsRows[0].Height = 115;
+            settingsRows[1].SizeType = SizeType.Absolute;
+            settingsRows[1].Height = 141;
+            settingsRows[2].SizeType = SizeType.Absolute;
+            settingsRows[2].Height = 129;
+
+            // center buttons
+            //btnSelectTarget.Parent = gbEnvironments;
+            btnSelectTarget.Left = (btnSelectTarget.Parent.Width - btnSelectTarget.Width) / 2;
+            btnMappings.Left = (btnMappings.Parent.Width - btnMappings.Width) / 2;
+        }
+
+        private void lvTables_Resize(object sender, EventArgs e)
+        {
+            // re-render list view columns
+            var maxWidth = lvTables.Width >= 300 ? lvTables.Width : 300;
+            chTblDisplayName.Width = (int)Math.Floor(maxWidth * 0.49);
+            chTblLogicalName.Width = (int)Math.Floor(maxWidth * 0.49);
+        }
+
+        private void lvAttributes_Resize(object sender, EventArgs e)
+        {
+            // re-render list view columns
+            var maxWidth = lvAttributes.Width >= 500 ? lvAttributes.Width : 500;
+            chAttrDisplayName.Width = (int)Math.Floor(maxWidth * 0.25);
+            chAttrLogicalName.Width = (int)Math.Floor(maxWidth * 0.25);
+            chAttrType.Width = (int)Math.Floor(maxWidth * 0.19);
+            chAttrDescription.Width = (int)Math.Floor(maxWidth * 0.29);
+        }
+
         private async void txtTableFilter_TextChanged(object sender, EventArgs e)
         {
             async Task<bool> UserKeepsTyping()
@@ -857,6 +1031,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
             catch (Exception ex)
             {
+                ManageWorkingState(false);
+                LogError(ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally
@@ -877,6 +1053,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
             catch (Exception ex)
             {
+                ManageWorkingState(false);
+                LogError(ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -889,6 +1067,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
             catch (Exception ex)
             {
+                ManageWorkingState(false);
+                LogError(ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -901,6 +1081,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
             catch (Exception ex)
             {
+                ManageWorkingState(false);
+                LogError(ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -913,6 +1095,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
             catch (Exception ex)
             {
+                ManageWorkingState(false);
+                LogError(ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -925,23 +1109,59 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
             catch (Exception ex)
             {
+                ManageWorkingState(false);
+                LogError(ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
-        private void tsbExport_Click(object sender, EventArgs e)
+        private void tsmiExportData_Click(object sender, EventArgs e)
         {
             try
             {
-                Export();
+                var dirPath = GetExportDirectoryPath();
+                Export(dirPath);
             }
             catch (Exception ex)
             {
+                ManageWorkingState(false);
+                LogError(ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
-        private void tsbImport_Click(object sender, EventArgs e)
+        private void tsmiExportSettings_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                var dirPath = GetExportDirectoryPath();
+                ExportSettings(dirPath);
+            }
+            catch (Exception ex)
+            {
+                ManageWorkingState(false);
+                LogError(ex.Message);
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void tsmiExportWithSettings_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                var dirPath = GetExportDirectoryPath();
+                ExportSettings(dirPath);
+                Export(dirPath);
+            }
+            catch (Exception ex)
+            {
+                ManageWorkingState(false);
+                LogError(ex.Message);
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void tsmiImportData_Click(object sender, EventArgs e)
         {
             try
             {
@@ -949,6 +1169,36 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
             catch (Exception ex)
             {
+                ManageWorkingState(false);
+                LogError(ex.Message);
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void tsmiImportSettings_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                LoadSettings();
+            }
+            catch (Exception ex)
+            {
+                ManageWorkingState(false);
+                LogError(ex.Message);
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void tsmiImportLastFile_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                Import(_settings.LastDataFile);
+            }
+            catch (Exception ex)
+            {
+                ManageWorkingState(false);
+                LogError(ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -962,6 +1212,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
             catch (Exception ex)
             {
+                ManageWorkingState(false);
+                LogError(ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -990,6 +1242,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
             catch (Exception ex)
             {
+                ManageWorkingState(false);
+                LogError(ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -1017,71 +1271,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private void btnExportTableSettings_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                var tableData = GetSelectedTableItemData(false);
-                if (tableData == null)
-                {
-                    SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Error saving settings"));
-                    return;
-                }
-
-                var dialog = new SaveFileDialog
-                {
-                    FileName = $"{tableData.Table.LogicalName}.settings.json",
-                    Filter = "Json files (*.json)|*.json",
-                    FilterIndex = 2,
-                    RestoreDirectory = true
-                };
-
-                if (!string.IsNullOrWhiteSpace(txtExportDirPath.Text))
-                {
-                    dialog.InitialDirectory = txtExportDirPath.Text;
-                }
-
-                ImportExportTableSettings(ImportExportAction.Export, dialog, tableData);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private void btnImportTableSettings_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                var tableData = GetSelectedTableItemData(false);
-                if (tableData == null)
-                {
-                    SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Error loading settings"));
-                    return;
-                }
-
-                var dialog = new OpenFileDialog
-                {
-                    FileName = $"{tableData.Table.LogicalName}.settings.json",
-                    Filter = "Json files (*.json)|*.json",
-                    FilterIndex = 2,
-                    RestoreDirectory = true
-                };
-
-                if (!string.IsNullOrWhiteSpace(txtExportDirPath.Text))
-                {
-                    dialog.InitialDirectory = txtExportDirPath.Text;
-                }
-
-                ImportExportTableSettings(ImportExportAction.Import, dialog, tableData);
-                SettingsHelper.SetSettings(_settings);
-            }
-            catch (Exception ex)
-            {
+                ManageWorkingState(false);
+                LogError(ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -1103,56 +1294,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private void btnSelectExportDir_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                using (var fbd = new FolderBrowserDialog())
-                {
-                    if (fbd.ShowDialog() == DialogResult.OK)
-                    {
-                        txtExportDirPath.Text = fbd.SelectedPath;
-                        _settings.ExportPath = fbd.SelectedPath;
-                        SettingsHelper.SetSettings(_settings);
-
-                        SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Successfully updated Export directory"));
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private void txtExportDirPath_Validating(object sender, CancelEventArgs e)
-        {
-            try
-            {
-                var txtBox = sender as TextBox;
-                var path = txtBox.Text;
-
-                var validDir = Directory.Exists(path);
-                if (!validDir)
-                {
-                    MessageBox.Show("You selected an invalid export directory", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    txtBox.Text = _settings.ExportPath;
-                    e.Cancel = true;
-                }
-                else
-                {
-                    _settings.ExportPath = path;
-                    SettingsHelper.SetSettings(_settings);
-
-                    SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Successfully updated Export directory"));
-                }
-            }
-            catch (Exception ex)
-            {
+                ManageWorkingState(false);
+                LogError(ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -1171,6 +1314,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
             catch (Exception ex)
             {
+                ManageWorkingState(false);
+                LogError(ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -1194,6 +1339,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
             catch (Exception ex)
             {
+                ManageWorkingState(false);
+                LogError(ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }

@@ -32,13 +32,13 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             this.pnlHeader = new System.Windows.Forms.Panel();
             this.lblTitle = new System.Windows.Forms.Label();
             this.pnlFooter = new System.Windows.Forms.Panel();
+            this.btnCancel = new System.Windows.Forms.Button();
             this.btnClose = new System.Windows.Forms.Button();
             this.pnlMain = new System.Windows.Forms.Panel();
             this.cbAtributes = new System.Windows.Forms.ComboBox();
             this.lblAttribute = new System.Windows.Forms.Label();
             this.cbTables = new System.Windows.Forms.ComboBox();
             this.lblTable = new System.Windows.Forms.Label();
-            this.btnCancel = new System.Windows.Forms.Button();
             this.pnlHeader.SuspendLayout();
             this.pnlFooter.SuspendLayout();
             this.pnlMain.SuspendLayout();
@@ -77,6 +77,17 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             this.pnlFooter.Name = "pnlFooter";
             this.pnlFooter.Size = new System.Drawing.Size(487, 57);
             this.pnlFooter.TabIndex = 4;
+            // 
+            // btnCancel
+            // 
+            this.btnCancel.Location = new System.Drawing.Point(13, 14);
+            this.btnCancel.Margin = new System.Windows.Forms.Padding(4);
+            this.btnCancel.Name = "btnCancel";
+            this.btnCancel.Size = new System.Drawing.Size(100, 28);
+            this.btnCancel.TabIndex = 6;
+            this.btnCancel.Text = "Cancel";
+            this.btnCancel.UseVisualStyleBackColor = true;
+            this.btnCancel.Click += new System.EventHandler(this.btnCancel_Click);
             // 
             // btnClose
             // 
@@ -144,17 +155,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             this.lblTable.TabIndex = 0;
             this.lblTable.Text = "Table";
             // 
-            // btnCancel
-            // 
-            this.btnCancel.Location = new System.Drawing.Point(13, 14);
-            this.btnCancel.Margin = new System.Windows.Forms.Padding(4);
-            this.btnCancel.Name = "btnCancel";
-            this.btnCancel.Size = new System.Drawing.Size(100, 28);
-            this.btnCancel.TabIndex = 6;
-            this.btnCancel.Text = "Cancel";
-            this.btnCancel.UseVisualStyleBackColor = true;
-            this.btnCancel.Click += new System.EventHandler(this.btnCancel_Click);
-            // 
             // AttributeMapping
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 16F);
@@ -163,6 +163,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             this.Controls.Add(this.pnlMain);
             this.Controls.Add(this.pnlFooter);
             this.Controls.Add(this.pnlHeader);
+            this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.Fixed3D;
             this.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
             this.MaximizeBox = false;
             this.MinimizeBox = false;

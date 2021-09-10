@@ -20,6 +20,9 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
                     settings = new Settings { Instances = new List<Instance>(), TableSettings = new List<TableSettings>() };
                     SetSettings(settings);
                 }
+
+                // reset on each settings load
+                settings.LastDataFile = string.Empty;
             }
             catch { throw; }
         }
