@@ -19,7 +19,6 @@ using Microsoft.Xrm.Tooling.Connector;
 using McTools.Xrm.Connection;
 using XrmToolBox.Extensibility;
 using XrmToolBox.Extensibility.Args;
-using WK.Libraries.BetterFolderBrowserNS;
 using XrmToolBox.Extensibility.Interfaces;
 
 // DataMigrationTool
@@ -649,13 +648,13 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             var path = string.Empty;
 
-            using (var bfb = new BetterFolderBrowser())
+            using (var fbd = new FolderBrowserDialog())
             {
-                bfb.Title = "Select export directory";
+                fbd.Description = "Select export directory";
 
-                if (bfb.ShowDialog(this) == DialogResult.OK)
+                if (fbd.ShowDialog(this) == DialogResult.OK)
                 {
-                    path = bfb.SelectedPath;
+                    path = fbd.SelectedPath;
                 }
             }
 
