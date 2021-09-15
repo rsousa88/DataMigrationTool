@@ -234,7 +234,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Repositories
                 var multipleReq = new ExecuteMultipleRequest
                 {
                     Requests = new OrganizationRequestCollection(),
-                    Settings = new ExecuteMultipleSettings { ContinueOnError = true }
+                    Settings = new ExecuteMultipleSettings { ContinueOnError = true, ReturnResponses = true }
                 };
 
                 multipleReq.Requests.AddRange(requests);

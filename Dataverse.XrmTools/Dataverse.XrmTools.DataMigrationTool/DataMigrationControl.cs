@@ -436,9 +436,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 {
                     var data = evt.Argument as TableData;
 
-                    // check mappings
-                    var mappings = GetMappings(uiSettings);
-
                     var logic = new DataLogic(worker, Service, _targetClient);
                     var result = Task.Run(() => logic.Preview(data, uiSettings));
 
@@ -619,9 +616,12 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 {
                     var data = evt.Argument as TableData;
 
+                    // check mappings
+                    var mappings = GetMappings(uiSettings);
+
                     var logic = new DataLogic(worker, Service, _targetClient);
 
-                    var result = Task.Run(() => logic.Import(data, importData, uiSettings));
+                    var result = Task.Run(() => logic.Import(data, importData, uiSettings, mappings));
 
                     evt.Result = result.Result;
                 },
@@ -1287,6 +1287,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
                 if (mappingsDlg.Updated)
                 {
+                    RenderMappingsButton();
+
                     SettingsHelper.SetSettings(_settings);
                     SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Succesfully updated Organization Mappings"));
                 }

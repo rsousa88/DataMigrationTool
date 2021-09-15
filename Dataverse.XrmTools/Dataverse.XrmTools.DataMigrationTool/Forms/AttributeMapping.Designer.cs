@@ -172,7 +172,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             this.ShowInTaskbar = false;
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
             this.Text = "AttributeMapping";
-            this.TopMost = true;
             this.Load += new System.EventHandler(this.LoadTables);
             this.pnlHeader.ResumeLayout(false);
             this.pnlHeader.PerformLayout();

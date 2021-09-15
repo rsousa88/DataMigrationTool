@@ -48,36 +48,85 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                 .Select(map => map.ToListViewItem(new Tuple<string, object>("mappingtype", MappingType.Attribute)));
 
             lvAttributeMappings.Items.AddRange(attrMapItems.ToArray());
-
-            // re-render list view columns
-            lvAttributeMappings.AutoResizeColumns(ColumnHeaderAutoResizeStyle.ColumnContent);
-
-            // ensure minimum width
-            if (chAMapType.Width < 90) { chAMapType.Width = 90; }
-            if (chAMapTableDisplay.Width < 280) { chAMapTableDisplay.Width = 280; }
-            if (chAMapTableLogical.Width < 230) { chAMapTableLogical.Width = 230; }
-            if (chAMapAttributeDisplay.Width < 280) { chAMapAttributeDisplay.Width = 280; }
-            if (chAMapAttributeLogical.Width < 230) { chAMapAttributeLogical.Width = 230; }
-            if (chAMapState.Width < 150) { chAMapState.Width = 150; }
+            lvAttributeMappings.Scrollable = false;
 
             var valMapItems = _instance.Mappings
                 .Where(map => map.Type.Equals(MappingType.Value))
                 .Select(map => map.ToListViewItem(new Tuple<string, object>("mappingtype", MappingType.Value)));
 
             lvValueMappings.Items.AddRange(valMapItems.ToArray());
+            lvValueMappings.Scrollable = false;
+        }
 
-            // re-render list view columns
-            lvValueMappings.AutoResizeColumns(ColumnHeaderAutoResizeStyle.ColumnContent);
+        private void ControlContextOptions (ListView listView, MappingType mappingType)
+        {
+            if (listView.FocusedItem != null && listView.SelectedItems.Count > 0)
+            {
+                cmsi_Delete.Visible = false;
+                cmsi_UndoDelete.Visible = false;
 
-            // ensure minimum width
-            if (chVMapType.Width < 90) { chVMapType.Width = 90; }
-            if (chVMapTableDisplay.Width < 160) { chVMapTableDisplay.Width = 160; }
-            if (chVMapTableLogical.Width < 140) { chVMapTableLogical.Width = 140; }
-            if (chVMapAttributeDisplay.Width < 160) { chVMapAttributeDisplay.Width = 160; }
-            if (chVMapAttributeLogical.Width < 140) { chVMapAttributeLogical.Width = 140; }
-            if (chVMapSourceId.Width < 225) { chVMapSourceId.Width = 225; }
-            if (chVMapTargetId.Width < 225) { chVMapSourceId.Width = 225; }
-            if (chVMapState.Width < 125) { chVMapState.Width = 125; }
+                var selectedMappings = listView.SelectedItems
+                    .Cast<ListViewItem>()
+                    .Select(lvi => lvi.ToObject(new Mapping(), new Tuple<string, object>("mappingtype", mappingType)) as Mapping)
+                    .Select(map => _instance.Mappings.FirstOrDefault(insMap => insMap.Type.Equals(mappingType) && insMap.TableLogicalName.Equals(map.TableLogicalName)));
+
+                if (selectedMappings.Any(map => !map.State.Equals(MappingState.Delete)))
+                {
+                    cmsi_Delete.Visible = true;
+                }
+
+                if (selectedMappings.Any(map => map.State.Equals(MappingState.Delete)))
+                {
+                    cmsi_UndoDelete.Visible = true;
+                }
+            }
+        }
+
+        private void DeleteMappings(ListView listView, MappingType mappingType)
+        {
+            var toDelete = listView.SelectedItems
+                    .Cast<ListViewItem>()
+                    .Select(lvi => lvi.ToObject(new Mapping(), new Tuple<string, object>("mappingtype", mappingType)) as Mapping)
+                    .Select(map => _instance.Mappings
+                        .FirstOrDefault(insMap =>
+                            insMap.Type.Equals(mappingType) &&
+                            insMap.TableLogicalName.Equals(map.TableLogicalName) &&
+                            insMap.SourceId.Equals(map.SourceId) &&
+                            insMap.TargetId.Equals(map.TargetId) &&
+                            !insMap.State.Equals(MappingState.Delete)
+                            )).ToList();
+
+            // mark selected mappings to be deleted
+            var intersect = _instance.Mappings.Intersect(toDelete);
+            foreach (var del in intersect)
+            {
+                del.State = MappingState.Delete;
+            }
+
+            MappingListsLoad(null, null);
+        }
+
+        private void UndoDeleteMappings(ListView listView, MappingType mappingType)
+        {
+            var toUndo = listView.SelectedItems
+                    .Cast<ListViewItem>()
+                    .Select(lvi => lvi.ToObject(new Mapping(), new Tuple<string, object>("mappingtype", mappingType)) as Mapping)
+                    .Select(map => _instance.Mappings
+                        .FirstOrDefault(insMap =>
+                            insMap.Type.Equals(mappingType) &&
+                            insMap.TableLogicalName.Equals(map.TableLogicalName) &&
+                            insMap.AttributeLogicalName.Equals(map.AttributeLogicalName) &&
+                            insMap.State.Equals(MappingState.Delete)
+                            )).ToList();
+
+            // mark selected mappings to be undone
+            var intersect = _instance.Mappings.Intersect(toUndo);
+            foreach (var undo in intersect)
+            {
+                undo.State = MappingState.Undo;
+            }
+
+            MappingListsLoad(null, null);
         }
 
         private void btnNewAttribute_Click(object sender, EventArgs e)
@@ -90,7 +139,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
 
         private void btnNewValue_Click(object sender, EventArgs e)
         {
-            var newValMappingDlg = new ValueMapping(_service, _instance, _tables);
+            var newValMappingDlg = new ValueMapping(_instance, _tables);
             newValMappingDlg.ShowDialog(ParentForm);
 
             MappingListsLoad(null, null);
@@ -174,74 +223,32 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             }
         }
 
-        private void ControlContextOptions (ListView listView, MappingType mappingType)
+        private void lvAttributeMappings_Resize(object sender, EventArgs e)
         {
-            if (listView.FocusedItem != null && listView.SelectedItems.Count > 0)
-            {
-                cmsi_Delete.Visible = false;
-                cmsi_UndoDelete.Visible = false;
+            // re-render list view columns
+            var maxWidth = lvAttributeMappings.Width >= 300 ? lvAttributeMappings.Width : 300;
+            chAMapType.Width = (int)Math.Floor(maxWidth * 0.09);
+            chAMapTableDisplay.Width = (int)Math.Floor(maxWidth * 0.25);
+            chAMapTableLogical.Width = (int)Math.Floor(maxWidth * 0.15);
+            chAMapAttributeDisplay.Width = (int)Math.Floor(maxWidth * 0.25);
+            chAMapAttributeLogical.Width = (int)Math.Floor(maxWidth * 0.15);
+            chAMapState.Width = (int)Math.Floor(maxWidth * 0.09);
 
-                var selectedMappings = listView.SelectedItems
-                    .Cast<ListViewItem>()
-                    .Select(lvi => lvi.ToObject(new Mapping(), new Tuple<string, object>("mappingtype", mappingType)) as Mapping)
-                    .Select(map => _instance.Mappings.FirstOrDefault(insMap => insMap.Type.Equals(mappingType) && insMap.TableLogicalName.Equals(map.TableLogicalName) && insMap.AttributeLogicalName.Equals(map.AttributeLogicalName)));
-
-                if (selectedMappings.Any(map => !map.State.Equals(MappingState.Delete)))
-                {
-                    cmsi_Delete.Visible = true;
-                }
-
-                if (selectedMappings.Any(map => map.State.Equals(MappingState.Delete)))
-                {
-                    cmsi_UndoDelete.Visible = true;
-                }
-            }
+            lvAttributeMappings.Scrollable = true;
         }
 
-        private void DeleteMappings(ListView listView, MappingType mappingType)
+        private void lvValueMappings_Resize(object sender, EventArgs e)
         {
-            var toDelete = listView.SelectedItems
-                    .Cast<ListViewItem>()
-                    .Select(lvi => lvi.ToObject(new Mapping(), new Tuple<string, object>("mappingtype", mappingType)) as Mapping)
-                    .Select(map => _instance.Mappings
-                        .FirstOrDefault(insMap =>
-                            insMap.Type.Equals(mappingType) &&
-                            insMap.TableLogicalName.Equals(map.TableLogicalName) &&
-                            insMap.AttributeLogicalName.Equals(map.AttributeLogicalName) &&
-                            !insMap.State.Equals(MappingState.Delete)
-                            )).ToList();
+            // re-render list view columns
+            var maxWidth = lvValueMappings.Width >= 300 ? lvValueMappings.Width : 300;
+            chVMapType.Width = (int)Math.Floor(maxWidth * 0.09);
+            chVMapTableDisplay.Width = (int)Math.Floor(maxWidth * 0.25);
+            chVMapTableLogical.Width = (int)Math.Floor(maxWidth * 0.15);
+            chVMapSourceId.Width = (int)Math.Floor(maxWidth * 0.20);
+            chVMapTargetId.Width = (int)Math.Floor(maxWidth * 0.20);
+            chVMapState.Width = (int)Math.Floor(maxWidth * 0.09);
 
-            // mark selected mappings to be deleted
-            var intersect = _instance.Mappings.Intersect(toDelete);
-            foreach (var del in intersect)
-            {
-                del.State = MappingState.Delete;
-            }
-
-            MappingListsLoad(null, null);
-        }
-
-        private void UndoDeleteMappings(ListView listView, MappingType mappingType)
-        {
-            var toUndo = listView.SelectedItems
-                    .Cast<ListViewItem>()
-                    .Select(lvi => lvi.ToObject(new Mapping(), new Tuple<string, object>("mappingtype", mappingType)) as Mapping)
-                    .Select(map => _instance.Mappings
-                        .FirstOrDefault(insMap =>
-                            insMap.Type.Equals(mappingType) &&
-                            insMap.TableLogicalName.Equals(map.TableLogicalName) &&
-                            insMap.AttributeLogicalName.Equals(map.AttributeLogicalName) &&
-                            insMap.State.Equals(MappingState.Delete)
-                            )).ToList();
-
-            // mark selected mappings to be undone
-            var intersect = _instance.Mappings.Intersect(toUndo);
-            foreach (var undo in intersect)
-            {
-                undo.State = MappingState.Undo;
-            }
-
-            MappingListsLoad(null, null);
+            lvValueMappings.Scrollable = true;
         }
     }
 }

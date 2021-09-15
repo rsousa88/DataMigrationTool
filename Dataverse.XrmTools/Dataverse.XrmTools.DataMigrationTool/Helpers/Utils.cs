@@ -60,11 +60,14 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
                 {
                     mapping.Type.ToString(),
                     mapping.TableDisplayName,
-                    mapping.TableLogicalName,
-                    mapping.AttributeDisplayName,
-                    mapping.AttributeLogicalName
+                    mapping.TableLogicalName
                 };
 
+                if (mappingType.Equals(Enums.MappingType.Attribute))
+                {
+                    columns.Add(mapping.AttributeDisplayName);
+                    columns.Add(mapping.AttributeLogicalName);
+                }
                 if (mappingType.Equals(Enums.MappingType.Value))
                 {
                     columns.Add(mapping.SourceId.ToString());
@@ -130,19 +133,19 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
                     Type = lvItem.SubItems[0].Text.ToEnum<Enums.MappingType>(),
                     TableDisplayName = lvItem.SubItems[1].Text,
                     TableLogicalName = lvItem.SubItems[2].Text,
-                    AttributeDisplayName = lvItem.SubItems[3].Text,
-                    AttributeLogicalName = lvItem.SubItems[4].Text
-                };
+                    State = lvItem.SubItems[5].Text.ToEnum<MappingState>()
+            };
 
-                if(mappingType.Equals(Enums.MappingType.Value))
+                if(mappingType.Equals(Enums.MappingType.Attribute))
                 {
-                    mapping.SourceId = lvItem.SubItems[5].Text.ToGuid();
-                    mapping.TargetId = lvItem.SubItems[6].Text.ToGuid();
-                    mapping.State = lvItem.SubItems[7].Text.ToEnum<MappingState>();
+                    mapping.AttributeDisplayName = lvItem.SubItems[3].Text;
+                    mapping.AttributeLogicalName = lvItem.SubItems[4].Text;
                 }
-                else
+
+                if (mappingType.Equals(Enums.MappingType.Value))
                 {
-                    mapping.State = lvItem.SubItems[5].Text.ToEnum<MappingState>();
+                    mapping.SourceId = lvItem.SubItems[3].Text.ToGuid();
+                    mapping.TargetId = lvItem.SubItems[4].Text.ToGuid();
                 }
 
                 return mapping;

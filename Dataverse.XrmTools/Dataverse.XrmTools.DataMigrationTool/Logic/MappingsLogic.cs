@@ -9,6 +9,7 @@ using Microsoft.Xrm.Sdk.Query;
 
 // DataMigrationTool
 using Dataverse.XrmTools.DataMigrationTool.Enums;
+using Dataverse.XrmTools.DataMigrationTool.Models;
 using Dataverse.XrmTools.DataMigrationTool.AppSettings;
 using Dataverse.XrmTools.DataMigrationTool.Repositories;
 
@@ -29,6 +30,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
         }
         #endregion Constructors
 
+        #region Public Methods
         public IEnumerable<Mapping> GetUserMappings()
         {
             var sourceUsers = GetAllUsers(new CrmRepo(_sourceSvc));
@@ -97,6 +99,47 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             };
         }
 
+        public IEnumerable<MigrationItem> ExecuteMappings(IEnumerable<MigrationItem> items, List<Mapping> mappings, Table table)
+        {
+            var records = items.Select(src => src.Record);
+            foreach (var rec in records)
+            {
+                // value mappings
+                var refs = rec.Attributes.Select(att => att.Value).OfType<EntityReference>();
+                foreach (var vmap in mappings.Where(map => map.Type.Equals(MappingType.Value)))
+                {
+                    var matchingRefs = refs.Where(@ref => @ref.LogicalName.Equals(vmap.TableLogicalName) && @ref.Id.Equals(vmap.SourceId));
+                    foreach (var @ref in matchingRefs)
+                    {
+                        @ref.Id = vmap.TargetId;
+                    }
+                }
+
+                // attribute mappings
+                foreach (var amap in mappings.Where(map => map.Type.Equals(MappingType.Attribute)))
+                {
+                    if (rec.LogicalName.Equals(amap.TableLogicalName) && amap.TableLogicalName.Equals(table.LogicalName))
+                    {
+                        var attr = rec.Attributes.FirstOrDefault(att => att.Key.Equals(amap.AttributeLogicalName));
+                        var target = GetTargetRecordByAttribute(new CrmRepo(_targetSvc), amap.TableLogicalName, table.IdAttribute, amap.AttributeLogicalName, attr.Value);
+
+                        if (target != null) // record found -> update
+                        {
+                            var migItem = items.FirstOrDefault(itm => itm.Record.Id.Equals(rec.Id));
+                            migItem.Action = Enums.Action.Update;
+
+                            rec.Id = target.Id;
+                            rec.Attributes[table.IdAttribute] = target.Id;
+                        }
+                    }
+                }
+            }
+
+            return items;
+        }
+        #endregion Public Methods
+
+        #region Private Methods
         private IEnumerable<Entity> GetAllUsers(CrmRepo repo)
         {
             var query = new QueryExpression("systemuser")
@@ -148,5 +191,26 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
             return repo.GetRecords(query).FirstOrDefault();
         }
+
+        private Entity GetTargetRecordByAttribute(CrmRepo repo, string table, string idAttr, string key, object value)
+        {
+            var filter = new FilterExpression(LogicalOperator.And)
+            {
+                Conditions =
+                    {
+                        new ConditionExpression(key, ConditionOperator.Equal, value)
+                    }
+            };
+
+            var query = new QueryExpression(table)
+            {
+                ColumnSet = new ColumnSet(idAttr),
+                Criteria = filter,
+                PageInfo = new PagingInfo() { Count = 5000, PageNumber = 1 }
+            };
+
+            return repo.GetRecords(query).FirstOrDefault();
+        }
+        #endregion Private Methods
     }
 }

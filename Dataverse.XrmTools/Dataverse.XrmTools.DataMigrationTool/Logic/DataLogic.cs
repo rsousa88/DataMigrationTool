@@ -12,9 +12,9 @@ using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
 
 // DataMigrationTool
-using Dataverse.XrmTools.DataMigrationTool.Enums;
 using Dataverse.XrmTools.DataMigrationTool.Models;
 using Dataverse.XrmTools.DataMigrationTool.Helpers;
+using Dataverse.XrmTools.DataMigrationTool.AppSettings;
 using Dataverse.XrmTools.DataMigrationTool.Repositories;
 
 namespace Dataverse.XrmTools.DataMigrationTool.Logic
@@ -66,7 +66,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             return SaveJsonFile(tableData, filePath);
         }
 
-        public OperationResult Import(TableData tableData, RecordCollection collection, UiSettings uiSettings)
+        public OperationResult Import(TableData tableData, RecordCollection collection, UiSettings uiSettings, List<Mapping> mappings)
         {
             _sourceCollection = collection.ToEntityCollection();
             RetrieveTargetData(tableData.Table.LogicalName, tableData.Table.IdAttribute, uiSettings.BatchSize);
@@ -75,7 +75,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             var result = MessageBox.Show(msg, "Info", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
             if (result.Equals(DialogResult.Yes))
             {
-                PerformDataOperations(uiSettings, tableData.Table, false);
+                PerformDataOperations(uiSettings, tableData.Table, false, mappings);
 
                 return new OperationResult
                 {
@@ -113,7 +113,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             _targetCollection = targetRepo.GetCollectionByExpression(query, batchSize);
         }
 
-        private void PerformDataOperations(UiSettings uiSettings, Table table, bool isPreview)
+        private void PerformDataOperations(UiSettings uiSettings, Table table, bool isPreview, List<Mapping> mappings = null)
         {
             if (_sourceCollection == null || _targetCollection == null) { return; }
 
@@ -122,7 +122,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             // preview
             if (isPreview)
             {
-                var prvItems = migrationItems.Select(mig => mig.Entity
+                var prvItems = migrationItems.Select(mig => mig.Record
                     .ToListViewItem(new Tuple<string, object>("table", new Dictionary<string, string>()
                     {
                         { "attributename", table.NameAttribute },
@@ -136,11 +136,15 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
             if (_worker.CancellationPending) return;
 
+            // parse mappings
+            var mappingsLogic = new MappingsLogic(_sourceSvc, _targetSvc);
+            var items = mappingsLogic.ExecuteMappings(migrationItems, mappings, table);
+
             // execute
-            var diffCount = migrationItems.Count();
+            var diffCount = items.Count();
 
             var done = 0;
-            var items = new List<ListViewItem>();
+            var lvItems = new List<ListViewItem>();
             var maxBatch = (int)Math.Ceiling((decimal)(diffCount) / uiSettings.BatchSize);
             for (int i = 0; i < maxBatch; i++)
             {
@@ -148,18 +152,18 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
                 var batchNum = i + 1;
 
-                var batchRows = migrationItems.Skip(done).Take(uiSettings.BatchSize);
+                var batchRows = items.Skip(done).Take(uiSettings.BatchSize);
 
-                var errors = ExecuteOperation(uiSettings.Action, batchRows);
+                var responses = ExecuteOperation(uiSettings.Action, batchRows);
 
-                var join = migrationItems.Join(errors, mig => mig.Entity.Id, err => err.Id, (mig, err) => new
+                var join = items.Join(responses, mig => mig.Record.Id, res => res.Id, (mig, res) => new
                 {
                     Action = mig.Action,
-                    Entity = mig.Entity,
-                    Description = $"ERROR: {err.Message}"
+                    Entity = mig.Record,
+                    Description = res.Success ? "Ok" : $"ERROR: {res.Message}"
                 });
 
-                items.AddRange(join.Select(anon => anon.Entity
+                lvItems.AddRange(join.Select(anon => anon.Entity
                     .ToListViewItem(new Tuple<string, object>("table", new Dictionary<string, string>()
                     {
                         { "attributename", table.NameAttribute },
@@ -172,7 +176,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             }
 
             // set results
-            _resultsData.AddRange(items);
+            _resultsData.AddRange(lvItems);
         }
 
         private IEnumerable<MigrationItem> GetDiffRecords(Enums.Action action)
@@ -212,17 +216,17 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             var responses = new List<CrmBulkResponse>();
             if ((mode & Enums.Action.Create) == Enums.Action.Create)
             {
-                var records = migrationItems.Where(mig => (mig.Action & Enums.Action.Create) == Enums.Action.Create).Select(mig => mig.Entity);
+                var records = migrationItems.Where(mig => (mig.Action & Enums.Action.Create) == Enums.Action.Create).Select(mig => mig.Record);
                 responses.AddRange(repo.CreateRecords(records));
             }
             if ((mode & Enums.Action.Update) == Enums.Action.Update)
             {
-                var records = migrationItems.Where(mig => (mig.Action & Enums.Action.Update) == Enums.Action.Update).Select(mig => mig.Entity);
+                var records = migrationItems.Where(mig => (mig.Action & Enums.Action.Update) == Enums.Action.Update).Select(mig => mig.Record);
                 responses.AddRange(repo.UpdateRecords(records));
             }
             if ((mode & Enums.Action.Delete) == Enums.Action.Delete)
             {
-                var records = migrationItems.Where(mig => (mig.Action & Enums.Action.Delete) == Enums.Action.Delete).Select(mig => mig.Entity);
+                var records = migrationItems.Where(mig => (mig.Action & Enums.Action.Delete) == Enums.Action.Delete).Select(mig => mig.Record);
                 responses.AddRange(repo.DeleteRecords(records));
             }
 

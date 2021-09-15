@@ -57,8 +57,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             this.chVMapType = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
             this.chVMapTableDisplay = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
             this.chVMapTableLogical = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
-            this.chVMapAttributeDisplay = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
-            this.chVMapAttributeLogical = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
             this.chVMapSourceId = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
             this.chVMapTargetId = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
             this.chVMapState = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
@@ -104,9 +102,10 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             this.lblADescription.Location = new System.Drawing.Point(7, 42);
             this.lblADescription.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
             this.lblADescription.Name = "lblADescription";
-            this.lblADescription.Size = new System.Drawing.Size(173, 19);
+            this.lblADescription.Size = new System.Drawing.Size(713, 19);
             this.lblADescription.TabIndex = 2;
-            this.lblADescription.Text = "Match records by attribute";
+            this.lblADescription.Text = "Match records from source and target instances by a specified attribute (override" +
+    " automatic record matching by ID)";
             // 
             // lblATitle
             // 
@@ -153,42 +152,43 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             this.lvAttributeMappings.UseCompatibleStateImageBehavior = false;
             this.lvAttributeMappings.View = System.Windows.Forms.View.Details;
             this.lvAttributeMappings.ColumnClick += new System.Windows.Forms.ColumnClickEventHandler(this.listView_ColumnClick);
+            this.lvAttributeMappings.Resize += new System.EventHandler(this.lvAttributeMappings_Resize);
             // 
             // chAMapType
             // 
             this.chAMapType.Name = "chAMapType";
             this.chAMapType.Text = "Type";
-            this.chAMapType.Width = 90;
+            this.chAMapType.Width = 103;
             // 
             // chAMapTableDisplay
             // 
             this.chAMapTableDisplay.Name = "chAMapTableDisplay";
             this.chAMapTableDisplay.Text = "Table Display Name";
-            this.chAMapTableDisplay.Width = 280;
+            this.chAMapTableDisplay.Width = 188;
             // 
             // chAMapTableLogical
             // 
             this.chAMapTableLogical.Name = "chAMapTableLogical";
             this.chAMapTableLogical.Text = "Table Logical Name";
-            this.chAMapTableLogical.Width = 230;
+            this.chAMapTableLogical.Width = 184;
             // 
             // chAMapAttributeDisplay
             // 
             this.chAMapAttributeDisplay.Name = "chAMapAttributeDisplay";
             this.chAMapAttributeDisplay.Text = "Attribute Display Name";
-            this.chAMapAttributeDisplay.Width = 280;
+            this.chAMapAttributeDisplay.Width = 186;
             // 
             // chAMapAttributeLogical
             // 
             this.chAMapAttributeLogical.Name = "chAMapAttributeLogical";
             this.chAMapAttributeLogical.Text = "Attribute Logical Name";
-            this.chAMapAttributeLogical.Width = 230;
+            this.chAMapAttributeLogical.Width = 182;
             // 
             // chAMapState
             // 
             this.chAMapState.Name = "chAMapState";
             this.chAMapState.Text = "State";
-            this.chAMapState.Width = 150;
+            this.chAMapState.Width = 98;
             // 
             // cms_ContextMenu
             // 
@@ -281,9 +281,10 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             this.lblVDescription.Location = new System.Drawing.Point(7, 42);
             this.lblVDescription.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
             this.lblVDescription.Name = "lblVDescription";
-            this.lblVDescription.Size = new System.Drawing.Size(152, 19);
+            this.lblVDescription.Size = new System.Drawing.Size(674, 19);
             this.lblVDescription.TabIndex = 2;
-            this.lblVDescription.Text = "Match records by value";
+            this.lblVDescription.Text = "Replace all record references by a specified ID (migrate records even if there ar" +
+    "e references with different ID\'s)";
             // 
             // lblVTitle
             // 
@@ -313,8 +314,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             this.chVMapType,
             this.chVMapTableDisplay,
             this.chVMapTableLogical,
-            this.chVMapAttributeDisplay,
-            this.chVMapAttributeLogical,
             this.chVMapSourceId,
             this.chVMapTargetId,
             this.chVMapState});
@@ -331,54 +330,43 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             this.lvValueMappings.TabIndex = 5;
             this.lvValueMappings.UseCompatibleStateImageBehavior = false;
             this.lvValueMappings.View = System.Windows.Forms.View.Details;
+            this.lvValueMappings.Resize += new System.EventHandler(this.lvValueMappings_Resize);
             // 
             // chVMapType
             // 
             this.chVMapType.Name = "chVMapType";
             this.chVMapType.Text = "Type";
-            this.chVMapType.Width = 90;
+            this.chVMapType.Width = 79;
             // 
             // chVMapTableDisplay
             // 
             this.chVMapTableDisplay.Name = "chVMapTableDisplay";
             this.chVMapTableDisplay.Text = "Table Display Name";
-            this.chVMapTableDisplay.Width = 160;
+            this.chVMapTableDisplay.Width = 166;
             // 
             // chVMapTableLogical
             // 
             this.chVMapTableLogical.Name = "chVMapTableLogical";
             this.chVMapTableLogical.Text = "Table Logical Name";
-            this.chVMapTableLogical.Width = 140;
-            // 
-            // chVMapAttributeDisplay
-            // 
-            this.chVMapAttributeDisplay.Name = "chVMapAttributeDisplay";
-            this.chVMapAttributeDisplay.Text = "Attribute Display Name";
-            this.chVMapAttributeDisplay.Width = 160;
-            // 
-            // chVMapAttributeLogical
-            // 
-            this.chVMapAttributeLogical.Name = "chVMapAttributeLogical";
-            this.chVMapAttributeLogical.Text = "Attribute Logical Name";
-            this.chVMapAttributeLogical.Width = 140;
+            this.chVMapTableLogical.Width = 173;
             // 
             // chVMapSourceId
             // 
             this.chVMapSourceId.Name = "chVMapSourceId";
             this.chVMapSourceId.Text = "Source ID";
-            this.chVMapSourceId.Width = 225;
+            this.chVMapSourceId.Width = 104;
             // 
             // chVMapTargetId
             // 
             this.chVMapTargetId.Name = "chVMapTargetId";
             this.chVMapTargetId.Text = "Target ID";
-            this.chVMapTargetId.Width = 225;
+            this.chVMapTargetId.Width = 96;
             // 
             // chVMapState
             // 
             this.chVMapState.Name = "chVMapState";
             this.chVMapState.Text = "State";
-            this.chVMapState.Width = 125;
+            this.chVMapState.Width = 83;
             // 
             // mappingsBindingSource
             // 
@@ -441,8 +429,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         private System.Windows.Forms.ColumnHeader chVMapType;
         private System.Windows.Forms.ColumnHeader chVMapTableDisplay;
         private System.Windows.Forms.ColumnHeader chVMapTableLogical;
-        private System.Windows.Forms.ColumnHeader chVMapAttributeDisplay;
-        private System.Windows.Forms.ColumnHeader chVMapAttributeLogical;
         private System.Windows.Forms.ColumnHeader chVMapSourceId;
         private System.Windows.Forms.ColumnHeader chVMapTargetId;
         private System.Windows.Forms.ColumnHeader chVMapState;

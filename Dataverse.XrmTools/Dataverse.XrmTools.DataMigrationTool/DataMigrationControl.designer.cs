@@ -30,10 +30,12 @@
             this.tsbPreview = new System.Windows.Forms.ToolStripButton();
             this.tsmiExport = new System.Windows.Forms.ToolStripMenuItem();
             this.tsmiExportData = new System.Windows.Forms.ToolStripMenuItem();
+            this.tsmiExportSettings = new System.Windows.Forms.ToolStripMenuItem();
             this.tsmiExportWithSettings = new System.Windows.Forms.ToolStripMenuItem();
             this.tsmiImport = new System.Windows.Forms.ToolStripMenuItem();
-            this.tsmiImportSettings = new System.Windows.Forms.ToolStripMenuItem();
             this.tsmiImportData = new System.Windows.Forms.ToolStripMenuItem();
+            this.tsmiImportSettings = new System.Windows.Forms.ToolStripMenuItem();
+            this.tsmiImportLastFile = new System.Windows.Forms.ToolStripMenuItem();
             this.tsbAbort = new System.Windows.Forms.ToolStripButton();
             this.pnlMain = new System.Windows.Forms.TableLayoutPanel();
             this.pnlSettings = new System.Windows.Forms.TableLayoutPanel();
@@ -72,8 +74,6 @@
             this.lblFetchDescription = new System.Windows.Forms.Label();
             this.btnFetchXmlBuilder = new System.Windows.Forms.Button();
             this.rtbFilter = new System.Windows.Forms.RichTextBox();
-            this.tsmiExportSettings = new System.Windows.Forms.ToolStripMenuItem();
-            this.tsmiImportLastFile = new System.Windows.Forms.ToolStripMenuItem();
             this.tsMain.SuspendLayout();
             this.pnlMain.SuspendLayout();
             this.pnlSettings.SuspendLayout();
@@ -149,6 +149,14 @@
             this.tsmiExportData.Text = "Data";
             this.tsmiExportData.Click += new System.EventHandler(this.tsmiExportData_Click);
             // 
+            // tsmiExportSettings
+            // 
+            this.tsmiExportSettings.Enabled = false;
+            this.tsmiExportSettings.Name = "tsmiExportSettings";
+            this.tsmiExportSettings.Size = new System.Drawing.Size(249, 26);
+            this.tsmiExportSettings.Text = "Table Settings";
+            this.tsmiExportSettings.Click += new System.EventHandler(this.tsmiExportSettings_Click);
+            // 
             // tsmiExportWithSettings
             // 
             this.tsmiExportWithSettings.Enabled = false;
@@ -168,20 +176,28 @@
             this.tsmiImport.Size = new System.Drawing.Size(88, 31);
             this.tsmiImport.Text = "Import";
             // 
-            // tsmiImportSettings
-            // 
-            this.tsmiImportSettings.Name = "tsmiImportSettings";
-            this.tsmiImportSettings.Size = new System.Drawing.Size(224, 26);
-            this.tsmiImportSettings.Text = "Settings from file";
-            this.tsmiImportSettings.Click += new System.EventHandler(this.tsmiImportSettings_Click);
-            // 
             // tsmiImportData
             // 
             this.tsmiImportData.Enabled = false;
             this.tsmiImportData.Name = "tsmiImportData";
-            this.tsmiImportData.Size = new System.Drawing.Size(224, 26);
+            this.tsmiImportData.Size = new System.Drawing.Size(217, 26);
             this.tsmiImportData.Text = "Data";
             this.tsmiImportData.Click += new System.EventHandler(this.tsmiImportData_Click);
+            // 
+            // tsmiImportSettings
+            // 
+            this.tsmiImportSettings.Name = "tsmiImportSettings";
+            this.tsmiImportSettings.Size = new System.Drawing.Size(217, 26);
+            this.tsmiImportSettings.Text = "Settings from file";
+            this.tsmiImportSettings.Click += new System.EventHandler(this.tsmiImportSettings_Click);
+            // 
+            // tsmiImportLastFile
+            // 
+            this.tsmiImportLastFile.Enabled = false;
+            this.tsmiImportLastFile.Name = "tsmiImportLastFile";
+            this.tsmiImportLastFile.Size = new System.Drawing.Size(217, 26);
+            this.tsmiImportLastFile.Text = "From last exported";
+            this.tsmiImportLastFile.Click += new System.EventHandler(this.tsmiImportLastFile_Click);
             // 
             // tsbAbort
             // 
@@ -407,12 +423,13 @@
             // cbDelete
             // 
             this.cbDelete.AutoSize = true;
+            this.cbDelete.Enabled = false;
             this.cbDelete.Location = new System.Drawing.Point(7, 84);
             this.cbDelete.Margin = new System.Windows.Forms.Padding(4);
             this.cbDelete.Name = "cbDelete";
-            this.cbDelete.Size = new System.Drawing.Size(71, 21);
+            this.cbDelete.Size = new System.Drawing.Size(88, 21);
             this.cbDelete.TabIndex = 2;
-            this.cbDelete.Text = "Delete";
+            this.cbDelete.Text = "Delete (!)";
             this.cbDelete.UseVisualStyleBackColor = true;
             // 
             // lblBatchCount
@@ -655,22 +672,6 @@
             this.rtbFilter.TabIndex = 2;
             this.rtbFilter.Text = "";
             this.rtbFilter.TextChanged += new System.EventHandler(this.rtbFilter_TextChanged);
-            // 
-            // tsmiExportSettings
-            // 
-            this.tsmiExportSettings.Enabled = false;
-            this.tsmiExportSettings.Name = "tsmiExportSettings";
-            this.tsmiExportSettings.Size = new System.Drawing.Size(249, 26);
-            this.tsmiExportSettings.Text = "Table Settings";
-            this.tsmiExportSettings.Click += new System.EventHandler(this.tsmiExportSettings_Click);
-            // 
-            // tsmiImportLastFile
-            // 
-            this.tsmiImportLastFile.Enabled = false;
-            this.tsmiImportLastFile.Name = "tsmiImportLastFile";
-            this.tsmiImportLastFile.Size = new System.Drawing.Size(224, 26);
-            this.tsmiImportLastFile.Text = "From last exported";
-            this.tsmiImportLastFile.Click += new System.EventHandler(this.tsmiImportLastFile_Click);
             // 
             // DataMigrationControl
             // 

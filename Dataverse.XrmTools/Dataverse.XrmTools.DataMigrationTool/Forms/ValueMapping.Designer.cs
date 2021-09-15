@@ -39,8 +39,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             this.lbl_TargetId = new System.Windows.Forms.Label();
             this.txt_TargetId = new System.Windows.Forms.TextBox();
             this.txt_SourceId = new System.Windows.Forms.TextBox();
-            this.cbAtributes = new System.Windows.Forms.ComboBox();
-            this.lblAttribute = new System.Windows.Forms.Label();
             this.cbTables = new System.Windows.Forms.ComboBox();
             this.lblTable = new System.Windows.Forms.Label();
             this.pnlHeader.SuspendLayout();
@@ -54,7 +52,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             this.pnlHeader.Controls.Add(this.lblTitle);
             this.pnlHeader.Dock = System.Windows.Forms.DockStyle.Top;
             this.pnlHeader.Location = new System.Drawing.Point(0, 0);
-            this.pnlHeader.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
+            this.pnlHeader.Margin = new System.Windows.Forms.Padding(4);
             this.pnlHeader.Name = "pnlHeader";
             this.pnlHeader.Size = new System.Drawing.Size(487, 55);
             this.pnlHeader.TabIndex = 1;
@@ -76,8 +74,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             this.pnlFooter.Controls.Add(this.btnCancel);
             this.pnlFooter.Controls.Add(this.btnClose);
             this.pnlFooter.Dock = System.Windows.Forms.DockStyle.Bottom;
-            this.pnlFooter.Location = new System.Drawing.Point(0, 233);
-            this.pnlFooter.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
+            this.pnlFooter.Location = new System.Drawing.Point(0, 186);
+            this.pnlFooter.Margin = new System.Windows.Forms.Padding(4);
             this.pnlFooter.Name = "pnlFooter";
             this.pnlFooter.Size = new System.Drawing.Size(487, 57);
             this.pnlFooter.TabIndex = 4;
@@ -85,7 +83,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             // btnCancel
             // 
             this.btnCancel.Location = new System.Drawing.Point(13, 14);
-            this.btnCancel.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
+            this.btnCancel.Margin = new System.Windows.Forms.Padding(4);
             this.btnCancel.Name = "btnCancel";
             this.btnCancel.Size = new System.Drawing.Size(100, 28);
             this.btnCancel.TabIndex = 6;
@@ -96,7 +94,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             // btnClose
             // 
             this.btnClose.Location = new System.Drawing.Point(371, 14);
-            this.btnClose.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
+            this.btnClose.Margin = new System.Windows.Forms.Padding(4);
             this.btnClose.Name = "btnClose";
             this.btnClose.Size = new System.Drawing.Size(100, 28);
             this.btnClose.TabIndex = 5;
@@ -111,21 +109,19 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             this.pnlMain.Controls.Add(this.lbl_TargetId);
             this.pnlMain.Controls.Add(this.txt_TargetId);
             this.pnlMain.Controls.Add(this.txt_SourceId);
-            this.pnlMain.Controls.Add(this.cbAtributes);
-            this.pnlMain.Controls.Add(this.lblAttribute);
             this.pnlMain.Controls.Add(this.cbTables);
             this.pnlMain.Controls.Add(this.lblTable);
             this.pnlMain.Dock = System.Windows.Forms.DockStyle.Fill;
             this.pnlMain.Location = new System.Drawing.Point(0, 55);
-            this.pnlMain.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
+            this.pnlMain.Margin = new System.Windows.Forms.Padding(4);
             this.pnlMain.Name = "pnlMain";
-            this.pnlMain.Size = new System.Drawing.Size(487, 178);
+            this.pnlMain.Size = new System.Drawing.Size(487, 131);
             this.pnlMain.TabIndex = 6;
             // 
             // lbl_SourceId
             // 
             this.lbl_SourceId.AutoSize = true;
-            this.lbl_SourceId.Location = new System.Drawing.Point(16, 101);
+            this.lbl_SourceId.Location = new System.Drawing.Point(16, 56);
             this.lbl_SourceId.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
             this.lbl_SourceId.Name = "lbl_SourceId";
             this.lbl_SourceId.Size = new System.Drawing.Size(70, 17);
@@ -135,7 +131,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             // lbl_TargetId
             // 
             this.lbl_TargetId.AutoSize = true;
-            this.lbl_TargetId.Location = new System.Drawing.Point(16, 145);
+            this.lbl_TargetId.Location = new System.Drawing.Point(16, 100);
             this.lbl_TargetId.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
             this.lbl_TargetId.Name = "lbl_TargetId";
             this.lbl_TargetId.Size = new System.Drawing.Size(67, 17);
@@ -144,50 +140,29 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             // 
             // txt_TargetId
             // 
-            this.txt_TargetId.Location = new System.Drawing.Point(97, 142);
-            this.txt_TargetId.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
+            this.txt_TargetId.Location = new System.Drawing.Point(97, 97);
+            this.txt_TargetId.Margin = new System.Windows.Forms.Padding(4);
             this.txt_TargetId.Name = "txt_TargetId";
             this.txt_TargetId.Size = new System.Drawing.Size(372, 22);
             this.txt_TargetId.TabIndex = 5;
             // 
             // txt_SourceId
             // 
-            this.txt_SourceId.Location = new System.Drawing.Point(97, 97);
-            this.txt_SourceId.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
+            this.txt_SourceId.Location = new System.Drawing.Point(97, 53);
+            this.txt_SourceId.Margin = new System.Windows.Forms.Padding(4);
             this.txt_SourceId.Name = "txt_SourceId";
             this.txt_SourceId.Size = new System.Drawing.Size(372, 22);
             this.txt_SourceId.TabIndex = 4;
-            // 
-            // cbAtributes
-            // 
-            this.cbAtributes.Enabled = false;
-            this.cbAtributes.FormattingEnabled = true;
-            this.cbAtributes.Location = new System.Drawing.Point(97, 53);
-            this.cbAtributes.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
-            this.cbAtributes.Name = "cbAtributes";
-            this.cbAtributes.Size = new System.Drawing.Size(372, 24);
-            this.cbAtributes.TabIndex = 3;
-            // 
-            // lblAttribute
-            // 
-            this.lblAttribute.AutoSize = true;
-            this.lblAttribute.Location = new System.Drawing.Point(16, 57);
-            this.lblAttribute.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
-            this.lblAttribute.Name = "lblAttribute";
-            this.lblAttribute.Size = new System.Drawing.Size(61, 17);
-            this.lblAttribute.TabIndex = 2;
-            this.lblAttribute.Text = "Attribute";
             // 
             // cbTables
             // 
             this.cbTables.Enabled = false;
             this.cbTables.FormattingEnabled = true;
             this.cbTables.Location = new System.Drawing.Point(97, 9);
-            this.cbTables.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
+            this.cbTables.Margin = new System.Windows.Forms.Padding(4);
             this.cbTables.Name = "cbTables";
             this.cbTables.Size = new System.Drawing.Size(372, 24);
             this.cbTables.TabIndex = 1;
-            this.cbTables.SelectedIndexChanged += new System.EventHandler(this.cbTables_SelectedIndexChanged);
             // 
             // lblTable
             // 
@@ -203,7 +178,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 16F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(487, 290);
+            this.ClientSize = new System.Drawing.Size(487, 243);
             this.Controls.Add(this.pnlMain);
             this.Controls.Add(this.pnlFooter);
             this.Controls.Add(this.pnlHeader);
@@ -216,7 +191,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             this.ShowInTaskbar = false;
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
             this.Text = "ValueMapping";
-            this.TopMost = true;
             this.Load += new System.EventHandler(this.LoadTables);
             this.pnlHeader.ResumeLayout(false);
             this.pnlHeader.PerformLayout();
@@ -236,8 +210,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         private System.Windows.Forms.Panel pnlMain;
         private System.Windows.Forms.Label lblTable;
         private System.Windows.Forms.ComboBox cbTables;
-        private System.Windows.Forms.ComboBox cbAtributes;
-        private System.Windows.Forms.Label lblAttribute;
         private System.Windows.Forms.Button btnCancel;
         private System.Windows.Forms.TextBox txt_SourceId;
         private System.Windows.Forms.Label lbl_SourceId;
