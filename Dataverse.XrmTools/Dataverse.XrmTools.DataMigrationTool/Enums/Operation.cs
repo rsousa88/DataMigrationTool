@@ -1,6 +1,6 @@
 ﻿namespace Dataverse.XrmTools.DataMigrationTool.Enums
 {
-    public enum ImportExportAction
+    public enum Operation
     {
         Export = 0,
         Import = 1

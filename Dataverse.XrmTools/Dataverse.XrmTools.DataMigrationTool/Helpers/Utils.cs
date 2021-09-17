@@ -72,6 +72,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
                 {
                     columns.Add(mapping.SourceId.ToString());
                     columns.Add(mapping.TargetId.ToString());
+                    columns.Add(mapping.TargetInstanceName.ToString());
                 }
 
                 columns.Add(mapping.State.ToString());
@@ -132,20 +133,22 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
                 {
                     Type = lvItem.SubItems[0].Text.ToEnum<Enums.MappingType>(),
                     TableDisplayName = lvItem.SubItems[1].Text,
-                    TableLogicalName = lvItem.SubItems[2].Text,
-                    State = lvItem.SubItems[5].Text.ToEnum<MappingState>()
-            };
+                    TableLogicalName = lvItem.SubItems[2].Text
+                };
 
                 if(mappingType.Equals(Enums.MappingType.Attribute))
                 {
                     mapping.AttributeDisplayName = lvItem.SubItems[3].Text;
                     mapping.AttributeLogicalName = lvItem.SubItems[4].Text;
+                    mapping.State = lvItem.SubItems[5].Text.ToEnum<MappingState>();
                 }
 
                 if (mappingType.Equals(Enums.MappingType.Value))
                 {
                     mapping.SourceId = lvItem.SubItems[3].Text.ToGuid();
                     mapping.TargetId = lvItem.SubItems[4].Text.ToGuid();
+                    mapping.TargetInstanceName = lvItem.SubItems[5].Text;
+                    mapping.State = lvItem.SubItems[6].Text.ToEnum<MappingState>();
                 }
 
                 return mapping;

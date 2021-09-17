@@ -43,11 +43,14 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private CrmServiceClient _targetClient;
 
         // main objects
-        private Instance _instance;
+        private Instance _sourceInstance;
+        private Instance _targetInstance;
         private IEnumerable<Table> _tables;
+        private List<Mapping> _mappings;
         private IEnumerable<Sort> _sorts;
 
         // flags
+        private bool _ready = false;
         private bool _working;
         #endregion Variables
 
@@ -82,36 +85,45 @@ namespace Dataverse.XrmTools.DataMigrationTool
             {
                 LogInfo($"Updating connection: {actionName}...");
                 base.UpdateConnection(newService, detail, actionName, parameter);
-                _sourceClient = Service as CrmServiceClient;
+                var client = detail.ServiceClient;
 
                 if (!actionName.Equals("AdditionalOrganization"))
                 {
-                    var orgId = detail.ConnectionId.Value;
-                    _instance = _settings.Instances.FirstOrDefault(org => org.Id.Equals(orgId));
-                    if (_instance == null)
+                    UpdateLegacyInstance(detail.ConnectionId.Value, client);
+
+                    var instance = _settings.Instances.FirstOrDefault(inst => inst.UniqueName.Equals(client.ConnectedOrgUniqueName));
+                    if (instance == null)
                     {
-                        _instance = new Instance
+                        instance = new Instance
                         {
-                            Id = orgId,
-                            Name = detail.ConnectionName,
-                            Mappings = new List<Mapping>()
+                            Id = client.ConnectedOrgId,
+                            UniqueName = client.ConnectedOrgUniqueName,
+                            FriendlyName = client.ConnectedOrgFriendlyName,
+                            Mappings = new List<Mapping>(),
+                            Updated = true
                         };
 
-                        _settings.Instances.Add(_instance);
+                        _settings.Instances.Add(instance);
                     }
 
-                    // load UI settings
+                    _sourceClient = client;
+                    _sourceInstance = instance;
+
+                    // load source instance mappings
+                    var srcMappings = _sourceInstance.Mappings.Where(map => map.SourceInstanceName.Equals(_sourceInstance.FriendlyName));
+                    _mappings = new List<Mapping>(srcMappings);
+                    ClearAutoMappings();
+
+                    // load sorts
                     _sorts = _settings.Sorts;
-
-                    // render UI components
-                    LogInfo($"Rendering UI components...");
-                    RenderConnectionLabel(ConnectionType.Source, _instance.Name);
-                    RenderMappingsButton();
-
-                    ReRenderComponents(true);
 
                     // save settings file
                     SettingsHelper.SetSettings(_settings);
+
+                    // render UI components
+                    LogInfo($"Rendering UI components...");
+                    RenderConnectionLabel(ConnectionType.Source, instance.FriendlyName);
+                    ReRenderComponents(true);
 
                     // load tables when source connection changes
                     LoadTables();
@@ -132,26 +144,63 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 if (args.Action.Equals(NotifyCollectionChangedAction.Add))
                 {
                     var detail = (ConnectionDetail)args.NewItems[0];
-                    _targetClient = detail.ServiceClient;
+                    var client = detail.ServiceClient;
+
+                    UpdateLegacyInstance(detail.ConnectionId.Value, client);
+                    if (_settings.SettingsVersion.Equals(0))
+                    {
+                        UpdateLegacyMappings(client);
+                    }
 
                     if (_sourceClient == null) { throw new Exception("Source connection is invalid"); }
                     LogInfo($"Source OrgId: {_sourceClient.ConnectedOrgId}");
-                    LogInfo($"Source OrgName: {_sourceClient.ConnectedOrgUniqueName}");
+                    LogInfo($"Source OrgUniqueName: {_sourceClient.ConnectedOrgUniqueName}");
+                    LogInfo($"Source OrgFriendlyName: {_sourceClient.ConnectedOrgFriendlyName}");
                     LogInfo($"Source EnvId: {_sourceClient.EnvironmentId}");
 
-                    if (_targetClient == null) { throw new Exception("Target connection is invalid"); }
-                    LogInfo($"Target OrgId: {_targetClient.ConnectedOrgId}");
-                    LogInfo($"Target OrgName: {_targetClient.ConnectedOrgUniqueName}");
-                    LogInfo($"Target EnvId: {_targetClient.EnvironmentId}");
+                    if (client == null) { throw new Exception("Target connection is invalid"); }
+                    LogInfo($"Target OrgId: {client.ConnectedOrgId}");
+                    LogInfo($"Target OrgUniqueName: {client.ConnectedOrgUniqueName}");
+                    LogInfo($"Target OrgFriendlyName: {client.ConnectedOrgFriendlyName}");
+                    LogInfo($"Target EnvId: {client.EnvironmentId}");
 
-                    if (_sourceClient.ConnectedOrgUniqueName.Equals(_targetClient.ConnectedOrgUniqueName))
+                    if (_sourceClient.ConnectedOrgUniqueName.Equals(client.ConnectedOrgUniqueName))
                     {
                         throw new Exception("Source and Target connections must refer to different Dataverse instances");
                     }
 
-                    ReRenderComponents(true);
-                    RenderConnectionLabel(ConnectionType.Target, detail.ConnectionName);
+                    var instance = _settings.Instances.FirstOrDefault(inst => !string.IsNullOrEmpty(inst.UniqueName) && inst.UniqueName.Equals(client.ConnectedOrgUniqueName));
+                    if (instance == null)
+                    {
+                        instance = new Instance
+                        {
+                            Id = client.ConnectedOrgId,
+                            UniqueName = client.ConnectedOrgUniqueName,
+                            FriendlyName = client.ConnectedOrgFriendlyName,
+                            Mappings = new List<Mapping>(),
+                            Updated = true
+                    };
 
+                        _settings.Instances.Add(instance);
+                    }
+
+                    _targetClient = client;
+                    _targetInstance = instance;
+
+                    // filter mappings by target instance
+                    var tgtMappings = _mappings.Where(map => map.TargetInstanceName.Equals(_targetInstance.FriendlyName));
+                    _mappings = new List<Mapping>(tgtMappings);
+
+                    // load ui settings
+                    LoadUiSettings();
+                    GenerateMappings();
+
+                    SettingsHelper.SetSettings(_settings);
+
+                    ReRenderComponents(true);
+                    RenderConnectionLabel(ConnectionType.Target, instance.FriendlyName);
+
+                    _ready = true;
                     SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Target Connection ready"));
                 }
             }
@@ -161,6 +210,37 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 LogError(ex.Message);
                 MessageBox.Show(this, $"An error occurred: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+
+        private void UpdateLegacyInstance(Guid legacyId, CrmServiceClient client)
+        {
+            var legacy = _settings.Instances.FirstOrDefault(inst => inst.Updated.Equals(false) && inst.Id.Equals(legacyId));
+
+            // update instance
+            if (legacy != null)
+            {
+                legacy.Id = client.ConnectedOrgId;
+                legacy.FriendlyName = client.ConnectedOrgFriendlyName;
+                legacy.UniqueName = client.ConnectedOrgUniqueName;
+                legacy.Updated = true;
+            }
+
+            SettingsHelper.SetSettings(_settings);
+        }
+
+        private void UpdateLegacyMappings(CrmServiceClient targetClient)
+        {
+            var mappings = _settings.Instances.SelectMany(inst => inst.Mappings.Where(map => map.Type.Equals(Enums.MappingType.Value)));
+
+            // update mappings
+            foreach (var map in mappings)
+            {
+                map.SourceInstanceName = _sourceClient.ConnectedOrgFriendlyName;
+                map.TargetInstanceName = targetClient.ConnectedOrgFriendlyName;
+            }
+
+            _settings.SettingsVersion = 1;
+            SettingsHelper.SetSettings(_settings);
         }
 
         public void OnIncomingMessage(MessageBusEventArgs message)
@@ -349,7 +429,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (deselected == null)
             {
                 deselected = new List<string>();
-                deselected.AddRange(_instance.DefaultDeselected);
+                deselected.AddRange(_sourceInstance.DefaultDeselected);
 
                 // save settings
                 tableData.Settings.DeselectedAttributes = deselected;
@@ -519,7 +599,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     var data = evt.Argument as TableData;
 
                     var logic = new DataLogic(worker, Service, _targetClient);
-                    var success = logic.Export(data, uiSettings, filePath);
+                    var success = logic.Export(data, uiSettings, filePath, _mappings);
                     if (success)
                     {
                         _settings.LastDataFile = filePath;
@@ -548,7 +628,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 RestoreDirectory = true
             };
 
-            var path = GetFileDialogPath(ImportExportAction.Import, dialog);
+            var path = GetFileDialogPath(Operation.Import, dialog);
             if(string.IsNullOrEmpty(path)) { return; }
 
             ManageWorkingState(true);
@@ -588,7 +668,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 RestoreDirectory = true
             };
 
-            path = path is null ? GetFileDialogPath(ImportExportAction.Import, dialog) : path;
+            path = path is null ? GetFileDialogPath(Operation.Import, dialog) : path;
             if (string.IsNullOrEmpty(path)) { return; }
 
             ManageWorkingState(true);
@@ -616,12 +696,9 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 {
                     var data = evt.Argument as TableData;
 
-                    // check mappings
-                    var mappings = GetMappings(uiSettings);
-
                     var logic = new DataLogic(worker, Service, _targetClient);
 
-                    var result = Task.Run(() => logic.Import(data, importData, uiSettings, mappings));
+                    var result = Task.Run(() => logic.Import(data, importData, uiSettings, _mappings));
 
                     evt.Result = result.Result;
                 },
@@ -661,11 +738,11 @@ namespace Dataverse.XrmTools.DataMigrationTool
             return path;
         }
 
-        private string GetFileDialogPath(ImportExportAction action, FileDialog dialog)
+        private string GetFileDialogPath(Operation action, FileDialog dialog)
         {
             var path = string.Empty;
 
-            if (action.Equals(ImportExportAction.Export))
+            if (action.Equals(Operation.Export))
             {
                 using (var sfd = dialog as SaveFileDialog)
                 {
@@ -675,7 +752,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     }
                 }
             }
-            else if (action.Equals(ImportExportAction.Import))
+            else if (action.Equals(Operation.Import))
             {
                 using (var ofd = dialog as OpenFileDialog)
                 {
@@ -689,36 +766,74 @@ namespace Dataverse.XrmTools.DataMigrationTool
             return path;
         }
 
-        private List<Mapping> GetMappings(UiSettings ui)
+        private void LoadUiSettings()
         {
-            LogInfo($"Parsing automatic mappings...");
-
-            var mappings = new List<Mapping>(_instance.Mappings);
-            var mappingsLogic = new MappingsLogic(Service, _targetClient);
-
-            if (ui.MapUsers)
+            var uiSettings = _settings.UiSettings;
+            if (uiSettings != null)
             {
-                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Mapping Users..."));
-
-                var usrMappings = mappingsLogic.GetUserMappings();
-                if (usrMappings.Any()) { mappings.AddRange(usrMappings); }
+                cbMapUsers.Checked = uiSettings.MapUsers;
+                cbMapTeams.Checked = uiSettings.MapTeams;
+                cbMapBu.Checked = uiSettings.MapBu;
+                rbMapOnExport.Checked = uiSettings.ApplyMappingsOn.Equals(Operation.Export);
+                rbMapOnImport.Checked = uiSettings.ApplyMappingsOn.Equals(Operation.Import);
+                cbCreate.Checked = (uiSettings.Action & Enums.Action.Create) == Enums.Action.Create;
+                cbUpdate.Checked = (uiSettings.Action & Enums.Action.Update) == Enums.Action.Update;
+                cbDelete.Checked = (uiSettings.Action & Enums.Action.Delete) == Enums.Action.Delete;
+                nudBatchCount.Value = uiSettings.BatchSize;
             }
-            if (ui.MapTeams)
+        }
+
+        private void ClearAutoMappings()
+        {
+            // clear previously generated auto mappings
+            _mappings.RemoveAll(map => map.State.Equals(MappingState.Auto));
+            _sourceInstance.Mappings = _mappings;
+            SettingsHelper.SetSettings(_settings);
+            SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Cleared previously generated Automatic Mappings"));
+        }
+
+        private void GenerateMappings()
+        {
+            LogInfo($"Generating automatic mappings...");
+
+            ManageWorkingState(true);
+
+            var uiSettings = ReadSettings(Enums.Action.None);
+
+            WorkAsync(new WorkAsyncInfo
             {
-                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Mapping Teams..."));
+                Message = "Generating automatic mappings...",
+                IsCancelable = true,
+                Work = (worker, evt) =>
+                {
+                    ClearAutoMappings();
 
-                var teamMappings = mappingsLogic.GetTeamMappings();
-                if (teamMappings.Any()) { mappings.AddRange(teamMappings); }
-            }
-            if (ui.MapBu)
-            {
-                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Mapping root Business Unit..."));
+                    var mappingsLogic = new MappingsLogic(Service, _targetClient);
 
-                var buMapping = mappingsLogic.GetBusinessUnitMapping();
-                if (buMapping != null) { mappings.Add(buMapping); }
-            }
+                    if (uiSettings.MapUsers)
+                    {
+                        var usrMappings = mappingsLogic.GetUserMappings(_sourceInstance.FriendlyName, _targetInstance.FriendlyName);
+                        if (usrMappings.Any()) { _mappings.AddRange(usrMappings); }
+                    }
+                    if (uiSettings.MapTeams)
+                    {
+                        var teamMappings = mappingsLogic.GetTeamMappings(_sourceInstance.FriendlyName, _targetInstance.FriendlyName);
+                        if (teamMappings.Any()) { _mappings.AddRange(teamMappings); }
+                    }
+                    if (uiSettings.MapBu)
+                    {
+                        var buMapping = mappingsLogic.GetBusinessUnitMapping(_sourceInstance.FriendlyName, _targetInstance.FriendlyName);
+                        if (buMapping != null) { _mappings.Add(buMapping); }
+                    }
+                },
+                PostWorkCallBack = evt =>
+                {
+                    ManageWorkingState(false);
 
-            return mappings;
+                    SettingsHelper.SetSettings(_settings);
+                    SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Automatic Mappings generated successfully"));
+                }
+            });
         }
 
         private TableData GetSelectedTableItemData(bool targetRequired = true, bool attributeRequired = false)
@@ -826,6 +941,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
         #region Private Helper Methods
         private void ManageWorkingState(bool working)
         {
+            pnlMain.Enabled = !working;
+
             _working = working;
             Cursor = working ? Cursors.WaitCursor : Cursors.Default;
             tsbAbort.Text = "Abort";
@@ -841,7 +958,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void RenderMappingsButton()
         {
-            btnMappings.Font = _instance.Mappings.Any() ? new Font(btnMappings.Font.Name, btnMappings.Font.Size, FontStyle.Bold) : new Font(btnMappings.Font.Name, btnMappings.Font.Size, FontStyle.Regular);
+            btnMappings.Font = _sourceInstance.Mappings.Any() ? new Font(btnMappings.Font.Name, btnMappings.Font.Size, FontStyle.Bold) : new Font(btnMappings.Font.Name, btnMappings.Font.Size, FontStyle.Regular);
         }
 
         private void ReRenderComponents(bool enable)
@@ -853,13 +970,14 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (sourceReady) // source connection is available
             {
                 btnSelectTarget.Enabled = enable;
-                gbOrgSettings.Enabled = enable;
-                gbOpSettings.Enabled = enable;
-                gbTables.Enabled = enable;
 
                 if (targetReady) // source and target connection is available
                 {
                     tsmiImportData.Enabled = enable;
+                    gbMappingSettings.Enabled = enable;
+                    gbOpSettings.Enabled = enable;
+                    gbTables.Enabled = enable;
+                    RenderMappingsButton();
 
                     if (!string.IsNullOrEmpty(_settings.LastDataFile)) // source and target connection is available and a a file was already exported since tool loading
                     {
@@ -890,14 +1008,20 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (cbUpdate.Checked) mode |= Enums.Action.Update;
             if (cbDelete.Checked) mode |= Enums.Action.Delete;
 
-            return new UiSettings
+            var uiSettings = new UiSettings
             {
                 Action = mode,
                 BatchSize= nudBatchCount.Value.ToInt().Value,
                 MapUsers = cbMapUsers.Checked,
                 MapTeams = cbMapTeams.Checked,
-                MapBu = cbMapBu.Checked
+                MapBu = cbMapBu.Checked,
+                ApplyMappingsOn = rbMapOnExport.Checked ? Operation.Export : Operation.Import
             };
+
+            _settings.UiSettings = uiSettings;
+            SettingsHelper.SetSettings(_settings);
+
+            return uiSettings;
         }
 
         private string ExtractFilterNode(string fetchXml)
@@ -980,7 +1104,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             settingsRows[0].SizeType = SizeType.Absolute;
             settingsRows[0].Height = 115;
             settingsRows[1].SizeType = SizeType.Absolute;
-            settingsRows[1].Height = 141;
+            settingsRows[1].Height = 185;
             settingsRows[2].SizeType = SizeType.Absolute;
             settingsRows[2].Height = 129;
 
@@ -1282,7 +1406,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
             try
             {
-                var mappingsDlg = new Mappings(Service, _instance, _tables, _settings);
+                var mappingsDlg = new Mappings(Service, _sourceInstance, _targetInstance, _tables, _settings);
                 mappingsDlg.ShowDialog(ParentForm);
 
                 if (mappingsDlg.Updated)
@@ -1343,6 +1467,14 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 ManageWorkingState(false);
                 LogError(ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void cbMapOption_CheckedChanged(object sender, EventArgs e)
+        {
+            if(_ready)
+            {
+                GenerateMappings();
             }
         }
         #endregion Form events

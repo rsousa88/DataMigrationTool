@@ -16,6 +16,7 @@ using Dataverse.XrmTools.DataMigrationTool.Models;
 using Dataverse.XrmTools.DataMigrationTool.Helpers;
 using Dataverse.XrmTools.DataMigrationTool.AppSettings;
 using Dataverse.XrmTools.DataMigrationTool.Repositories;
+using Dataverse.XrmTools.DataMigrationTool.Enums;
 
 namespace Dataverse.XrmTools.DataMigrationTool.Logic
 {
@@ -28,6 +29,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
         private readonly IOrganizationService _targetSvc;
 
         private EntityCollection _sourceCollection;
+        private EntityCollection _mappedCollection;
         private EntityCollection _targetCollection;
 
         private List<ListViewItem> _resultsData = new List<ListViewItem>();
@@ -51,7 +53,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             RetrieveTargetData(tableData.Table.LogicalName, tableData.Table.IdAttribute, uiSettings.BatchSize);
             if (_worker.CancellationPending) return null;
 
-            PerformDataOperations(uiSettings, tableData.Table, true);
+            ExecuteTargetOperations(uiSettings, tableData.Table, true);
             if (_worker.CancellationPending) return null;
 
             return new OperationResult
@@ -60,9 +62,16 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             };
         }
 
-        public bool Export(TableData tableData, UiSettings uiSettings, string filePath)
+        public bool Export(TableData tableData, UiSettings uiSettings, string filePath, List<Mapping> mappings)
         {
             RetrieveSourceData(tableData, uiSettings.BatchSize);
+
+            if(uiSettings.ApplyMappingsOn.Equals(Operation.Export))
+            {
+                var mappingsLogic = new MappingsLogic(_sourceSvc, _targetSvc);
+                _mappedCollection = mappingsLogic.ExecuteMappingsOnExport(_sourceCollection.Entities.ToList(), mappings, tableData.Table);
+            }
+            
             return SaveJsonFile(tableData, filePath);
         }
 
@@ -75,7 +84,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             var result = MessageBox.Show(msg, "Info", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
             if (result.Equals(DialogResult.Yes))
             {
-                PerformDataOperations(uiSettings, tableData.Table, false, mappings);
+                ExecuteTargetOperations(uiSettings, tableData.Table, false, mappings);
 
                 return new OperationResult
                 {
@@ -113,7 +122,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             _targetCollection = targetRepo.GetCollectionByExpression(query, batchSize);
         }
 
-        private void PerformDataOperations(UiSettings uiSettings, Table table, bool isPreview, List<Mapping> mappings = null)
+        private void ExecuteTargetOperations(UiSettings uiSettings, Table table, bool isPreview, List<Mapping> mappings = null)
         {
             if (_sourceCollection == null || _targetCollection == null) { return; }
 
@@ -136,9 +145,9 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
             if (_worker.CancellationPending) return;
 
-            // parse mappings
+            // apply mappings
             var mappingsLogic = new MappingsLogic(_sourceSvc, _targetSvc);
-            var items = mappingsLogic.ExecuteMappings(migrationItems, mappings, table);
+            var items = uiSettings.ApplyMappingsOn.Equals(Operation.Import) ? mappingsLogic.ExecuteMappingsOnImport(migrationItems, mappings, table) : migrationItems;
 
             // execute
             var diffCount = items.Count();
@@ -238,12 +247,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             var success = false;
 
             // export -> serialize source records to json and save file
-            _sourceCollection.EntityName = tableData.Table.LogicalName;
-            var msg = $"You are about to export {_sourceCollection.Entities.Count} {tableData.Table.DisplayName} records. Continue?";
+            _mappedCollection.EntityName = tableData.Table.LogicalName;
+            var msg = $"You are about to export {_mappedCollection.Entities.Count} {tableData.Table.DisplayName} records. Continue?";
             var result = MessageBox.Show(msg, "Info", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
             if (result.Equals(DialogResult.Yes))
             {
-                var collection = new RecordCollection(_sourceCollection, tableData.Metadata);
+                var collection = new RecordCollection(_mappedCollection, tableData.Metadata);
                 var json = collection.SerializeObject<RecordCollection>();
                 File.WriteAllText(path, json);
 

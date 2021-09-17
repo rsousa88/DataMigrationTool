@@ -31,7 +31,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
         #endregion Constructors
 
         #region Public Methods
-        public IEnumerable<Mapping> GetUserMappings()
+        public IEnumerable<Mapping> GetUserMappings(string sourceInstanceName, string targetInstanceName)
         {
             var sourceUsers = GetAllUsers(new CrmRepo(_sourceSvc));
             var targetUsers = GetTargetUsers(new CrmRepo(_targetSvc), sourceUsers);
@@ -44,10 +44,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     TableDisplayName = "System User",
                     AttributeLogicalName = "systemuserid",
                     AttributeDisplayName = "System User Id",
+                    SourceInstanceName = sourceInstanceName,
                     SourceId = sourceUsers
                         .Where(su => su.Attributes["domainname"].ToString().Equals(tu.GetAttributeValue<string>("domainname")))
                         .Select(su => su.GetAttributeValue<Guid>("systemuserid"))
                         .FirstOrDefault(),
+                    TargetInstanceName = targetInstanceName,
                     TargetId = tu.GetAttributeValue<Guid>("systemuserid"),
                     State = MappingState.Auto
                 });
@@ -55,7 +57,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             return mappings;
         }
 
-        public IEnumerable<Mapping> GetTeamMappings()
+        public IEnumerable<Mapping> GetTeamMappings(string sourceInstanceName, string targetInstanceName)
         {
             var sourceTeams = GetAllTeams(new CrmRepo(_sourceSvc));
             var targetTeams = GetTargetTeams(new CrmRepo(_targetSvc), sourceTeams);
@@ -68,10 +70,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     TableDisplayName = "Team",
                     AttributeLogicalName = "teamid",
                     AttributeDisplayName = "Team Id",
+                    SourceInstanceName = sourceInstanceName,
                     SourceId = sourceTeams
                         .Where(st => st.Attributes["name"].ToString().Equals(tt.GetAttributeValue<string>("name")))
                         .Select(st => st.GetAttributeValue<Guid>("teamid"))
                         .FirstOrDefault(),
+                    TargetInstanceName = targetInstanceName,
                     TargetId = tt.GetAttributeValue<Guid>("teamid"),
                     State = MappingState.Auto
                 });
@@ -79,7 +83,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             return mappings;
         }
 
-        public Mapping GetBusinessUnitMapping()
+        public Mapping GetBusinessUnitMapping(string sourceInstanceName, string targetInstanceName)
         {
             var sourceBu = GetRootBusinessUnit(new CrmRepo(_sourceSvc));
             var targetBu = GetRootBusinessUnit(new CrmRepo(_targetSvc));
@@ -93,13 +97,50 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 TableDisplayName = "Business Unit",
                 AttributeLogicalName = "businessunitid",
                 AttributeDisplayName = "Business Unit Id",
+                SourceInstanceName = sourceInstanceName,
                 SourceId = sourceBu.GetAttributeValue<Guid>("businessunitid"),
+                TargetInstanceName = targetInstanceName,
                 TargetId = targetBu.GetAttributeValue<Guid>("businessunitid"),
                 State = MappingState.Auto
             };
         }
 
-        public IEnumerable<MigrationItem> ExecuteMappings(IEnumerable<MigrationItem> items, List<Mapping> mappings, Table table)
+        public EntityCollection ExecuteMappingsOnExport(List<Entity> records, List<Mapping> mappings, Table table)
+        {
+            foreach (var rec in records)
+            {
+                // value mappings
+                var refs = rec.Attributes.Select(att => att.Value).OfType<EntityReference>();
+                foreach (var vmap in mappings.Where(map => map.Type.Equals(MappingType.Value)))
+                {
+                    var matchingRefs = refs.Where(@ref => @ref.LogicalName.Equals(vmap.TableLogicalName) && @ref.Id.Equals(vmap.SourceId));
+                    foreach (var @ref in matchingRefs)
+                    {
+                        @ref.Id = vmap.TargetId;
+                    }
+                }
+
+                // attribute mappings
+                foreach (var amap in mappings.Where(map => map.Type.Equals(MappingType.Attribute)))
+                {
+                    if (rec.LogicalName.Equals(amap.TableLogicalName) && amap.TableLogicalName.Equals(table.LogicalName))
+                    {
+                        var attr = rec.Attributes.FirstOrDefault(att => att.Key.Equals(amap.AttributeLogicalName));
+                        var target = GetTargetRecordByAttribute(new CrmRepo(_targetSvc), amap.TableLogicalName, table.IdAttribute, amap.AttributeLogicalName, attr.Value);
+
+                        if (target != null) // record found -> map
+                        {
+                            rec.Id = target.Id;
+                            rec.Attributes[table.IdAttribute] = target.Id;
+                        }
+                    }
+                }
+            }
+
+            return new EntityCollection(records);
+        }
+
+        public IEnumerable<MigrationItem> ExecuteMappingsOnImport(IEnumerable<MigrationItem> items, List<Mapping> mappings, Table table)
         {
             var records = items.Select(src => src.Record);
             foreach (var rec in records)

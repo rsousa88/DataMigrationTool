@@ -212,7 +212,7 @@
     </Compile>
     <Compile Include="Enums\Action.cs" />
     <Compile Include="Enums\ConnectionType.cs" />
-    <Compile Include="Enums\ImportExportAction.cs" />
+    <Compile Include="Enums\Operation.cs" />
     <Compile Include="Enums\MappingState.cs" />
     <Compile Include="Enums\MappingType.cs" />
     <Compile Include="Forms\AttributeMapping.cs">

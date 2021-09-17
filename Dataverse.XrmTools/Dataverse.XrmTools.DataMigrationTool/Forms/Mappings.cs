@@ -21,19 +21,21 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
 
         private IOrganizationService _service;
         private Settings _settings;
-        private Instance _instance;
+        private Instance _sourceInstance;
+        private Instance _targetInstance;
         private IEnumerable<Table> _tables;
         private List<Mapping> _backup;
 
-        public Mappings(IOrganizationService service, Instance instance, IEnumerable<Table> tables, Settings settings)
+        public Mappings(IOrganizationService service, Instance sourceInstance, Instance targetInstance, IEnumerable<Table> tables, Settings settings)
         {
             Updated = false;
 
             _service = service;
             _settings = settings;
-            _instance = instance;
+            _sourceInstance = sourceInstance;
+            _targetInstance = targetInstance;
             _tables = tables;
-            _backup = new List<Mapping>(_instance.Mappings);
+            _backup = new List<Mapping>(_sourceInstance.Mappings);
 
             InitializeComponent();
         }
@@ -41,21 +43,46 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         private void MappingListsLoad(object sender, EventArgs e)
         {
             lvAttributeMappings.Items.Clear();
-            lvValueMappings.Items.Clear();
-
-            var attrMapItems = _instance.Mappings
-                .Where(map => map.Type.Equals(MappingType.Attribute))
-                .Select(map => map.ToListViewItem(new Tuple<string, object>("mappingtype", MappingType.Attribute)));
-
+            var attrMapItems = GetMappings(MappingType.Attribute);
             lvAttributeMappings.Items.AddRange(attrMapItems.ToArray());
-            lvAttributeMappings.Scrollable = false;
 
-            var valMapItems = _instance.Mappings
-                .Where(map => map.Type.Equals(MappingType.Value))
-                .Select(map => map.ToListViewItem(new Tuple<string, object>("mappingtype", MappingType.Value)));
-
+            lvValueMappings.Items.Clear();
+            var valMapItems = GetMappings(MappingType.Value);
             lvValueMappings.Items.AddRange(valMapItems.ToArray());
-            lvValueMappings.Scrollable = false;
+        }
+
+        private IEnumerable<ListViewItem> GetMappings(MappingType type, bool hideAuto = false)
+        {
+            if(type.Equals(MappingType.Attribute))
+            {
+                return _sourceInstance.Mappings
+                    .Where(map => map.Type.Equals(MappingType.Attribute))
+                    .Select(map => map.ToListViewItem(new Tuple<string, object>("mappingtype", MappingType.Attribute)));
+            }
+            else if (type.Equals(MappingType.Value))
+            {
+                var filter = new Func<Mapping, bool>(
+                    map => map.Type.Equals(MappingType.Value)
+                    && map.TargetInstanceName.Equals(_targetInstance.FriendlyName)
+                );
+
+                if (hideAuto)
+                {
+                    filter = new Func<Mapping, bool>(
+                        map => map.Type.Equals(MappingType.Value)
+                        && map.TargetInstanceName.Equals(_targetInstance.FriendlyName)
+                        && !map.State.Equals(MappingState.Auto)
+                    );
+                }
+                
+                return _sourceInstance.Mappings
+                    .Where(filter)
+                    .Select(map => map.ToListViewItem(new Tuple<string, object>("mappingtype", MappingType.Value)));
+            }
+            else
+            {
+                throw new Exception($"Invalid Mapping Type {type}");
+            }
         }
 
         private void ControlContextOptions (ListView listView, MappingType mappingType)
@@ -68,9 +95,9 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                 var selectedMappings = listView.SelectedItems
                     .Cast<ListViewItem>()
                     .Select(lvi => lvi.ToObject(new Mapping(), new Tuple<string, object>("mappingtype", mappingType)) as Mapping)
-                    .Select(map => _instance.Mappings.FirstOrDefault(insMap => insMap.Type.Equals(mappingType) && insMap.TableLogicalName.Equals(map.TableLogicalName)));
+                    .Select(map => _sourceInstance.Mappings.FirstOrDefault(insMap => insMap.Type.Equals(mappingType) && insMap.TableLogicalName.Equals(map.TableLogicalName)));
 
-                if (selectedMappings.Any(map => !map.State.Equals(MappingState.Delete)))
+                if (selectedMappings.Any(map => !map.State.Equals(MappingState.Delete) && !map.State.Equals(MappingState.Auto)))
                 {
                     cmsi_Delete.Visible = true;
                 }
@@ -87,7 +114,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             var toDelete = listView.SelectedItems
                     .Cast<ListViewItem>()
                     .Select(lvi => lvi.ToObject(new Mapping(), new Tuple<string, object>("mappingtype", mappingType)) as Mapping)
-                    .Select(map => _instance.Mappings
+                    .Select(map => _sourceInstance.Mappings
                         .FirstOrDefault(insMap =>
                             insMap.Type.Equals(mappingType) &&
                             insMap.TableLogicalName.Equals(map.TableLogicalName) &&
@@ -97,7 +124,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                             )).ToList();
 
             // mark selected mappings to be deleted
-            var intersect = _instance.Mappings.Intersect(toDelete);
+            var intersect = _sourceInstance.Mappings.Intersect(toDelete);
             foreach (var del in intersect)
             {
                 del.State = MappingState.Delete;
@@ -111,7 +138,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             var toUndo = listView.SelectedItems
                     .Cast<ListViewItem>()
                     .Select(lvi => lvi.ToObject(new Mapping(), new Tuple<string, object>("mappingtype", mappingType)) as Mapping)
-                    .Select(map => _instance.Mappings
+                    .Select(map => _sourceInstance.Mappings
                         .FirstOrDefault(insMap =>
                             insMap.Type.Equals(mappingType) &&
                             insMap.TableLogicalName.Equals(map.TableLogicalName) &&
@@ -120,7 +147,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                             )).ToList();
 
             // mark selected mappings to be undone
-            var intersect = _instance.Mappings.Intersect(toUndo);
+            var intersect = _sourceInstance.Mappings.Intersect(toUndo);
             foreach (var undo in intersect)
             {
                 undo.State = MappingState.Undo;
@@ -131,7 +158,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
 
         private void btnNewAttribute_Click(object sender, EventArgs e)
         {
-            var newAttrMappingDlg = new AttributeMapping(_service, _instance, _tables);
+            var newAttrMappingDlg = new AttributeMapping(_service, _sourceInstance, _tables);
             newAttrMappingDlg.ShowDialog(ParentForm);
 
             MappingListsLoad(null, null);
@@ -139,7 +166,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
 
         private void btnNewValue_Click(object sender, EventArgs e)
         {
-            var newValMappingDlg = new ValueMapping(_instance, _tables);
+            var newValMappingDlg = new ValueMapping(_sourceInstance, _targetInstance, _tables);
             newValMappingDlg.ShowDialog(ParentForm);
 
             MappingListsLoad(null, null);
@@ -150,16 +177,16 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             try
             {
                 // update mappings to existing
-                foreach (var map in _instance.Mappings.Where(map => map.State == MappingState.New || map.State == MappingState.Undo))
+                foreach (var map in _sourceInstance.Mappings.Where(map => map.State == MappingState.New || map.State == MappingState.Undo))
                 {
                     map.State = MappingState.Existing;
                 }
 
                 // remove mappings to be deleted
-                var toDelete = _instance.Mappings.Where(map => map.State == MappingState.Delete).ToList();
+                var toDelete = _sourceInstance.Mappings.Where(map => map.State == MappingState.Delete).ToList();
                 foreach (var map in toDelete)
                 {
-                    _instance.Mappings.Remove(map);
+                    _sourceInstance.Mappings.Remove(map);
                 }
 
                 Updated = true;
@@ -174,7 +201,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         private void btnCancel_Click(object sender, EventArgs e)
         {
             // purge new mappings
-            _instance.Mappings = _backup;
+            _sourceInstance.Mappings = _backup;
             Close();
         }
 
@@ -223,6 +250,14 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             }
         }
 
+        private void cbHideAutoMappings_CheckedChanged(object sender, EventArgs e)
+        {
+            lvValueMappings.Items.Clear();
+            var valMapItems = GetMappings(MappingType.Value, cbHideAutoMappings.Checked);
+
+            lvValueMappings.Items.AddRange(valMapItems.ToArray());
+        }
+
         private void lvAttributeMappings_Resize(object sender, EventArgs e)
         {
             // re-render list view columns
@@ -242,10 +277,11 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             // re-render list view columns
             var maxWidth = lvValueMappings.Width >= 300 ? lvValueMappings.Width : 300;
             chVMapType.Width = (int)Math.Floor(maxWidth * 0.09);
-            chVMapTableDisplay.Width = (int)Math.Floor(maxWidth * 0.25);
+            chVMapTableDisplay.Width = (int)Math.Floor(maxWidth * 0.15);
             chVMapTableLogical.Width = (int)Math.Floor(maxWidth * 0.15);
-            chVMapSourceId.Width = (int)Math.Floor(maxWidth * 0.20);
-            chVMapTargetId.Width = (int)Math.Floor(maxWidth * 0.20);
+            chVMapSourceId.Width = (int)Math.Floor(maxWidth * 0.19);
+            chVMapTargetId.Width = (int)Math.Floor(maxWidth * 0.19);
+            chVMapTargetInstance.Width = (int)Math.Floor(maxWidth * 0.12);
             chVMapState.Width = (int)Math.Floor(maxWidth * 0.09);
 
             lvValueMappings.Scrollable = true;

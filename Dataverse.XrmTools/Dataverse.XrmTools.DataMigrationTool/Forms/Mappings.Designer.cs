@@ -46,6 +46,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             this.cmsi_Delete = new System.Windows.Forms.ToolStripMenuItem();
             this.cmsi_UndoDelete = new System.Windows.Forms.ToolStripMenuItem();
             this.pnlFooter = new System.Windows.Forms.Panel();
+            this.cbHideAutoMappings = new System.Windows.Forms.CheckBox();
             this.btnCancel = new System.Windows.Forms.Button();
             this.btnClose = new System.Windows.Forms.Button();
             this.pnlHeader2 = new System.Windows.Forms.Panel();
@@ -59,6 +60,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             this.chVMapTableLogical = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
             this.chVMapSourceId = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
             this.chVMapTargetId = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
+            this.chVMapTargetInstance = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
             this.chVMapState = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
             this.mappingsBindingSource = new System.Windows.Forms.BindingSource(this.components);
             this.pnlHeader1.SuspendLayout();
@@ -102,10 +104,11 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             this.lblADescription.Location = new System.Drawing.Point(7, 42);
             this.lblADescription.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
             this.lblADescription.Name = "lblADescription";
-            this.lblADescription.Size = new System.Drawing.Size(713, 19);
+            this.lblADescription.Size = new System.Drawing.Size(1012, 19);
             this.lblADescription.TabIndex = 2;
             this.lblADescription.Text = "Match records from source and target instances by a specified attribute (override" +
-    " automatic record matching by ID)";
+    " automatic record matching by ID). These mappings are bound to a source instance" +
+    "";
             // 
             // lblATitle
             // 
@@ -217,6 +220,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             // pnlFooter
             // 
             this.pnlFooter.BackColor = System.Drawing.Color.White;
+            this.pnlFooter.Controls.Add(this.cbHideAutoMappings);
             this.pnlFooter.Controls.Add(this.btnCancel);
             this.pnlFooter.Controls.Add(this.btnClose);
             this.pnlFooter.Dock = System.Windows.Forms.DockStyle.Bottom;
@@ -225,6 +229,17 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             this.pnlFooter.Name = "pnlFooter";
             this.pnlFooter.Size = new System.Drawing.Size(1696, 64);
             this.pnlFooter.TabIndex = 3;
+            // 
+            // cbHideAutoMappings
+            // 
+            this.cbHideAutoMappings.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
+            this.cbHideAutoMappings.Location = new System.Drawing.Point(1399, 22);
+            this.cbHideAutoMappings.Name = "cbHideAutoMappings";
+            this.cbHideAutoMappings.Size = new System.Drawing.Size(174, 28);
+            this.cbHideAutoMappings.TabIndex = 8;
+            this.cbHideAutoMappings.Text = "Hide Auto Mappings";
+            this.cbHideAutoMappings.UseVisualStyleBackColor = true;
+            this.cbHideAutoMappings.CheckedChanged += new System.EventHandler(this.cbHideAutoMappings_CheckedChanged);
             // 
             // btnCancel
             // 
@@ -281,10 +296,11 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             this.lblVDescription.Location = new System.Drawing.Point(7, 42);
             this.lblVDescription.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
             this.lblVDescription.Name = "lblVDescription";
-            this.lblVDescription.Size = new System.Drawing.Size(674, 19);
+            this.lblVDescription.Size = new System.Drawing.Size(1074, 19);
             this.lblVDescription.TabIndex = 2;
             this.lblVDescription.Text = "Replace all record references by a specified ID (migrate records even if there ar" +
-    "e references with different ID\'s)";
+    "e references with different ID\'s). These mappings are bound to a source and targ" +
+    "et instances pair";
             // 
             // lblVTitle
             // 
@@ -316,6 +332,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             this.chVMapTableLogical,
             this.chVMapSourceId,
             this.chVMapTargetId,
+            this.chVMapTargetInstance,
             this.chVMapState});
             this.lvValueMappings.ContextMenuStrip = this.cms_ContextMenu;
             this.lvValueMappings.Dock = System.Windows.Forms.DockStyle.Fill;
@@ -361,6 +378,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             this.chVMapTargetId.Name = "chVMapTargetId";
             this.chVMapTargetId.Text = "Target ID";
             this.chVMapTargetId.Width = 96;
+            // 
+            // chVMapTargetInstance
+            // 
+            this.chVMapTargetInstance.Name = "chVMapTargetInstance";
+            this.chVMapTargetInstance.Text = "Target Instance";
+            this.chVMapTargetInstance.Width = 127;
             // 
             // chVMapState
             // 
@@ -431,6 +454,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         private System.Windows.Forms.ColumnHeader chVMapTableLogical;
         private System.Windows.Forms.ColumnHeader chVMapSourceId;
         private System.Windows.Forms.ColumnHeader chVMapTargetId;
+        private System.Windows.Forms.ColumnHeader chVMapTargetInstance;
         private System.Windows.Forms.ColumnHeader chVMapState;
         private System.Windows.Forms.Button btnNewAttribute;
         private System.Windows.Forms.Button btnNewValue;
@@ -438,5 +462,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         private System.Windows.Forms.ContextMenuStrip cms_ContextMenu;
         private System.Windows.Forms.ToolStripMenuItem cmsi_Delete;
         private System.Windows.Forms.ToolStripMenuItem cmsi_UndoDelete;
+        private System.Windows.Forms.CheckBox cbHideAutoMappings;
     }
 }

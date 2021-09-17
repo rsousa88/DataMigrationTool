@@ -14,12 +14,14 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
 {
     public partial class ValueMapping : Form
     {
-        private Instance _instance;
+        private Instance _sourceInstance;
+        private Instance _targetInstance;
         private IEnumerable<Table> _tables;
 
-        public ValueMapping(Instance instance, IEnumerable<Table> tables)
+        public ValueMapping(Instance sourceInstance, Instance targetInstance, IEnumerable<Table> tables)
         {
-            _instance = instance;
+            _sourceInstance = sourceInstance;
+            _targetInstance = targetInstance;
             _tables = tables;
 
             InitializeComponent();
@@ -51,12 +53,14 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                     Type = MappingType.Value,
                     TableLogicalName = table.LogicalName,
                     TableDisplayName = table.DisplayName,
+                    SourceInstanceName = _sourceInstance.FriendlyName,
                     SourceId = sourceId,
+                    TargetInstanceName = _targetInstance.FriendlyName,
                     TargetId = targetId,
                     State = MappingState.New
                 };
 
-                _instance.Mappings.Add(mapping);
+                _sourceInstance.Mappings.Add(mapping);
 
                 Close();
             }

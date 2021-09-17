@@ -3,13 +3,18 @@ using System;
 using System.Linq;
 using System.Collections.Generic;
 
+// DataMigrationTool
+using Dataverse.XrmTools.DataMigrationTool.Models;
+
 namespace Dataverse.XrmTools.DataMigrationTool.AppSettings
 {
     public class Settings
     {
+        public int SettingsVersion { get; set; }
         public List<Instance> Instances { get; set; }
         public List<TableSettings> TableSettings { get; set; }
         public List<Sort> Sorts { get; set; }
+        public UiSettings UiSettings { get; set; }
         public string LastDataFile { get; set; }
 
         public Instance this[Guid orgId]

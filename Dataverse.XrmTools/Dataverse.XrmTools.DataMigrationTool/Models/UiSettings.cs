@@ -10,5 +10,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
         public bool MapBu { get; set; }
         public Action Action { get; set; }
         public int BatchSize { get; set; }
+        public Operation ApplyMappingsOn { get; set; }
     }
 }
