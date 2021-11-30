@@ -70,9 +70,13 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             {
                 var mappingsLogic = new MappingsLogic(_sourceSvc, _targetSvc);
                 _mappedCollection = mappingsLogic.ExecuteMappingsOnExport(_sourceCollection.Entities.ToList(), mappings, tableData.Table);
+
+                return SaveJsonFile(_mappedCollection, tableData, filePath);
             }
-            
-            return SaveJsonFile(tableData, filePath);
+            else
+            {
+                return SaveJsonFile(_sourceCollection, tableData, filePath);
+            }
         }
 
         public OperationResult Import(TableData tableData, RecordCollection collection, UiSettings uiSettings, List<Mapping> mappings)
@@ -242,17 +246,17 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             return responses;
         }
 
-        private bool SaveJsonFile(TableData tableData, string path)
+        private bool SaveJsonFile(EntityCollection entityCollection, TableData tableData, string path)
         {
             var success = false;
 
             // export -> serialize source records to json and save file
-            _mappedCollection.EntityName = tableData.Table.LogicalName;
-            var msg = $"You are about to export {_mappedCollection.Entities.Count} {tableData.Table.DisplayName} records. Continue?";
+            entityCollection.EntityName = tableData.Table.LogicalName;
+            var msg = $"You are about to export {entityCollection.Entities.Count} {tableData.Table.DisplayName} records. Continue?";
             var result = MessageBox.Show(msg, "Info", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
             if (result.Equals(DialogResult.Yes))
             {
-                var collection = new RecordCollection(_mappedCollection, tableData.Metadata);
+                var collection = new RecordCollection(entityCollection, tableData.Metadata);
                 var json = collection.SerializeObject<RecordCollection>();
                 File.WriteAllText(path, json);
 

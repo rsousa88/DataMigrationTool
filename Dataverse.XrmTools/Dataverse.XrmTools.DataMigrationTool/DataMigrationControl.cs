@@ -1161,6 +1161,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             finally
             {
                 ManageWorkingState(false);
+                txtTableFilter.Focus();
             }
         }
 
