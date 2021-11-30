@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
+  <metadata>
+    <id>Dataverse.XrmTools.DataMigrationTool</id>
+    <version>2021.11.30.10</version>
+    <title>Data Migration Tool</title>
+    <authors>Rui Sousa</authors>
+    <owners>Rui Sousa</owners>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <license type="expression">MIT</license>
+    <projectUrl>https://github.com/rsousa88/DataMigrationTool</projectUrl>
+    <icon>images\icon.png</icon>
+    <description>
+      Tool used to migrate data between Dataverse instances.
+
+      - Allows data to be exported to JSON format and later imported
+      - Supports Create, Update and Delete operations and attribute specification
+      - Easily filter data by using fetch XML filters
+      - Integration with FetchXML Builder tool for easier query building
+      - Map records using several mapping options (auto or manual)
+    </description>
+    <summary>Migrate data between Dataverse instances</summary>
+    <releaseNotes>
+      2021.11.30.x
+      - Fixed an issue where the filter textbox used to lose focus after user stopped typing
+      - Fixed an issue where the export operation didn't export anything when the import option on 'apply mapping on' was selected
+    </releaseNotes>
+    <copyright>Copyright 2021</copyright>
+    <tags>XrmToolBox dataverse data tool dynamics 365 crm migration xrm</tags>
+    <dependencies>
+      <dependency id="XrmToolBox" version="1.2021.6.51" />
+    </dependencies>
+  </metadata>
+  <files>
+    <file src="..\Resources\icon.png" target="images\" />
+	<file src="..\bin\Release\Dataverse.XrmTools.DataMigrationTool.dll" target="lib\net462\Plugins\Dataverse.XrmTools.DataMigrationTool.dll" />
+  </files>
+</package>
