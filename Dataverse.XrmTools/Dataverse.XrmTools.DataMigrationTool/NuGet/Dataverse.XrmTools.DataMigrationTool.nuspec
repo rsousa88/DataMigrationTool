@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
   <metadata>
     <id>Dataverse.XrmTools.DataMigrationTool</id>
-    <version>2021.11.30.10</version>
+    <version>2022.1.12.1</version>
     <title>Data Migration Tool</title>
     <authors>Rui Sousa</authors>
     <owners>Rui Sousa</owners>
@@ -21,9 +21,10 @@
     </description>
     <summary>Migrate data between Dataverse instances</summary>
     <releaseNotes>
-      2021.11.30.x
-      - Fixed an issue where the filter textbox used to lose focus after user stopped typing
-      - Fixed an issue where the export operation didn't export anything when the import option on 'apply mapping on' was selected
+      2022.1.12.x
+      - Fixed an issue where attribute mappings were being created with missing instance information
+      - Fixed an issue where the plugin was unable to load with corrupt mappings
+      - Added more log information
     </releaseNotes>
     <copyright>Copyright 2021</copyright>
     <tags>XrmToolBox dataverse data tool dynamics 365 crm migration xrm</tags>

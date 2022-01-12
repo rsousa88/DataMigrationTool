@@ -83,17 +83,22 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             try
             {
-                LogInfo($"Updating connection: {actionName}...");
+                LogInfo($"Updating connection...");
                 base.UpdateConnection(newService, detail, actionName, parameter);
+                LogInfo($"Connection successfully updated...");
+
                 var client = detail.ServiceClient;
 
                 if (!actionName.Equals("AdditionalOrganization"))
                 {
+                    LogInfo($"Checking for legacy instances...");
                     UpdateLegacyInstance(detail.ConnectionId.Value, client);
 
+                    LogInfo($"Checking settings for known instances...");
                     var instance = _settings.Instances.FirstOrDefault(inst => inst.UniqueName.Equals(client.ConnectedOrgUniqueName));
-                    if (instance == null)
+                    if (instance is null)
                     {
+                        LogInfo($"New instance '{client.ConnectedOrgUniqueName}': Adding to settings...");
                         instance = new Instance
                         {
                             Id = client.ConnectedOrgId,
@@ -105,16 +110,34 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
                         _settings.Instances.Add(instance);
                     }
+                    else
+                    {
+                        LogInfo($"Found known instance '{instance.UniqueName}'");
+                    }
 
                     _sourceClient = client;
                     _sourceInstance = instance;
 
                     // load source instance mappings
-                    var srcMappings = _sourceInstance.Mappings.Where(map => map.SourceInstanceName.Equals(_sourceInstance.FriendlyName));
-                    _mappings = new List<Mapping>(srcMappings);
-                    ClearAutoMappings();
+                    LogInfo($"Loading mappings...");
+                    try
+                    {
+                        var srcMappings = _sourceInstance.Mappings.Where(map => map.SourceInstanceName.Equals(_sourceInstance.FriendlyName));
+                        _mappings = new List<Mapping>(srcMappings);
+
+                        LogInfo($"Clearing mappings...");
+                        ClearMappings();
+                    }
+                    catch
+                    {
+                        LogInfo($"Corrupt mappings detected: Resetting mappings...");
+                        ClearMappings(true);
+                    }
+
+                    
 
                     // load sorts
+                    LogInfo($"Loading sort settings...");
                     _sorts = _settings.Sorts;
 
                     // save settings file
@@ -219,6 +242,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
             // update instance
             if (legacy != null)
             {
+                LogInfo($"Found legacy instance: Updating...");
+
                 legacy.Id = client.ConnectedOrgId;
                 legacy.FriendlyName = client.ConnectedOrgFriendlyName;
                 legacy.UniqueName = client.ConnectedOrgUniqueName;
@@ -783,13 +808,24 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
         }
 
-        private void ClearAutoMappings()
+        private void ClearMappings(bool fullReset = false)
         {
-            // clear previously generated auto mappings
-            _mappings.RemoveAll(map => map.State.Equals(MappingState.Auto));
-            _sourceInstance.Mappings = _mappings;
-            SettingsHelper.SetSettings(_settings);
-            SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Cleared previously generated Automatic Mappings"));
+            if(fullReset)
+            {
+                // reset all mappings
+                _mappings = new List<Mapping>();
+                _sourceInstance.Mappings = _mappings;
+                SettingsHelper.SetSettings(_settings);
+                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("All Mappings were reset"));
+            }
+            else
+            {
+                // clear previously generated auto mappings
+                _mappings.RemoveAll(map => map.State.Equals(MappingState.Auto));
+                _sourceInstance.Mappings = _mappings;
+                SettingsHelper.SetSettings(_settings);
+                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Cleared previously generated Automatic Mappings"));
+            }
         }
 
         private void GenerateMappings()
@@ -806,7 +842,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 IsCancelable = true,
                 Work = (worker, evt) =>
                 {
-                    ClearAutoMappings();
+                    ClearMappings();
 
                     var mappingsLogic = new MappingsLogic(Service, _targetClient);
 

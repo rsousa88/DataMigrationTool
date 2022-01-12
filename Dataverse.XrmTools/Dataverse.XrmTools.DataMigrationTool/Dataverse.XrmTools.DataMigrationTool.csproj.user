@@ -5,6 +5,12 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|AnyCPU'">
     <StartAction>Program</StartAction>
+    <StartProgram>C:\Program Files\XrmToolbox\XrmToolBox.exe</StartProgram>
+    <StartArguments>/overridepath:. plugin:"Data Migration Tool"</StartArguments>
+    <StartWorkingDirectory>C:\Program Files\XrmToolbox\</StartWorkingDirectory>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|AnyCPU'">
+    <StartAction>Program</StartAction>
     <StartProgram>C:\Repos\github\DataMigrationTool\Dataverse.XrmTools\Dataverse.XrmTools.DataMigrationTool\bin\Debug\XrmToolBox.exe</StartProgram>
     <StartArguments>/overridepath:. /plugin:"Data Migration Tool"</StartArguments>
   </PropertyGroup>

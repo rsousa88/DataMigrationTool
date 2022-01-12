@@ -311,10 +311,14 @@
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
     <PostBuildEvent>if $(ConfigurationName) == Debug (
-  IF NOT EXIST Plugins mkdir Plugins
-  COPY /Y Dataverse.XrmTools.DataMigrationTool.dll "$(TargetDir)Plugins"
-  COPY /Y Dataverse.XrmTools.DataMigrationTool.pdb "$(TargetDir)Plugins"
+  IF NOT EXIST "C:\Program Files\XrmToolbox\Plugins" mkdir "C:\Program Files\XrmToolbox\Plugins"
+  COPY /Y Dataverse.XrmTools.DataMigrationTool.dll "C:\Program Files\XrmToolbox\Plugins"
+  COPY /Y Dataverse.XrmTools.DataMigrationTool.pdb "C:\Program Files\XrmToolbox\Plugins"
 )</PostBuildEvent>
+  </PropertyGroup>
+  <PropertyGroup>
+    <PreBuildEvent>
+    </PreBuildEvent>
   </PropertyGroup>
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it.
        Other similar extension points exist, see Microsoft.Common.targets.  

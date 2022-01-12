@@ -18,14 +18,16 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
     public partial class AttributeMapping : Form
     {
         private IOrganizationService _service;
-        private Instance _instance;
+        private Instance _sourceInstance;
+        private Instance _targetInstance;
         private IEnumerable<Table> _tables;
         private IEnumerable<Models.Attribute> _tempAttrs;
 
-        public AttributeMapping(IOrganizationService service, Instance instance, IEnumerable<Table> tables)
+        public AttributeMapping(IOrganizationService service, Instance sourceInstance, Instance targetInstance, IEnumerable<Table> tables)
         {
             _service = service;
-            _instance = instance;
+            _sourceInstance = sourceInstance;
+            _targetInstance = targetInstance;
             _tables = tables;
 
             InitializeComponent();
@@ -92,12 +94,14 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                     Type = MappingType.Attribute,
                     TableLogicalName = table.LogicalName,
                     TableDisplayName = table.DisplayName,
+                    SourceInstanceName = _sourceInstance.FriendlyName,
+                    TargetInstanceName = _targetInstance.FriendlyName,
                     AttributeLogicalName = attribute.LogicalName,
                     AttributeDisplayName = attribute.DisplayName,
                     State = MappingState.New
                 };
 
-                _instance.Mappings.Add(mapping);
+                _sourceInstance.Mappings.Add(mapping);
 
                 Close();
             }

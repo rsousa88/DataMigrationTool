@@ -158,7 +158,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
 
         private void btnNewAttribute_Click(object sender, EventArgs e)
         {
-            var newAttrMappingDlg = new AttributeMapping(_service, _sourceInstance, _tables);
+            var newAttrMappingDlg = new AttributeMapping(_service, _sourceInstance, _targetInstance, _tables);
             newAttrMappingDlg.ShowDialog(ParentForm);
 
             MappingListsLoad(null, null);
