@@ -134,8 +134,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         ClearMappings(true);
                     }
 
-                    
-
                     // load sorts
                     LogInfo($"Loading sort settings...");
                     _sorts = _settings.Sorts;
@@ -502,7 +500,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             LogInfo($"Previewing operation...");
 
-            var tableData = GetSelectedTableItemData(attributeRequired: true);
+            var tableData = GetSelectedTableItemData(targetRequired: false, attributeRequired: true);
             if(tableData == null) {
                 SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Preview operation aborted"));
                 return;
@@ -542,7 +540,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     var data = evt.Argument as TableData;
 
                     var logic = new DataLogic(worker, Service, _targetClient);
-                    var result = Task.Run(() => logic.Preview(data, uiSettings));
+                    var result = Task.Run(() => logic.Preview(data, uiSettings, _targetClient != null && _targetClient.IsReady));
 
                     evt.Result = result.Result;
                 },
@@ -1006,29 +1004,26 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (sourceReady) // source connection is available
             {
                 btnSelectTarget.Enabled = enable;
+                gbTables.Enabled = enable;
 
                 if (targetReady) // source and target connection is available
                 {
                     tsmiImportData.Enabled = enable;
                     gbMappingSettings.Enabled = enable;
                     gbOpSettings.Enabled = enable;
-                    gbTables.Enabled = enable;
+                    
                     RenderMappingsButton();
 
                     if (!string.IsNullOrEmpty(_settings.LastDataFile)) // source and target connection is available and a a file was already exported since tool loading
                     {
                         tsmiImportLastFile.Enabled = true;
                     }
-
-                    if (tableSelected) // source and target connection is available and a table is selected
-                    {
-                        tsbPreview.Enabled = enable;
-                    }
                 }
 
                 if(tableSelected) // source connection is available and table is selected
                 {
                     gbAttributes.Enabled = true;
+                    tsbPreview.Enabled = enable;
                     tsmiExport.Enabled = enable;
                     tsmiExportData.Enabled = enable;
                     tsmiExportSettings.Enabled = enable;
@@ -1047,7 +1042,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             var uiSettings = new UiSettings
             {
                 Action = mode,
-                BatchSize= nudBatchCount.Value.ToInt().Value,
+                BatchSize = nudBatchCount.Value.ToInt().Value,
                 MapUsers = cbMapUsers.Checked,
                 MapTeams = cbMapTeams.Checked,
                 MapBu = cbMapBu.Checked,

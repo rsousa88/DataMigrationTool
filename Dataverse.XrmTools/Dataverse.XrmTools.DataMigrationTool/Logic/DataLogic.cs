@@ -12,11 +12,11 @@ using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
 
 // DataMigrationTool
+using Dataverse.XrmTools.DataMigrationTool.Enums;
 using Dataverse.XrmTools.DataMigrationTool.Models;
 using Dataverse.XrmTools.DataMigrationTool.Helpers;
 using Dataverse.XrmTools.DataMigrationTool.AppSettings;
 using Dataverse.XrmTools.DataMigrationTool.Repositories;
-using Dataverse.XrmTools.DataMigrationTool.Enums;
 
 namespace Dataverse.XrmTools.DataMigrationTool.Logic
 {
@@ -45,15 +45,18 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
         #endregion Constructors
 
         #region Public Methods
-        public OperationResult Preview(TableData tableData, UiSettings uiSettings)
+        public OperationResult Preview(TableData tableData, UiSettings uiSettings, bool targetReady)
         {
             RetrieveSourceData(tableData, uiSettings.BatchSize);
             if (_worker.CancellationPending) return null;
 
-            RetrieveTargetData(tableData.Table.LogicalName, tableData.Table.IdAttribute, uiSettings.BatchSize);
-            if (_worker.CancellationPending) return null;
+            if(targetReady)
+            {
+                RetrieveTargetData(tableData.Table.LogicalName, tableData.Table.IdAttribute, uiSettings.BatchSize);
+                if (_worker.CancellationPending) return null;
+            }
 
-            ExecuteTargetOperations(uiSettings, tableData.Table, true);
+            ExecuteTargetOperations(uiSettings, tableData.Table, true, targetReady);
             if (_worker.CancellationPending) return null;
 
             return new OperationResult
@@ -88,7 +91,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             var result = MessageBox.Show(msg, "Info", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
             if (result.Equals(DialogResult.Yes))
             {
-                ExecuteTargetOperations(uiSettings, tableData.Table, false, mappings);
+                ExecuteTargetOperations(uiSettings, tableData.Table, false, true, mappings);
 
                 return new OperationResult
                 {
@@ -126,11 +129,11 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             _targetCollection = targetRepo.GetCollectionByExpression(query, batchSize);
         }
 
-        private void ExecuteTargetOperations(UiSettings uiSettings, Table table, bool isPreview, List<Mapping> mappings = null)
+        private void ExecuteTargetOperations(UiSettings uiSettings, Table table, bool isPreview, bool targetReady, List<Mapping> mappings = null)
         {
-            if (_sourceCollection == null || _targetCollection == null) { return; }
+            if (_sourceCollection == null || (targetReady && _targetCollection == null)) { return; }
 
-            var migrationItems = GetDiffRecords(uiSettings.Action);
+            var migrationItems = GetDiffRecords(uiSettings.Action, targetReady);
 
             // preview
             if (isPreview)
@@ -192,31 +195,41 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             _resultsData.AddRange(lvItems);
         }
 
-        private IEnumerable<MigrationItem> GetDiffRecords(Enums.Action action)
+        private IEnumerable<MigrationItem> GetDiffRecords(Enums.Action action, bool targetReady)
         {
             var description = (action & Enums.Action.Preview) == Enums.Action.Preview ? Enums.Action.Preview.ToString() : string.Empty;
 
             var diffs = new List<MigrationItem>();
-            if ((action & Enums.Action.Create) == Enums.Action.Create)
+            if(!targetReady)
             {
-                var createIds = _sourceCollection.Entities.Select(ent => ent.Id).Except(_targetCollection.Entities.Select(ent => ent.Id));
-                var createRecords = createIds.Select(id => new MigrationItem(Enums.Action.Create, _sourceCollection.Entities.FirstOrDefault(ent => ent.Id.Equals(id)), description));
+                var previewIds = _sourceCollection.Entities.Select(ent => ent.Id);
+                var previewRecords = previewIds.Select(id => new MigrationItem(Enums.Action.Preview, _sourceCollection.Entities.FirstOrDefault(ent => ent.Id.Equals(id)), description));
 
-                diffs.AddRange(createRecords);
+                diffs.AddRange(previewRecords);
             }
-            if ((action & Enums.Action.Update) == Enums.Action.Update)
+            else
             {
-                var updateIds = _sourceCollection.Entities.Select(ent => ent.Id).Intersect(_targetCollection.Entities.Select(ent => ent.Id));
-                var updateRecords = updateIds.Select(id => new MigrationItem(Enums.Action.Update, _sourceCollection.Entities.FirstOrDefault(ent => ent.Id.Equals(id)), description));
+                if ((action & Enums.Action.Create) == Enums.Action.Create)
+                {
+                    var createIds = _sourceCollection.Entities.Select(ent => ent.Id).Except(_targetCollection.Entities.Select(ent => ent.Id));
+                    var createRecords = createIds.Select(id => new MigrationItem(Enums.Action.Create, _sourceCollection.Entities.FirstOrDefault(ent => ent.Id.Equals(id)), description));
 
-                diffs.AddRange(updateRecords);
-            }
-            if ((action & Enums.Action.Delete) == Enums.Action.Delete)
-            {
-                var deleteIds = _targetCollection.Entities.Select(ent => ent.Id).Except(_sourceCollection.Entities.Select(ent => ent.Id));
-                var deleteRecords = deleteIds.Select(id => new MigrationItem(Enums.Action.Delete, _targetCollection.Entities.FirstOrDefault(ent => ent.Id.Equals(id)), description));
+                    diffs.AddRange(createRecords);
+                }
+                if ((action & Enums.Action.Update) == Enums.Action.Update)
+                {
+                    var updateIds = _sourceCollection.Entities.Select(ent => ent.Id).Intersect(_targetCollection.Entities.Select(ent => ent.Id));
+                    var updateRecords = updateIds.Select(id => new MigrationItem(Enums.Action.Update, _sourceCollection.Entities.FirstOrDefault(ent => ent.Id.Equals(id)), description));
 
-                diffs.AddRange(deleteRecords);
+                    diffs.AddRange(updateRecords);
+                }
+                if ((action & Enums.Action.Delete) == Enums.Action.Delete)
+                {
+                    var deleteIds = _targetCollection.Entities.Select(ent => ent.Id).Except(_sourceCollection.Entities.Select(ent => ent.Id));
+                    var deleteRecords = deleteIds.Select(id => new MigrationItem(Enums.Action.Delete, _targetCollection.Entities.FirstOrDefault(ent => ent.Id.Equals(id)), description));
+
+                    diffs.AddRange(deleteRecords);
+                }
             }
 
             return diffs;

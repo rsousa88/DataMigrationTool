@@ -185,8 +185,14 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
         {
             using (var stream = new MemoryStream())
             {
+
                 var serializer = new DataContractJsonSerializer(typeof(T));
-                serializer.WriteObject(stream, obj);
+
+                using (var writer = JsonReaderWriterFactory.CreateJsonWriter(stream, Encoding.UTF8, false, true))
+                {
+                    serializer.WriteObject(writer, obj);
+                }
+
                 stream.Position = 0;
 
                 var reader = new StreamReader(stream);
