@@ -8,10 +8,12 @@
 **/[Bb]in/**/Metadata
 **/[Bb]in/**/Plugins
 **/[Bb]in/**/Settings
-**/[Bb]in/**/Dataverse.XrmTools.DataMigrationTool.*
+**/[Bb]in/**/Dataverse.XrmTools.DataMigrationTool*
 **/[Bb]in/Release
 
 [Oo]bj
 [Pp]ackages
 /TODO.md
 /DEV-NOTES.md
+
+**/Dataverse.XrmTools.DataMigrationTool.Tests/[Bb]in/*
