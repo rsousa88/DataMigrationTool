@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
   <metadata>
     <id>Dataverse.XrmTools.DataMigrationTool</id>
-    <version>2022.1.12.1</version>
+    <version>2022.4.29.1</version>
     <title>Data Migration Tool</title>
     <authors>Rui Sousa</authors>
     <owners>Rui Sousa</owners>
@@ -21,12 +21,11 @@
     </description>
     <summary>Migrate data between Dataverse instances</summary>
     <releaseNotes>
-      2022.1.12.x
-      - Fixed an issue where attribute mappings were being created with missing instance information
-      - Fixed an issue where the plugin was unable to load with corrupt mappings
-      - Added more log information
-    </releaseNotes>
-    <copyright>Copyright 2021</copyright>
+		2022.4.29.x
+		- [NEW] Output JSON is now being serialized with indentation
+		- [NEW] Data can now be exported without connection to target instance
+	</releaseNotes>
+    <copyright>Copyright 2022</copyright>
     <tags>XrmToolBox dataverse data tool dynamics 365 crm migration xrm</tags>
     <dependencies>
       <dependency id="XrmToolBox" version="1.2021.6.51" />
