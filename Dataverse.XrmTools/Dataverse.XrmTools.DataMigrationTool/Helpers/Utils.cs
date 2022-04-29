@@ -185,7 +185,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
         {
             using (var stream = new MemoryStream())
             {
-
                 var serializer = new DataContractJsonSerializer(typeof(T));
 
                 using (var writer = JsonReaderWriterFactory.CreateJsonWriter(stream, Encoding.UTF8, false, true))
