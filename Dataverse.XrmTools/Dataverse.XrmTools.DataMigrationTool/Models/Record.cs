@@ -1,10 +1,10 @@
 ﻿// Microsoft
-using Microsoft.Xrm.Sdk;
+using System.Collections.Generic;
 
 namespace Dataverse.XrmTools.DataMigrationTool.Models
 {
     public class Record
     {
-        public AttributeCollection Attributes { get; set; }
+        public IEnumerable<RecordAttribute> Attributes { get; set; }
     }
 }

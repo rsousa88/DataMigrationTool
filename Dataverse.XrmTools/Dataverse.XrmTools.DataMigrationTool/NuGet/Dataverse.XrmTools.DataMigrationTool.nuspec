@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
   <metadata>
     <id>Dataverse.XrmTools.DataMigrationTool</id>
-    <version>2022.4.29.1</version>
+    <version>2022.5.12.4</version>
     <title>Data Migration Tool</title>
     <authors>Rui Sousa</authors>
     <owners>Rui Sousa</owners>
@@ -21,9 +21,13 @@
     </description>
     <summary>Migrate data between Dataverse instances</summary>
     <releaseNotes>
-		2022.4.29.x
-		- [NEW] Output JSON is now being serialized with indentation
-		- [NEW] Data can now be exported without connection to target instance
+		2022.5.12.x
+		- [NEW] Now using Newtonsoft for JSON serializing and deserializing
+		- [NEW] Improved query performance when checking diff from source to target
+		- [NEW] Minor UI fix on fetchXml box
+		- [BUG] Fixed issue #5
+		- [BUG] Fixed issue #6
+		- [BUG] Fixed issue #7
 	</releaseNotes>
     <copyright>Copyright 2022</copyright>
     <tags>XrmToolBox dataverse data tool dynamics 365 crm migration xrm</tags>

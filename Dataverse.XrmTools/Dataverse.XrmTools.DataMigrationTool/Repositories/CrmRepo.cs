@@ -165,7 +165,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Repositories
 
                 return ExecuteMultiple(requests);
             }
-            catch (Exception)
+            catch
             {
                 throw;
             }
@@ -249,7 +249,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Repositories
                         Message = resp.Fault != null ? resp.Fault.Message : string.Empty
                     });
             }
-            catch (Exception)
+            catch
             {
                 throw;
             }

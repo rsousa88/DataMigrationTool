@@ -583,7 +583,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             // save serialized json with settings
             var filename = $"{dirPath}\\{tableData.Table.LogicalName}.settings.json";
 
-            var json = tableData.Settings.SerializeObject<TableSettings>();
+            var json = tableData.Settings.SerializeObject();
             File.WriteAllText(filename, json);
         }
 

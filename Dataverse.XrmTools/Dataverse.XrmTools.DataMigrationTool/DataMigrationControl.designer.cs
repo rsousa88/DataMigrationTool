@@ -103,7 +103,7 @@
             this.tsbAbort});
             this.tsMain.Location = new System.Drawing.Point(0, 0);
             this.tsMain.Name = "tsMain";
-            this.tsMain.Size = new System.Drawing.Size(2147, 31);
+            this.tsMain.Size = new System.Drawing.Size(1610, 25);
             this.tsMain.TabIndex = 90;
             this.tsMain.Text = "toolStrip1";
             // 
@@ -113,14 +113,14 @@
             this.tsbRefreshTables.Image = global::Dataverse.XrmTools.DataMigrationTool.Properties.Resources.database;
             this.tsbRefreshTables.ImageTransparentColor = System.Drawing.Color.Magenta;
             this.tsbRefreshTables.Name = "tsbRefreshTables";
-            this.tsbRefreshTables.Size = new System.Drawing.Size(103, 28);
+            this.tsbRefreshTables.Size = new System.Drawing.Size(91, 22);
             this.tsbRefreshTables.Text = "Load Tables";
             this.tsbRefreshTables.Click += new System.EventHandler(this.tsbRefreshTables_Click);
             // 
             // tsSeparator1
             // 
             this.tsSeparator1.Name = "tsSeparator1";
-            this.tsSeparator1.Size = new System.Drawing.Size(6, 31);
+            this.tsSeparator1.Size = new System.Drawing.Size(6, 25);
             // 
             // tsbPreview
             // 
@@ -128,7 +128,7 @@
             this.tsbPreview.Image = global::Dataverse.XrmTools.DataMigrationTool.Properties.Resources.preview;
             this.tsbPreview.ImageTransparentColor = System.Drawing.Color.Magenta;
             this.tsbPreview.Name = "tsbPreview";
-            this.tsbPreview.Size = new System.Drawing.Size(84, 28);
+            this.tsbPreview.Size = new System.Drawing.Size(76, 22);
             this.tsbPreview.Text = "Preview";
             this.tsbPreview.Click += new System.EventHandler(this.tsbPreview_Click);
             // 
@@ -141,14 +141,14 @@
             this.tsmiExport.Enabled = false;
             this.tsmiExport.Image = global::Dataverse.XrmTools.DataMigrationTool.Properties.Resources.export;
             this.tsmiExport.Name = "tsmiExport";
-            this.tsmiExport.Size = new System.Drawing.Size(86, 31);
+            this.tsmiExport.Size = new System.Drawing.Size(78, 25);
             this.tsmiExport.Text = "Export";
             // 
             // tsmiExportData
             // 
             this.tsmiExportData.Enabled = false;
             this.tsmiExportData.Name = "tsmiExportData";
-            this.tsmiExportData.Size = new System.Drawing.Size(249, 26);
+            this.tsmiExportData.Size = new System.Drawing.Size(214, 22);
             this.tsmiExportData.Text = "Data";
             this.tsmiExportData.Click += new System.EventHandler(this.tsmiExportData_Click);
             // 
@@ -156,7 +156,7 @@
             // 
             this.tsmiExportSettings.Enabled = false;
             this.tsmiExportSettings.Name = "tsmiExportSettings";
-            this.tsmiExportSettings.Size = new System.Drawing.Size(249, 26);
+            this.tsmiExportSettings.Size = new System.Drawing.Size(214, 22);
             this.tsmiExportSettings.Text = "Table Settings";
             this.tsmiExportSettings.Click += new System.EventHandler(this.tsmiExportSettings_Click);
             // 
@@ -164,7 +164,7 @@
             // 
             this.tsmiExportWithSettings.Enabled = false;
             this.tsmiExportWithSettings.Name = "tsmiExportWithSettings";
-            this.tsmiExportWithSettings.Size = new System.Drawing.Size(249, 26);
+            this.tsmiExportWithSettings.Size = new System.Drawing.Size(214, 22);
             this.tsmiExportWithSettings.Text = "Data and Table Settings";
             this.tsmiExportWithSettings.Click += new System.EventHandler(this.tsmiExportWithSettings_Click);
             // 
@@ -176,21 +176,21 @@
             this.tsmiImportLastFile});
             this.tsmiImport.Image = global::Dataverse.XrmTools.DataMigrationTool.Properties.Resources.import;
             this.tsmiImport.Name = "tsmiImport";
-            this.tsmiImport.Size = new System.Drawing.Size(88, 31);
+            this.tsmiImport.Size = new System.Drawing.Size(79, 25);
             this.tsmiImport.Text = "Import";
             // 
             // tsmiImportData
             // 
             this.tsmiImportData.Enabled = false;
             this.tsmiImportData.Name = "tsmiImportData";
-            this.tsmiImportData.Size = new System.Drawing.Size(217, 26);
+            this.tsmiImportData.Size = new System.Drawing.Size(187, 22);
             this.tsmiImportData.Text = "Data";
             this.tsmiImportData.Click += new System.EventHandler(this.tsmiImportData_Click);
             // 
             // tsmiImportSettings
             // 
             this.tsmiImportSettings.Name = "tsmiImportSettings";
-            this.tsmiImportSettings.Size = new System.Drawing.Size(217, 26);
+            this.tsmiImportSettings.Size = new System.Drawing.Size(187, 22);
             this.tsmiImportSettings.Text = "Settings from file";
             this.tsmiImportSettings.Click += new System.EventHandler(this.tsmiImportSettings_Click);
             // 
@@ -198,7 +198,7 @@
             // 
             this.tsmiImportLastFile.Enabled = false;
             this.tsmiImportLastFile.Name = "tsmiImportLastFile";
-            this.tsmiImportLastFile.Size = new System.Drawing.Size(217, 26);
+            this.tsmiImportLastFile.Size = new System.Drawing.Size(187, 22);
             this.tsmiImportLastFile.Text = "From last exported";
             this.tsmiImportLastFile.Click += new System.EventHandler(this.tsmiImportLastFile_Click);
             // 
@@ -208,7 +208,7 @@
             this.tsbAbort.Image = ((System.Drawing.Image)(resources.GetObject("tsbAbort.Image")));
             this.tsbAbort.ImageTransparentColor = System.Drawing.Color.Magenta;
             this.tsbAbort.Name = "tsbAbort";
-            this.tsbAbort.Size = new System.Drawing.Size(51, 28);
+            this.tsbAbort.Size = new System.Drawing.Size(45, 22);
             this.tsbAbort.Text = "Abort";
             this.tsbAbort.Visible = false;
             this.tsbAbort.Click += new System.EventHandler(this.tsbAbort_Click);
@@ -221,11 +221,12 @@
             this.pnlMain.Controls.Add(this.pnlSettings, 0, 0);
             this.pnlMain.Controls.Add(this.pnlBody, 1, 0);
             this.pnlMain.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.pnlMain.Location = new System.Drawing.Point(0, 31);
+            this.pnlMain.Location = new System.Drawing.Point(0, 25);
+            this.pnlMain.Margin = new System.Windows.Forms.Padding(2);
             this.pnlMain.Name = "pnlMain";
             this.pnlMain.RowCount = 1;
             this.pnlMain.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 50F));
-            this.pnlMain.Size = new System.Drawing.Size(2147, 939);
+            this.pnlMain.Size = new System.Drawing.Size(1610, 763);
             this.pnlMain.TabIndex = 91;
             // 
             // pnlSettings
@@ -236,14 +237,15 @@
             this.pnlSettings.Controls.Add(this.gbMappingSettings, 0, 1);
             this.pnlSettings.Controls.Add(this.gbOpSettings, 0, 2);
             this.pnlSettings.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.pnlSettings.Location = new System.Drawing.Point(3, 3);
+            this.pnlSettings.Location = new System.Drawing.Point(2, 2);
+            this.pnlSettings.Margin = new System.Windows.Forms.Padding(2);
             this.pnlSettings.Name = "pnlSettings";
             this.pnlSettings.RowCount = 4;
             this.pnlSettings.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 15F));
             this.pnlSettings.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 24.22294F));
             this.pnlSettings.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 16.82744F));
             this.pnlSettings.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 44.15863F));
-            this.pnlSettings.Size = new System.Drawing.Size(316, 933);
+            this.pnlSettings.Size = new System.Drawing.Size(237, 759);
             this.pnlSettings.TabIndex = 0;
             // 
             // gbEnvironments
@@ -254,9 +256,11 @@
             this.gbEnvironments.Controls.Add(this.lblTargetValue);
             this.gbEnvironments.Controls.Add(this.btnSelectTarget);
             this.gbEnvironments.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.gbEnvironments.Location = new System.Drawing.Point(3, 3);
+            this.gbEnvironments.Location = new System.Drawing.Point(2, 2);
+            this.gbEnvironments.Margin = new System.Windows.Forms.Padding(2);
             this.gbEnvironments.Name = "gbEnvironments";
-            this.gbEnvironments.Size = new System.Drawing.Size(310, 133);
+            this.gbEnvironments.Padding = new System.Windows.Forms.Padding(2);
+            this.gbEnvironments.Size = new System.Drawing.Size(233, 109);
             this.gbEnvironments.TabIndex = 0;
             this.gbEnvironments.TabStop = false;
             this.gbEnvironments.Text = "Environments";
@@ -264,9 +268,10 @@
             // lblSource
             // 
             this.lblSource.AutoSize = true;
-            this.lblSource.Location = new System.Drawing.Point(6, 29);
+            this.lblSource.Location = new System.Drawing.Point(4, 24);
+            this.lblSource.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
             this.lblSource.Name = "lblSource";
-            this.lblSource.Size = new System.Drawing.Size(53, 17);
+            this.lblSource.Size = new System.Drawing.Size(41, 13);
             this.lblSource.TabIndex = 0;
             this.lblSource.Text = "Source";
             // 
@@ -275,18 +280,20 @@
             this.lblSourceValue.AutoSize = true;
             this.lblSourceValue.Font = new System.Drawing.Font("Segoe UI", 8.25F);
             this.lblSourceValue.ForeColor = System.Drawing.Color.DarkRed;
-            this.lblSourceValue.Location = new System.Drawing.Point(81, 27);
+            this.lblSourceValue.Location = new System.Drawing.Point(61, 22);
+            this.lblSourceValue.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
             this.lblSourceValue.Name = "lblSourceValue";
-            this.lblSourceValue.Size = new System.Drawing.Size(91, 19);
+            this.lblSourceValue.Size = new System.Drawing.Size(77, 13);
             this.lblSourceValue.TabIndex = 1;
             this.lblSourceValue.Text = "Disconnected";
             // 
             // lblTarget
             // 
             this.lblTarget.AutoSize = true;
-            this.lblTarget.Location = new System.Drawing.Point(6, 59);
+            this.lblTarget.Location = new System.Drawing.Point(4, 48);
+            this.lblTarget.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
             this.lblTarget.Name = "lblTarget";
-            this.lblTarget.Size = new System.Drawing.Size(50, 17);
+            this.lblTarget.Size = new System.Drawing.Size(38, 13);
             this.lblTarget.TabIndex = 2;
             this.lblTarget.Text = "Target";
             // 
@@ -295,9 +302,10 @@
             this.lblTargetValue.AutoSize = true;
             this.lblTargetValue.Font = new System.Drawing.Font("Segoe UI", 8.25F);
             this.lblTargetValue.ForeColor = System.Drawing.Color.DarkRed;
-            this.lblTargetValue.Location = new System.Drawing.Point(81, 57);
+            this.lblTargetValue.Location = new System.Drawing.Point(61, 46);
+            this.lblTargetValue.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
             this.lblTargetValue.Name = "lblTargetValue";
-            this.lblTargetValue.Size = new System.Drawing.Size(91, 19);
+            this.lblTargetValue.Size = new System.Drawing.Size(77, 13);
             this.lblTargetValue.TabIndex = 3;
             this.lblTargetValue.Text = "Disconnected";
             // 
@@ -308,10 +316,9 @@
             this.btnSelectTarget.ForeColor = System.Drawing.SystemColors.ControlText;
             this.btnSelectTarget.Image = global::Dataverse.XrmTools.DataMigrationTool.Properties.Resources.connect16_colorful;
             this.btnSelectTarget.ImageAlign = System.Drawing.ContentAlignment.MiddleLeft;
-            this.btnSelectTarget.Location = new System.Drawing.Point(9, 92);
-            this.btnSelectTarget.Margin = new System.Windows.Forms.Padding(4);
+            this.btnSelectTarget.Location = new System.Drawing.Point(7, 75);
             this.btnSelectTarget.Name = "btnSelectTarget";
-            this.btnSelectTarget.Size = new System.Drawing.Size(235, 34);
+            this.btnSelectTarget.Size = new System.Drawing.Size(176, 28);
             this.btnSelectTarget.TabIndex = 4;
             this.btnSelectTarget.Text = "Connect Target";
             this.btnSelectTarget.UseVisualStyleBackColor = true;
@@ -328,9 +335,11 @@
             this.gbMappingSettings.Controls.Add(this.btnMappings);
             this.gbMappingSettings.Dock = System.Windows.Forms.DockStyle.Fill;
             this.gbMappingSettings.Enabled = false;
-            this.gbMappingSettings.Location = new System.Drawing.Point(3, 142);
+            this.gbMappingSettings.Location = new System.Drawing.Point(2, 115);
+            this.gbMappingSettings.Margin = new System.Windows.Forms.Padding(2);
             this.gbMappingSettings.Name = "gbMappingSettings";
-            this.gbMappingSettings.Size = new System.Drawing.Size(310, 219);
+            this.gbMappingSettings.Padding = new System.Windows.Forms.Padding(2);
+            this.gbMappingSettings.Size = new System.Drawing.Size(233, 179);
             this.gbMappingSettings.TabIndex = 0;
             this.gbMappingSettings.TabStop = false;
             this.gbMappingSettings.Text = "Mapping Settings";
@@ -338,9 +347,10 @@
             // rbMapOnImport
             // 
             this.rbMapOnImport.AutoSize = true;
-            this.rbMapOnImport.Location = new System.Drawing.Point(83, 131);
+            this.rbMapOnImport.Location = new System.Drawing.Point(62, 106);
+            this.rbMapOnImport.Margin = new System.Windows.Forms.Padding(2);
             this.rbMapOnImport.Name = "rbMapOnImport";
-            this.rbMapOnImport.Size = new System.Drawing.Size(68, 21);
+            this.rbMapOnImport.Size = new System.Drawing.Size(54, 17);
             this.rbMapOnImport.TabIndex = 105;
             this.rbMapOnImport.Text = "Import";
             this.rbMapOnImport.UseVisualStyleBackColor = true;
@@ -349,9 +359,10 @@
             // 
             this.rbMapOnExport.AutoSize = true;
             this.rbMapOnExport.Checked = true;
-            this.rbMapOnExport.Location = new System.Drawing.Point(8, 131);
+            this.rbMapOnExport.Location = new System.Drawing.Point(6, 106);
+            this.rbMapOnExport.Margin = new System.Windows.Forms.Padding(2);
             this.rbMapOnExport.Name = "rbMapOnExport";
-            this.rbMapOnExport.Size = new System.Drawing.Size(69, 21);
+            this.rbMapOnExport.Size = new System.Drawing.Size(55, 17);
             this.rbMapOnExport.TabIndex = 104;
             this.rbMapOnExport.TabStop = true;
             this.rbMapOnExport.Text = "Export";
@@ -360,19 +371,19 @@
             // lblApplyMappingsOn
             // 
             this.lblApplyMappingsOn.AutoSize = true;
-            this.lblApplyMappingsOn.Location = new System.Drawing.Point(5, 111);
+            this.lblApplyMappingsOn.Location = new System.Drawing.Point(4, 90);
+            this.lblApplyMappingsOn.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
             this.lblApplyMappingsOn.Name = "lblApplyMappingsOn";
-            this.lblApplyMappingsOn.Size = new System.Drawing.Size(132, 17);
+            this.lblApplyMappingsOn.Size = new System.Drawing.Size(100, 13);
             this.lblApplyMappingsOn.TabIndex = 103;
             this.lblApplyMappingsOn.Text = "Apply Mappings on:";
             // 
             // cbMapUsers
             // 
             this.cbMapUsers.AutoSize = true;
-            this.cbMapUsers.Location = new System.Drawing.Point(8, 26);
-            this.cbMapUsers.Margin = new System.Windows.Forms.Padding(4);
+            this.cbMapUsers.Location = new System.Drawing.Point(6, 21);
             this.cbMapUsers.Name = "cbMapUsers";
-            this.cbMapUsers.Size = new System.Drawing.Size(192, 21);
+            this.cbMapUsers.Size = new System.Drawing.Size(147, 17);
             this.cbMapUsers.TabIndex = 1;
             this.cbMapUsers.Text = "Map Users by User Name";
             this.cbMapUsers.UseVisualStyleBackColor = true;
@@ -381,10 +392,9 @@
             // cbMapTeams
             // 
             this.cbMapTeams.AutoSize = true;
-            this.cbMapTeams.Location = new System.Drawing.Point(8, 54);
-            this.cbMapTeams.Margin = new System.Windows.Forms.Padding(4);
+            this.cbMapTeams.Location = new System.Drawing.Point(6, 44);
             this.cbMapTeams.Name = "cbMapTeams";
-            this.cbMapTeams.Size = new System.Drawing.Size(164, 21);
+            this.cbMapTeams.Size = new System.Drawing.Size(127, 17);
             this.cbMapTeams.TabIndex = 2;
             this.cbMapTeams.Text = "Map Teams by Name";
             this.cbMapTeams.UseVisualStyleBackColor = true;
@@ -395,10 +405,9 @@
             this.cbMapBu.AutoSize = true;
             this.cbMapBu.Checked = true;
             this.cbMapBu.CheckState = System.Windows.Forms.CheckState.Checked;
-            this.cbMapBu.Location = new System.Drawing.Point(8, 82);
-            this.cbMapBu.Margin = new System.Windows.Forms.Padding(4);
+            this.cbMapBu.Location = new System.Drawing.Point(6, 67);
             this.cbMapBu.Name = "cbMapBu";
-            this.cbMapBu.Size = new System.Drawing.Size(181, 21);
+            this.cbMapBu.Size = new System.Drawing.Size(140, 17);
             this.cbMapBu.TabIndex = 3;
             this.cbMapBu.Text = "Map Root Business Unit";
             this.cbMapBu.UseVisualStyleBackColor = true;
@@ -411,10 +420,9 @@
             this.btnMappings.ForeColor = System.Drawing.SystemColors.ControlText;
             this.btnMappings.Image = global::Dataverse.XrmTools.DataMigrationTool.Properties.Resources.mapping20_colorful;
             this.btnMappings.ImageAlign = System.Drawing.ContentAlignment.MiddleLeft;
-            this.btnMappings.Location = new System.Drawing.Point(9, 178);
-            this.btnMappings.Margin = new System.Windows.Forms.Padding(4);
+            this.btnMappings.Location = new System.Drawing.Point(7, 145);
             this.btnMappings.Name = "btnMappings";
-            this.btnMappings.Size = new System.Drawing.Size(235, 34);
+            this.btnMappings.Size = new System.Drawing.Size(176, 28);
             this.btnMappings.TabIndex = 102;
             this.btnMappings.Text = "Mappings";
             this.btnMappings.UseVisualStyleBackColor = true;
@@ -429,9 +437,11 @@
             this.gbOpSettings.Controls.Add(this.nudBatchCount);
             this.gbOpSettings.Dock = System.Windows.Forms.DockStyle.Fill;
             this.gbOpSettings.Enabled = false;
-            this.gbOpSettings.Location = new System.Drawing.Point(3, 367);
+            this.gbOpSettings.Location = new System.Drawing.Point(2, 298);
+            this.gbOpSettings.Margin = new System.Windows.Forms.Padding(2);
             this.gbOpSettings.Name = "gbOpSettings";
-            this.gbOpSettings.Size = new System.Drawing.Size(310, 150);
+            this.gbOpSettings.Padding = new System.Windows.Forms.Padding(2);
+            this.gbOpSettings.Size = new System.Drawing.Size(233, 123);
             this.gbOpSettings.TabIndex = 2;
             this.gbOpSettings.TabStop = false;
             this.gbOpSettings.Text = "Operation Settings";
@@ -441,10 +451,9 @@
             this.cbCreate.AutoSize = true;
             this.cbCreate.Checked = true;
             this.cbCreate.CheckState = System.Windows.Forms.CheckState.Checked;
-            this.cbCreate.Location = new System.Drawing.Point(7, 26);
-            this.cbCreate.Margin = new System.Windows.Forms.Padding(4);
+            this.cbCreate.Location = new System.Drawing.Point(5, 21);
             this.cbCreate.Name = "cbCreate";
-            this.cbCreate.Size = new System.Drawing.Size(72, 21);
+            this.cbCreate.Size = new System.Drawing.Size(57, 17);
             this.cbCreate.TabIndex = 0;
             this.cbCreate.Text = "Create";
             this.cbCreate.UseVisualStyleBackColor = true;
@@ -454,10 +463,9 @@
             this.cbUpdate.AutoSize = true;
             this.cbUpdate.Checked = true;
             this.cbUpdate.CheckState = System.Windows.Forms.CheckState.Checked;
-            this.cbUpdate.Location = new System.Drawing.Point(7, 55);
-            this.cbUpdate.Margin = new System.Windows.Forms.Padding(4);
+            this.cbUpdate.Location = new System.Drawing.Point(5, 45);
             this.cbUpdate.Name = "cbUpdate";
-            this.cbUpdate.Size = new System.Drawing.Size(76, 21);
+            this.cbUpdate.Size = new System.Drawing.Size(61, 17);
             this.cbUpdate.TabIndex = 1;
             this.cbUpdate.Text = "Update";
             this.cbUpdate.UseVisualStyleBackColor = true;
@@ -466,10 +474,9 @@
             // 
             this.cbDelete.AutoSize = true;
             this.cbDelete.Enabled = false;
-            this.cbDelete.Location = new System.Drawing.Point(7, 84);
-            this.cbDelete.Margin = new System.Windows.Forms.Padding(4);
+            this.cbDelete.Location = new System.Drawing.Point(5, 68);
             this.cbDelete.Name = "cbDelete";
-            this.cbDelete.Size = new System.Drawing.Size(88, 21);
+            this.cbDelete.Size = new System.Drawing.Size(69, 17);
             this.cbDelete.TabIndex = 2;
             this.cbDelete.Text = "Delete (!)";
             this.cbDelete.UseVisualStyleBackColor = true;
@@ -477,9 +484,10 @@
             // lblBatchCount
             // 
             this.lblBatchCount.AutoSize = true;
-            this.lblBatchCount.Location = new System.Drawing.Point(6, 121);
+            this.lblBatchCount.Location = new System.Drawing.Point(4, 98);
+            this.lblBatchCount.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
             this.lblBatchCount.Name = "lblBatchCount";
-            this.lblBatchCount.Size = new System.Drawing.Size(77, 17);
+            this.lblBatchCount.Size = new System.Drawing.Size(59, 13);
             this.lblBatchCount.TabIndex = 3;
             this.lblBatchCount.Text = "Batch size:";
             // 
@@ -490,8 +498,8 @@
             0,
             0,
             0});
-            this.nudBatchCount.Location = new System.Drawing.Point(98, 119);
-            this.nudBatchCount.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
+            this.nudBatchCount.Location = new System.Drawing.Point(74, 97);
+            this.nudBatchCount.Margin = new System.Windows.Forms.Padding(2);
             this.nudBatchCount.Maximum = new decimal(new int[] {
             10000,
             0,
@@ -503,7 +511,7 @@
             0,
             0});
             this.nudBatchCount.Name = "nudBatchCount";
-            this.nudBatchCount.Size = new System.Drawing.Size(100, 22);
+            this.nudBatchCount.Size = new System.Drawing.Size(75, 20);
             this.nudBatchCount.TabIndex = 4;
             this.nudBatchCount.Value = new decimal(new int[] {
             250,
@@ -519,13 +527,14 @@
             this.pnlBody.Controls.Add(this.gbAttributes, 0, 1);
             this.pnlBody.Controls.Add(this.gbFilters, 0, 2);
             this.pnlBody.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.pnlBody.Location = new System.Drawing.Point(325, 3);
+            this.pnlBody.Location = new System.Drawing.Point(243, 2);
+            this.pnlBody.Margin = new System.Windows.Forms.Padding(2);
             this.pnlBody.Name = "pnlBody";
             this.pnlBody.RowCount = 3;
             this.pnlBody.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 40F));
             this.pnlBody.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 40F));
             this.pnlBody.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 20F));
-            this.pnlBody.Size = new System.Drawing.Size(1819, 933);
+            this.pnlBody.Size = new System.Drawing.Size(1365, 759);
             this.pnlBody.TabIndex = 1;
             // 
             // gbTables
@@ -535,9 +544,11 @@
             this.gbTables.Controls.Add(this.lvTables);
             this.gbTables.Dock = System.Windows.Forms.DockStyle.Fill;
             this.gbTables.Enabled = false;
-            this.gbTables.Location = new System.Drawing.Point(3, 3);
+            this.gbTables.Location = new System.Drawing.Point(2, 2);
+            this.gbTables.Margin = new System.Windows.Forms.Padding(2);
             this.gbTables.Name = "gbTables";
-            this.gbTables.Size = new System.Drawing.Size(1813, 367);
+            this.gbTables.Padding = new System.Windows.Forms.Padding(2);
+            this.gbTables.Size = new System.Drawing.Size(1361, 299);
             this.gbTables.TabIndex = 0;
             this.gbTables.TabStop = false;
             this.gbTables.Text = "Tables";
@@ -545,10 +556,9 @@
             // lblTableFilter
             // 
             this.lblTableFilter.AutoSize = true;
-            this.lblTableFilter.Location = new System.Drawing.Point(7, 24);
-            this.lblTableFilter.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
+            this.lblTableFilter.Location = new System.Drawing.Point(5, 20);
             this.lblTableFilter.Name = "lblTableFilter";
-            this.lblTableFilter.Size = new System.Drawing.Size(43, 17);
+            this.lblTableFilter.Size = new System.Drawing.Size(32, 13);
             this.lblTableFilter.TabIndex = 0;
             this.lblTableFilter.Text = "Filter:";
             // 
@@ -556,10 +566,9 @@
             // 
             this.txtTableFilter.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
-            this.txtTableFilter.Location = new System.Drawing.Point(64, 21);
-            this.txtTableFilter.Margin = new System.Windows.Forms.Padding(4);
+            this.txtTableFilter.Location = new System.Drawing.Point(48, 17);
             this.txtTableFilter.Name = "txtTableFilter";
-            this.txtTableFilter.Size = new System.Drawing.Size(1742, 22);
+            this.txtTableFilter.Size = new System.Drawing.Size(1309, 20);
             this.txtTableFilter.TabIndex = 1;
             this.txtTableFilter.TextChanged += new System.EventHandler(this.txtTableFilter_TextChanged);
             // 
@@ -573,11 +582,10 @@
             this.chTblLogicalName});
             this.lvTables.FullRowSelect = true;
             this.lvTables.HideSelection = false;
-            this.lvTables.Location = new System.Drawing.Point(9, 54);
-            this.lvTables.Margin = new System.Windows.Forms.Padding(4);
+            this.lvTables.Location = new System.Drawing.Point(7, 44);
             this.lvTables.MultiSelect = false;
             this.lvTables.Name = "lvTables";
-            this.lvTables.Size = new System.Drawing.Size(1797, 306);
+            this.lvTables.Size = new System.Drawing.Size(1350, 250);
             this.lvTables.Sorting = System.Windows.Forms.SortOrder.Ascending;
             this.lvTables.TabIndex = 2;
             this.lvTables.UseCompatibleStateImageBehavior = false;
@@ -601,9 +609,11 @@
             this.gbAttributes.Controls.Add(this.cbSelectAll);
             this.gbAttributes.Controls.Add(this.lvAttributes);
             this.gbAttributes.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.gbAttributes.Location = new System.Drawing.Point(3, 376);
+            this.gbAttributes.Location = new System.Drawing.Point(2, 305);
+            this.gbAttributes.Margin = new System.Windows.Forms.Padding(2);
             this.gbAttributes.Name = "gbAttributes";
-            this.gbAttributes.Size = new System.Drawing.Size(1813, 367);
+            this.gbAttributes.Padding = new System.Windows.Forms.Padding(2);
+            this.gbAttributes.Size = new System.Drawing.Size(1361, 299);
             this.gbAttributes.TabIndex = 1;
             this.gbAttributes.TabStop = false;
             this.gbAttributes.Text = "Attributes";
@@ -613,10 +623,9 @@
             this.cbSelectAll.AutoSize = true;
             this.cbSelectAll.Checked = true;
             this.cbSelectAll.CheckState = System.Windows.Forms.CheckState.Checked;
-            this.cbSelectAll.Location = new System.Drawing.Point(8, 26);
-            this.cbSelectAll.Margin = new System.Windows.Forms.Padding(4);
+            this.cbSelectAll.Location = new System.Drawing.Point(6, 21);
             this.cbSelectAll.Name = "cbSelectAll";
-            this.cbSelectAll.Size = new System.Drawing.Size(147, 21);
+            this.cbSelectAll.Size = new System.Drawing.Size(117, 17);
             this.cbSelectAll.TabIndex = 0;
             this.cbSelectAll.Text = "Select/Unselect All";
             this.cbSelectAll.UseVisualStyleBackColor = true;
@@ -635,10 +644,9 @@
             this.chAttrDescription});
             this.lvAttributes.FullRowSelect = true;
             this.lvAttributes.HideSelection = false;
-            this.lvAttributes.Location = new System.Drawing.Point(8, 54);
-            this.lvAttributes.Margin = new System.Windows.Forms.Padding(4);
+            this.lvAttributes.Location = new System.Drawing.Point(6, 44);
             this.lvAttributes.Name = "lvAttributes";
-            this.lvAttributes.Size = new System.Drawing.Size(1798, 306);
+            this.lvAttributes.Size = new System.Drawing.Size(1351, 250);
             this.lvAttributes.Sorting = System.Windows.Forms.SortOrder.Ascending;
             this.lvAttributes.TabIndex = 3;
             this.lvAttributes.UseCompatibleStateImageBehavior = false;
@@ -673,9 +681,11 @@
             this.gbFilters.Controls.Add(this.btnFetchXmlBuilder);
             this.gbFilters.Controls.Add(this.rtbFilter);
             this.gbFilters.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.gbFilters.Location = new System.Drawing.Point(3, 749);
+            this.gbFilters.Location = new System.Drawing.Point(2, 608);
+            this.gbFilters.Margin = new System.Windows.Forms.Padding(2);
             this.gbFilters.Name = "gbFilters";
-            this.gbFilters.Size = new System.Drawing.Size(1813, 181);
+            this.gbFilters.Padding = new System.Windows.Forms.Padding(2);
+            this.gbFilters.Size = new System.Drawing.Size(1361, 149);
             this.gbFilters.TabIndex = 2;
             this.gbFilters.TabStop = false;
             this.gbFilters.Text = "Filters";
@@ -683,10 +693,9 @@
             // lblFetchDescription
             // 
             this.lblFetchDescription.AutoSize = true;
-            this.lblFetchDescription.Location = new System.Drawing.Point(8, 23);
-            this.lblFetchDescription.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
+            this.lblFetchDescription.Location = new System.Drawing.Point(6, 19);
             this.lblFetchDescription.Name = "lblFetchDescription";
-            this.lblFetchDescription.Size = new System.Drawing.Size(312, 17);
+            this.lblFetchDescription.Size = new System.Drawing.Size(232, 13);
             this.lblFetchDescription.TabIndex = 0;
             this.lblFetchDescription.Text = "Records will be filtered using query defined here";
             // 
@@ -697,10 +706,9 @@
             this.btnFetchXmlBuilder.FlatStyle = System.Windows.Forms.FlatStyle.Popup;
             this.btnFetchXmlBuilder.Image = global::Dataverse.XrmTools.DataMigrationTool.Properties.Resources.fetchXmlBuilder20;
             this.btnFetchXmlBuilder.ImageAlign = System.Drawing.ContentAlignment.MiddleLeft;
-            this.btnFetchXmlBuilder.Location = new System.Drawing.Point(1547, 14);
-            this.btnFetchXmlBuilder.Margin = new System.Windows.Forms.Padding(4);
+            this.btnFetchXmlBuilder.Location = new System.Drawing.Point(1161, 11);
             this.btnFetchXmlBuilder.Name = "btnFetchXmlBuilder";
-            this.btnFetchXmlBuilder.Size = new System.Drawing.Size(259, 34);
+            this.btnFetchXmlBuilder.Size = new System.Drawing.Size(194, 28);
             this.btnFetchXmlBuilder.TabIndex = 1;
             this.btnFetchXmlBuilder.Text = "Edit in FetchXML Builder";
             this.btnFetchXmlBuilder.UseVisualStyleBackColor = true;
@@ -708,25 +716,27 @@
             // 
             // rtbFilter
             // 
-            this.rtbFilter.Location = new System.Drawing.Point(8, 52);
-            this.rtbFilter.Margin = new System.Windows.Forms.Padding(27, 25, 27, 25);
+            this.rtbFilter.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
+            | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.rtbFilter.Location = new System.Drawing.Point(6, 42);
+            this.rtbFilter.Margin = new System.Windows.Forms.Padding(20);
             this.rtbFilter.Name = "rtbFilter";
-            this.rtbFilter.Size = new System.Drawing.Size(1691, 120);
+            this.rtbFilter.Size = new System.Drawing.Size(1349, 98);
             this.rtbFilter.TabIndex = 2;
             this.rtbFilter.Text = "";
             this.rtbFilter.TextChanged += new System.EventHandler(this.rtbFilter_TextChanged);
             // 
             // DataMigrationControl
             // 
-            this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 16F);
+            this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.BackColor = System.Drawing.SystemColors.Window;
             this.Controls.Add(this.pnlMain);
             this.Controls.Add(this.tsMain);
-            this.Margin = new System.Windows.Forms.Padding(4);
-            this.MinimumSize = new System.Drawing.Size(600, 400);
+            this.MinimumSize = new System.Drawing.Size(450, 325);
             this.Name = "DataMigrationControl";
-            this.Size = new System.Drawing.Size(2147, 970);
+            this.Size = new System.Drawing.Size(1610, 788);
             this.Load += new System.EventHandler(this.DataMigrationControl_Load);
             this.Resize += new System.EventHandler(this.DataMigrationControl_Resize);
             this.tsMain.ResumeLayout(false);

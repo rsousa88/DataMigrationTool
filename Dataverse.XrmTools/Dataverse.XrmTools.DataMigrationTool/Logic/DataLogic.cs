@@ -18,6 +18,9 @@ using Dataverse.XrmTools.DataMigrationTool.Helpers;
 using Dataverse.XrmTools.DataMigrationTool.AppSettings;
 using Dataverse.XrmTools.DataMigrationTool.Repositories;
 
+// 3rd Party
+using Newtonsoft.Json.Converters;
+
 namespace Dataverse.XrmTools.DataMigrationTool.Logic
 {
     public class DataLogic
@@ -122,7 +125,20 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
         private void RetrieveTargetData(string logicalName, string idAttribute, int batchSize)
         {
             // parse target query
-            var query = new QueryExpression(logicalName) { ColumnSet = new ColumnSet(idAttribute) };
+            var targetIds = _sourceCollection.Entities.Select(rec => rec.Id);
+            var filter = new FilterExpression(LogicalOperator.And)
+            {
+                Conditions =
+                    {
+                        new ConditionExpression(idAttribute, ConditionOperator.In, targetIds.ToArray())
+                    }
+            };
+
+            var query = new QueryExpression(logicalName)
+            {
+                ColumnSet = new ColumnSet(idAttribute),
+                Criteria = filter
+            };
 
             // retrieve target records
             var targetRepo = new CrmRepo(_targetSvc, _worker);
@@ -270,7 +286,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             if (result.Equals(DialogResult.Yes))
             {
                 var collection = new RecordCollection(entityCollection, tableData.Metadata);
-                var json = collection.SerializeObject<RecordCollection>();
+                var json = collection.SerializeObject(new IsoDateTimeConverter());
                 File.WriteAllText(path, json);
 
                 success = true;

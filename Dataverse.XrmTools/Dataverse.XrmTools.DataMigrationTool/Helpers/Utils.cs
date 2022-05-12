@@ -7,15 +7,19 @@ using System.Linq;
 using System.Data;
 using System.Windows.Forms;
 using System.Collections.Generic;
-using System.Runtime.Serialization.Json;
 
 // Microsoft
 using Microsoft.Xrm.Sdk;
+using Microsoft.Xrm.Sdk.Metadata;
 
 // DataMigrationTool
 using Dataverse.XrmTools.DataMigrationTool.Enums;
 using Dataverse.XrmTools.DataMigrationTool.Models;
 using Dataverse.XrmTools.DataMigrationTool.AppSettings;
+
+// 3rd Party
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace Dataverse.XrmTools.DataMigrationTool.Helpers
 {
@@ -165,43 +169,123 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
             return null;
         }
 
-        public static T DeserializeObject<T>(this string json, DataContractJsonSerializerSettings settings = null)
+        public static T DeserializeObject<T>(this string json)
         {
-            using (var stream = new MemoryStream())
-            {
-                if (settings == null) { settings = new DataContractJsonSerializerSettings(); }
-
-                var serializer = new DataContractJsonSerializer(typeof(T), settings);
-
-                var writer = new StreamWriter(stream);
-                writer.Write(json);
-                writer.Flush();
-                stream.Position = 0;
-                return (T)serializer.ReadObject(stream);
-            }
+            return JsonConvert.DeserializeObject<T>(json);
         }
 
-        public static string SerializeObject<T>(this object obj)
+        public static T DeserializeObject<T>(this string json, params JsonConverter[] converters)
         {
-            using (var stream = new MemoryStream())
-            {
-                var serializer = new DataContractJsonSerializer(typeof(T));
+            return JsonConvert.DeserializeObject<T>(json, converters);
+        }
 
-                using (var writer = JsonReaderWriterFactory.CreateJsonWriter(stream, Encoding.UTF8, false, true))
-                {
-                    serializer.WriteObject(writer, obj);
-                }
+        public static string SerializeObject(this object value)
+        {
+            return JsonConvert.SerializeObject(value, Newtonsoft.Json.Formatting.Indented);
+        }
 
-                stream.Position = 0;
-
-                var reader = new StreamReader(stream);
-                return reader.ReadToEnd();
-            }
+        public static string SerializeObject(this object value, params JsonConverter[] converters)
+        {
+            return JsonConvert.SerializeObject(value, Newtonsoft.Json.Formatting.Indented, converters);
         }
 
         public static T ToEnum<T>(this string enumString)
         {
             return (T)Enum.Parse(typeof(T), enumString);
+        }
+
+        public static IEnumerable<RecordAttribute> MapAttributes(this AttributeCollection collection, EntityMetadata metadata)
+        {
+            var attributes = collection.Select(kvp => new RecordAttribute
+            {
+                Type = metadata.Attributes.FirstOrDefault(attr => attr.LogicalName.Equals(kvp.Key)).ToAttributeType(),
+                Key = kvp.Key,
+                Value = kvp.Value
+            });
+
+            return attributes;
+        }
+
+        public static AttributeCollection MapAttributes(this IEnumerable<RecordAttribute> attributes)
+        {
+            var dictionary = attributes.Select(attr =>
+            {
+                // UniqueIdentifier
+                if (attr.Type.Equals(AttributeType.Identifier) && attr.Value is string)
+                {
+                    var id = Guid.Parse(attr.Value.ToString());
+
+                    return new KeyValuePair<string, object>(attr.Key, id);
+                }
+
+                // EntityReference
+                if (attr.Type.Equals(AttributeType.EntityReference) && (attr.Value as JObject).ContainsKey("Id") && (attr.Value as JObject).ContainsKey("LogicalName"))
+                {
+                    var logicalName = ((attr.Value as JObject).GetValue("LogicalName") as JValue).Value.ToString();
+                    var id = ((attr.Value as JObject).GetValue("Id") as JValue).Value.ToString();
+
+                    var reference = new EntityReference(logicalName, Guid.Parse(id));
+                    return new KeyValuePair<string, object>(attr.Key, reference);
+                }
+
+                // OptionSetValue
+                if (attr.Type.Equals(AttributeType.OptionSet) && (attr.Value as JObject).ContainsKey("Value"))
+                {
+                    var value = ((attr.Value as JObject).GetValue("Value") as JValue).Value.ToString().ToInt();
+                    var optionSet = new OptionSetValue(value.Value);
+
+                    return new KeyValuePair<string, object>(attr.Key, optionSet);
+                }
+
+                // OptionSetValueCollection
+                if (attr.Type.Equals(AttributeType.MultiOptionSet) && attr.Value is JArray)
+                {
+                    var options = (attr.Value as JArray)
+                        .Select(ops => ops as JObject)
+                        .Where(ops => ops.ContainsKey("Value"))
+                        .Select(ops =>
+                        {
+                            var value = (ops.GetValue("Value") as JValue).Value.ToString().ToInt();
+
+                            return new OptionSetValue(value.Value);
+                        });
+
+                    var optionSet = new OptionSetValueCollection(options.ToList());
+                    return new KeyValuePair<string, object>(attr.Key, optionSet);
+                }
+
+                return new KeyValuePair<string, object>(attr.Key, attr.Value);
+            });
+
+            var collection = new AttributeCollection();
+            collection.AddRange(dictionary);
+
+            return collection;
+        }
+
+        public static AttributeType ToAttributeType(this AttributeMetadata metadata)
+        {
+            switch (metadata.AttributeType)
+            {
+                case AttributeTypeCode.Uniqueidentifier:
+                    return AttributeType.Identifier;
+
+                case AttributeTypeCode.Customer:
+                case AttributeTypeCode.Lookup:
+                case AttributeTypeCode.Owner:
+                    return AttributeType.EntityReference;
+
+                case AttributeTypeCode.Picklist:
+                case AttributeTypeCode.State:
+                case AttributeTypeCode.Status:
+                    return AttributeType.OptionSet;
+
+                case AttributeTypeCode.Virtual:
+                    return metadata.AttributeTypeName.Value.Equals("MultiSelectPicklistType") ? AttributeType.MultiOptionSet : AttributeType.Standard;
+
+                default:
+                    return AttributeType.Standard;
+            }
         }
 
         public static EntityCollection ToEntityCollection(this RecordCollection collection)
@@ -210,13 +294,13 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
             foreach (var rec in collection.Records)
             {
                 var idAttr = rec.Attributes.Where(attr => attr.Key.Equals(collection.PrimaryIdAttribute)).FirstOrDefault();
-                rec.Attributes[idAttr.Key] = Guid.Parse(idAttr.Value.ToString()); // manually convert to Guid
+                rec.Attributes.FirstOrDefault(attr => attr.Key.Equals(idAttr.Key)).Value = Guid.Parse(idAttr.Value.ToString()); // manually convert to Guid
 
                 var entity = new Entity
                 {
                     Id = Guid.Parse(idAttr.Value.ToString()),
                     LogicalName = collection.LogicalName,
-                    Attributes = rec.Attributes
+                    Attributes = rec.Attributes.MapAttributes()
                 }.ToEntity<Entity>();
 
                 entityList.Add(entity);
@@ -300,7 +384,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
                         var doc = new XmlDocument();
                         doc.LoadXml(xml);
 
-                        writer.Formatting = Formatting.Indented;
+                        writer.Formatting = System.Xml.Formatting.Indented;
                         doc.WriteContentTo(writer);
 
                         writer.Flush();

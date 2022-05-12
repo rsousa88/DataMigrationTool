@@ -7,6 +7,9 @@ using System.Runtime.Serialization;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Metadata;
 
+// Dataverse
+using Dataverse.XrmTools.DataMigrationTool.Helpers;
+
 namespace Dataverse.XrmTools.DataMigrationTool.Models
 {
     [DataContract]
@@ -21,11 +24,13 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
         [DataMember]
         public int Count { get; set; }
 
+        public RecordCollection() { }
+
         public RecordCollection(EntityCollection entityCollection, EntityMetadata metadata)
         {
             var records = entityCollection.Entities.Select(ent => new Record
             {
-                Attributes = ent.Attributes
+                Attributes = ent.Attributes.MapAttributes(metadata)
             });
 
             LogicalName = entityCollection.EntityName;
