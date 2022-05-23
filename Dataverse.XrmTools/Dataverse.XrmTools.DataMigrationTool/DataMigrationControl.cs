@@ -407,14 +407,14 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     // filter valid attributes
                     args.Result = tableData.Metadata.Attributes
                         .Where(att => att.IsValidForRead != null && att.IsValidForRead.Value)
-                        .Where(att => att.IsValidForCreate != null && att.IsValidForCreate.Value)
                         .Where(att => att.DisplayName != null && att.DisplayName.UserLocalizedLabel != null && !string.IsNullOrEmpty(att.DisplayName.UserLocalizedLabel.Label))
                         .Select(att => new Models.Attribute
                         {
                             Type = att.AttributeTypeName.Value.EndsWith("Type") ? att.AttributeTypeName.Value.Substring(0, att.AttributeTypeName.Value.LastIndexOf("Type")) : att.AttributeTypeName.Value,
                             LogicalName = att.LogicalName,
                             DisplayName = att.DisplayName.UserLocalizedLabel.Label,
-                            Updatable = att.IsValidForUpdate.Value
+                            ValidOnCreate = att.IsValidForCreate.Value,
+                            ValidOnUpdate = att.IsValidForUpdate.Value
                         })
                         .ToList();
                 },
@@ -462,13 +462,13 @@ namespace Dataverse.XrmTools.DataMigrationTool
             foreach (var att in tableData.Table.AllAttributes)
             {
                 var item = att.ToListViewItem();
-                if (!att.Updatable)
-                {
-                    item.ForeColor = Color.Gray;
-                    item.SubItems.Add("Read-only attribute");
-                }
+                item.Checked = !deselected.Any(dsl => dsl.Equals(att.LogicalName)) && (att.ValidOnCreate || att.ValidOnUpdate);
 
-                item.Checked = !deselected.Any(dsl => dsl.Equals(att.LogicalName));
+                if (!att.ValidOnCreate || !att.ValidOnUpdate) { item.ForeColor = Color.Gray; }
+
+                if (!att.ValidOnCreate && !att.ValidOnUpdate) { item.SubItems.Add("Invalid on create and update"); }
+                else if (!att.ValidOnCreate) { item.SubItems.Add("Invalid on create"); }
+                else if (!att.ValidOnUpdate) { item.SubItems.Add("Invalid on update"); }
 
                 lvAttributes.Items.Add(item);
             }
