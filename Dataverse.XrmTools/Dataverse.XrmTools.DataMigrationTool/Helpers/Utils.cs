@@ -96,7 +96,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
                 {
                     actionName,
                     entity.Id.ToString(),
-                    entity.GetAttributeValue<string>(attrName),
+                    !string.IsNullOrEmpty(attrName) ? entity.GetAttributeValue<string>(attrName) : string.Empty,
                     description
                 });
             }

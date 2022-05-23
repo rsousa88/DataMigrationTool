@@ -112,7 +112,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             // parse column set
             var columns = tableData.SelectedAttributes.Select(a => a.LogicalName).ToList();
             if (!columns.Contains(tableData.Table.IdAttribute)) { columns.Add(tableData.Table.IdAttribute); } // id attribute is required
-            if (!columns.Contains(tableData.Table.NameAttribute)) { columns.Add(tableData.Table.NameAttribute); } // name attribute is required
+            if (tableData.Table.NameAttribute != null && !columns.Contains(tableData.Table.NameAttribute)) { columns.Add(tableData.Table.NameAttribute); } // name attribute is required
 
             // build source fetch xml query
             var fetch = ParseFetchQuery(tableData.Table.LogicalName, columns, tableData.Settings.Filter);
@@ -157,7 +157,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 var prvItems = migrationItems.Select(mig => mig.Record
                     .ToListViewItem(new Tuple<string, object>("table", new Dictionary<string, string>()
                     {
-                        { "attributename", table.NameAttribute },
+                        { "attributename", table.NameAttribute != null ? table.NameAttribute : string.Empty },
                         { "action", mig.Action.ToString() },
                         { "description", Enums.Action.Preview.ToString() }
                     })));
@@ -198,7 +198,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 lvItems.AddRange(join.Select(anon => anon.Entity
                     .ToListViewItem(new Tuple<string, object>("table", new Dictionary<string, string>()
                     {
-                        { "attributename", table.NameAttribute },
+                        { "attributename", table.NameAttribute != null ? table.NameAttribute : string.Empty },
                         { "action", anon.Action.ToString() },
                         { "description", anon.Description }
                     }))));
