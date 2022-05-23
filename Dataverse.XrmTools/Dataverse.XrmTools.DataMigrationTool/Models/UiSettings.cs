@@ -11,5 +11,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
         public Action Action { get; set; }
         public int BatchSize { get; set; }
         public Operation ApplyMappingsOn { get; set; }
+        public bool HideInvalidAttributes { get; set; }
     }
 }

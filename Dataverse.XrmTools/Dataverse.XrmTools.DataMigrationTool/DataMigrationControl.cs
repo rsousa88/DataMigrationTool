@@ -135,8 +135,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     }
 
                     // load sorts
-                    LogInfo($"Loading sort settings...");
-                    _sorts = _settings.Sorts;
+                    LogInfo($"Loading inital settings...");
+                    LoadUiSettings();
 
                     // save settings file
                     SettingsHelper.SetSettings(_settings);
@@ -212,7 +212,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     var tgtMappings = _mappings.Where(map => map.TargetInstanceName.Equals(_targetInstance.FriendlyName));
                     _mappings = new List<Mapping>(tgtMappings);
 
-                    // load ui settings
+                    // load settings + mappings
                     LoadUiSettings();
                     GenerateMappings();
 
@@ -464,18 +464,40 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 var item = att.ToListViewItem();
                 item.Checked = !deselected.Any(dsl => dsl.Equals(att.LogicalName)) && (att.ValidOnCreate || att.ValidOnUpdate);
 
-                if (!att.ValidOnCreate || !att.ValidOnUpdate) { item.ForeColor = Color.Gray; }
-
-                if (!att.ValidOnCreate && !att.ValidOnUpdate) { item.SubItems.Add("Invalid on create and update"); }
-                else if (!att.ValidOnCreate) { item.SubItems.Add("Invalid on create"); }
-                else if (!att.ValidOnUpdate) { item.SubItems.Add("Invalid on update"); }
-
-                lvAttributes.Items.Add(item);
+                CheckInvalidAttribute(att, item);
             }
 
             ReRenderComponents(true);
 
             ManageWorkingState(false);
+        }
+
+        private void CheckInvalidAttribute(Models.Attribute att, ListViewItem item)
+        {
+            if (!att.ValidOnCreate || !att.ValidOnUpdate)
+            {
+                item.ForeColor = Color.Gray;
+
+                if (!att.ValidOnCreate && !att.ValidOnUpdate)
+                {
+                    item.SubItems.Add("Invalid on create and update");
+                    if (!cbHideInvalid.Checked) { lvAttributes.Items.Add(item); }
+                }
+                else if (!att.ValidOnCreate)
+                {
+                    item.SubItems.Add("Invalid on create");
+                    lvAttributes.Items.Add(item);
+                }
+                else if (!att.ValidOnUpdate)
+                {
+                    item.SubItems.Add("Invalid on update");
+                    lvAttributes.Items.Add(item);
+                }
+            }
+            else
+            {
+                lvAttributes.Items.Add(item);
+            }
         }
 
         private void LoadFilters(TableData tableData)
@@ -794,15 +816,22 @@ namespace Dataverse.XrmTools.DataMigrationTool
             var uiSettings = _settings.UiSettings;
             if (uiSettings != null)
             {
-                cbMapUsers.Checked = uiSettings.MapUsers;
-                cbMapTeams.Checked = uiSettings.MapTeams;
-                cbMapBu.Checked = uiSettings.MapBu;
-                rbMapOnExport.Checked = uiSettings.ApplyMappingsOn.Equals(Operation.Export);
-                rbMapOnImport.Checked = uiSettings.ApplyMappingsOn.Equals(Operation.Import);
-                cbCreate.Checked = (uiSettings.Action & Enums.Action.Create) == Enums.Action.Create;
-                cbUpdate.Checked = (uiSettings.Action & Enums.Action.Update) == Enums.Action.Update;
-                cbDelete.Checked = (uiSettings.Action & Enums.Action.Delete) == Enums.Action.Delete;
+                if(_ready)
+                {
+                    cbMapUsers.Checked = uiSettings.MapUsers;
+                    cbMapTeams.Checked = uiSettings.MapTeams;
+                    cbMapBu.Checked = uiSettings.MapBu;
+                    rbMapOnExport.Checked = uiSettings.ApplyMappingsOn.Equals(Operation.Export);
+                    rbMapOnImport.Checked = uiSettings.ApplyMappingsOn.Equals(Operation.Import);
+                    cbCreate.Checked = (uiSettings.Action & Enums.Action.Create) == Enums.Action.Create;
+                    cbUpdate.Checked = (uiSettings.Action & Enums.Action.Update) == Enums.Action.Update;
+                    cbDelete.Checked = (uiSettings.Action & Enums.Action.Delete) == Enums.Action.Delete;
+                }
+
+                _sorts = _settings.Sorts;
+
                 nudBatchCount.Value = uiSettings.BatchSize;
+                cbHideInvalid.Checked = uiSettings.HideInvalidAttributes;
             }
         }
 
@@ -1046,7 +1075,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 MapUsers = cbMapUsers.Checked,
                 MapTeams = cbMapTeams.Checked,
                 MapBu = cbMapBu.Checked,
-                ApplyMappingsOn = rbMapOnExport.Checked ? Operation.Export : Operation.Import
+                ApplyMappingsOn = rbMapOnExport.Checked ? Operation.Export : Operation.Import,
+                HideInvalidAttributes = cbHideInvalid.Checked
             };
 
             _settings.UiSettings = uiSettings;
@@ -1507,6 +1537,17 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if(_ready)
             {
                 GenerateMappings();
+            }
+        }
+
+        private void cbHideInvalid_CheckedChanged(object sender, EventArgs e)
+        {
+            _settings.UiSettings.HideInvalidAttributes = cbHideInvalid.Checked;
+            SettingsHelper.SetSettings(_settings);
+
+            if(lvAttributes.Enabled && lvAttributes.Items.Count > 0)
+            {
+                LoadAttributes();
             }
         }
         #endregion Form events
