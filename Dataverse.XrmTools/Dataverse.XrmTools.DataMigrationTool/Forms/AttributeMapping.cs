@@ -61,12 +61,11 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             var validAttrs = attributes.Attributes
                 .Where(att => att.IsValidForRead != null && att.IsValidForRead.Value)
                 .Where(att => att.DisplayName != null && att.DisplayName.UserLocalizedLabel != null && !string.IsNullOrEmpty(att.DisplayName.UserLocalizedLabel.Label))
-                //.Where(att => att.AttributeType.Equals(AttributeTypeCode.Lookup))
                 .OrderBy(att => att.LogicalName)
                 .Select(att => new Models.Attribute
                 {
                     LogicalName = att.LogicalName,
-                    DisplayName = att.DisplayName.UserLocalizedLabel.Label,
+                    DisplayName = att.DisplayName.UserLocalizedLabel != null ? att.DisplayName.UserLocalizedLabel.Label : string.Empty,
                     Type = att.AttributeTypeName.Value.EndsWith("Type") ? att.AttributeTypeName.Value.Substring(0, att.AttributeTypeName.Value.LastIndexOf("Type")) : att.AttributeTypeName.Value
                 });
 

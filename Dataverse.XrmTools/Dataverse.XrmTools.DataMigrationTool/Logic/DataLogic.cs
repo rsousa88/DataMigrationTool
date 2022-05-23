@@ -90,7 +90,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             _sourceCollection = collection.ToEntityCollection();
             RetrieveTargetData(tableData.Table.LogicalName, tableData.Table.IdAttribute, uiSettings.BatchSize);
 
-            var msg = $"You are about to import {_sourceCollection.Entities.Count} {tableData.Table.DisplayName} records. Continue?";
+            var msg = $"You are about to import {_sourceCollection.Entities.Count} {tableData.Table.LogicalName} records. Continue?";
             var result = MessageBox.Show(msg, "Info", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
             if (result.Equals(DialogResult.Yes))
             {
@@ -281,7 +281,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
             // export -> serialize source records to json and save file
             entityCollection.EntityName = tableData.Table.LogicalName;
-            var msg = $"You are about to export {entityCollection.Entities.Count} {tableData.Table.DisplayName} records. Continue?";
+            var msg = $"You are about to export {entityCollection.Entities.Count} {tableData.Table.LogicalName} records. Continue?";
             var result = MessageBox.Show(msg, "Info", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
             if (result.Equals(DialogResult.Yes))
             {

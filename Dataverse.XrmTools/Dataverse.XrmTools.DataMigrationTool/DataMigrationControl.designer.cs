@@ -66,13 +66,13 @@
             this.lblTableFilter = new System.Windows.Forms.Label();
             this.txtTableFilter = new System.Windows.Forms.TextBox();
             this.lvTables = new System.Windows.Forms.ListView();
-            this.chTblDisplayName = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
             this.chTblLogicalName = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
+            this.chTblDisplayName = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
             this.gbAttributes = new System.Windows.Forms.GroupBox();
             this.cbSelectAll = new System.Windows.Forms.CheckBox();
             this.lvAttributes = new System.Windows.Forms.ListView();
-            this.chAttrDisplayName = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
             this.chAttrLogicalName = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
+            this.chAttrDisplayName = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
             this.chAttrType = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
             this.chAttrDescription = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
             this.gbFilters = new System.Windows.Forms.GroupBox();
@@ -613,8 +613,8 @@
             | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
             this.lvTables.Columns.AddRange(new System.Windows.Forms.ColumnHeader[] {
-            this.chTblDisplayName,
-            this.chTblLogicalName});
+            this.chTblLogicalName,
+            this.chTblDisplayName});
             this.lvTables.FullRowSelect = true;
             this.lvTables.HideSelection = false;
             this.lvTables.Location = new System.Drawing.Point(9, 54);
@@ -630,15 +630,15 @@
             this.lvTables.SelectedIndexChanged += new System.EventHandler(this.lvTables_SelectedIndexChanged);
             this.lvTables.Resize += new System.EventHandler(this.lvTables_Resize);
             // 
-            // chTblDisplayName
-            // 
-            this.chTblDisplayName.Text = "Display Name";
-            this.chTblDisplayName.Width = 200;
-            // 
             // chTblLogicalName
             // 
             this.chTblLogicalName.Text = "Logical Name";
             this.chTblLogicalName.Width = 200;
+            // 
+            // chTblDisplayName
+            // 
+            this.chTblDisplayName.Text = "Display Name";
+            this.chTblDisplayName.Width = 200;
             // 
             // gbAttributes
             // 
@@ -675,8 +675,8 @@
             | System.Windows.Forms.AnchorStyles.Right)));
             this.lvAttributes.CheckBoxes = true;
             this.lvAttributes.Columns.AddRange(new System.Windows.Forms.ColumnHeader[] {
-            this.chAttrDisplayName,
             this.chAttrLogicalName,
+            this.chAttrDisplayName,
             this.chAttrType,
             this.chAttrDescription});
             this.lvAttributes.FullRowSelect = true;
@@ -693,15 +693,15 @@
             this.lvAttributes.ItemChecked += new System.Windows.Forms.ItemCheckedEventHandler(this.lvAttributes_ItemChecked);
             this.lvAttributes.Resize += new System.EventHandler(this.lvAttributes_Resize);
             // 
-            // chAttrDisplayName
-            // 
-            this.chAttrDisplayName.Text = "Display Name";
-            this.chAttrDisplayName.Width = 200;
-            // 
             // chAttrLogicalName
             // 
             this.chAttrLogicalName.Text = "Logical Name";
             this.chAttrLogicalName.Width = 200;
+            // 
+            // chAttrDisplayName
+            // 
+            this.chAttrDisplayName.Text = "Display Name";
+            this.chAttrDisplayName.Width = 200;
             // 
             // chAttrType
             // 
@@ -856,8 +856,8 @@
         private System.Windows.Forms.Label lblTableFilter;
         private System.Windows.Forms.TextBox txtTableFilter;
         private System.Windows.Forms.ListView lvTables;
-        private System.Windows.Forms.ColumnHeader chTblDisplayName;
         private System.Windows.Forms.ColumnHeader chTblLogicalName;
+        private System.Windows.Forms.ColumnHeader chTblDisplayName;
 
         // Attributes Group
         private System.Windows.Forms.GroupBox gbAttributes;

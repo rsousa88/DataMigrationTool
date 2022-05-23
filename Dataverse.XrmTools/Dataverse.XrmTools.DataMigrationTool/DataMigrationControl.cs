@@ -401,18 +401,17 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
             WorkAsync(new WorkAsyncInfo
             {
-                Message = $"Loading {tableData.Table.DisplayName} attributes...",
+                Message = $"Loading {tableData.Table.LogicalName} attributes...",
                 Work = (worker, args) =>
                 {
                     // filter valid attributes
                     args.Result = tableData.Metadata.Attributes
                         .Where(att => att.IsValidForRead != null && att.IsValidForRead.Value)
-                        .Where(att => att.DisplayName != null && att.DisplayName.UserLocalizedLabel != null && !string.IsNullOrEmpty(att.DisplayName.UserLocalizedLabel.Label))
                         .Select(att => new Models.Attribute
                         {
                             Type = att.AttributeTypeName.Value.EndsWith("Type") ? att.AttributeTypeName.Value.Substring(0, att.AttributeTypeName.Value.LastIndexOf("Type")) : att.AttributeTypeName.Value,
                             LogicalName = att.LogicalName,
-                            DisplayName = att.DisplayName.UserLocalizedLabel.Label,
+                            DisplayName = att.DisplayName.UserLocalizedLabel != null ? att.DisplayName.UserLocalizedLabel.Label : string.Empty,
                             ValidOnCreate = att.IsValidForCreate.Value,
                             ValidOnUpdate = att.IsValidForUpdate.Value
                         })
@@ -697,7 +696,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             SetSelectedTableItem(tableData);
             SettingsHelper.SetSettings(_settings);
 
-            SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Successfully imported settings for table '{tableData.Table.DisplayName}'"));
+            SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Successfully imported settings for table '{tableData.Table.LogicalName}'"));
         }
 
         private void Import(string path = null)
@@ -921,7 +920,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
 
             var tableItem = lvTables.SelectedItems[0].ToObject(new Table()) as Table;
-            if (tableItem == null || string.IsNullOrEmpty(tableItem.DisplayName) || string.IsNullOrEmpty(tableItem.LogicalName) || !_tables.Any(tbl => tbl.LogicalName.Equals(tableItem.LogicalName)))
+            if (tableItem == null || string.IsNullOrEmpty(tableItem.LogicalName) || !_tables.Any(tbl => tbl.LogicalName.Equals(tableItem.LogicalName)))
             {
                 throw new Exception("Invalid Table: Please reload tables and try again");
             }

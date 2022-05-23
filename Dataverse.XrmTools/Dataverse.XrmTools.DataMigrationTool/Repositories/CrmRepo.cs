@@ -48,7 +48,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Repositories
                 };
 
                 var response = _service.Execute(request) as RetrieveAllEntitiesResponse;
-                return response.EntityMetadata.Where(meta => meta.DisplayName.UserLocalizedLabel != null).AsEnumerable();
+                return response.EntityMetadata.AsEnumerable();
             }
             catch (Exception)
             {

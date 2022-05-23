@@ -50,11 +50,11 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
         {
             if (value is Table) {
                 var table = value as Table;
-                return new ListViewItem(new string[] { table.DisplayName, table.LogicalName });
+                return new ListViewItem(new string[] { table.LogicalName, table.DisplayName });
             }
             if (value is Models.Attribute) {
                 var attribute = value as Models.Attribute;
-                return new ListViewItem(new string[] { attribute.DisplayName, attribute.LogicalName, attribute.Type }); ;
+                return new ListViewItem(new string[] { attribute.LogicalName, attribute.DisplayName, attribute.Type }); ;
             }
             if (value is Mapping) {
                 var mapping = value as Mapping;
@@ -117,16 +117,16 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
             {
                 return new Table
                 {
-                    DisplayName = lvItem.SubItems[0].Text,
-                    LogicalName = lvItem.SubItems[1].Text
+                    LogicalName = lvItem.SubItems[0].Text,
+                    DisplayName = lvItem.SubItems[1].Text
                 };
             }
             if (output is Models.Attribute)
             {
                 return new Models.Attribute
                 {
-                    DisplayName = lvItem.SubItems[0].Text,
-                    LogicalName = lvItem.SubItems[1].Text,
+                    LogicalName = lvItem.SubItems[0].Text,
+                    DisplayName = lvItem.SubItems[1].Text,
                     Type = lvItem.SubItems[2].Text
                 };
             }
