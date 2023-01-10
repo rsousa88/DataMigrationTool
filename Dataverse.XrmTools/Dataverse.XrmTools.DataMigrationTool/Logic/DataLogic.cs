@@ -87,7 +87,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
         public OperationResult Import(TableData tableData, RecordCollection collection, UiSettings uiSettings, List<Mapping> mappings)
         {
-            _sourceCollection = collection.ToEntityCollection();
+            _sourceCollection = collection.ToEntityCollection(tableData.Metadata.Attributes);
             RetrieveTargetData(tableData.Table.LogicalName, tableData.Table.IdAttribute, uiSettings.BatchSize);
 
             var msg = $"You are about to import {_sourceCollection.Entities.Count} {tableData.Table.LogicalName} records. Continue?";

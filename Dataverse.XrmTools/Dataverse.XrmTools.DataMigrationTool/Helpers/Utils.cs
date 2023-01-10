@@ -206,7 +206,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
             return attributes;
         }
 
-        public static AttributeCollection MapAttributes(this IEnumerable<RecordAttribute> attributes)
+        public static AttributeCollection MapAttributes(this IEnumerable<RecordAttribute> attributes, AttributeMetadata[] attributeMetadata)
         {
             var dictionary = attributes.Select(attr =>
             {
@@ -253,10 +253,34 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
                     var optionSet = new OptionSetValueCollection(options.ToList());
                     return new KeyValuePair<string, object>(attr.Key, optionSet);
                 }
-
+                
+                // Handle number value types
+                if (attr.Type.Equals(AttributeType.Standard))
+                {
+                    var attrValue = attr.Value;
+                    var attrMeta = attributeMetadata.FirstOrDefault(item => item.LogicalName == attr.Key);
+                    if (attrMeta != null && attrMeta.AttributeType.HasValue)
+                    {
+                        switch (attrMeta.AttributeType.Value)
+                        {
+                            case AttributeTypeCode.BigInt:
+                                attrValue = Convert.ToInt64(attr.Value);
+                                break;
+                            case AttributeTypeCode.Decimal:
+                                attrValue = Convert.ToDecimal(attr.Value);
+                                break;
+                            case AttributeTypeCode.Double:
+                                attrValue = Convert.ToDouble(attr.Value);
+                                break;
+                            case AttributeTypeCode.Integer:
+                                attrValue = Convert.ToInt32(attr.Value);
+                                break;
+                        }
+                    }
+                    return new KeyValuePair<string, object>(attr.Key, attrValue);
+                }
                 return new KeyValuePair<string, object>(attr.Key, attr.Value);
             });
-
             var collection = new AttributeCollection();
             collection.AddRange(dictionary);
 
@@ -288,7 +312,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
             }
         }
 
-        public static EntityCollection ToEntityCollection(this RecordCollection collection)
+        public static EntityCollection ToEntityCollection(this RecordCollection collection, AttributeMetadata[] attributeMetadata)
         {
             var entityList = new List<Entity>();
             foreach (var rec in collection.Records)
@@ -300,7 +324,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
                 {
                     Id = Guid.Parse(idAttr.Value.ToString()),
                     LogicalName = collection.LogicalName,
-                    Attributes = rec.Attributes.MapAttributes()
+                    Attributes = rec.Attributes.MapAttributes(attributeMetadata)
                 }.ToEntity<Entity>();
 
                 entityList.Add(entity);
