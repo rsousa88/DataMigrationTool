@@ -213,9 +213,11 @@
     <Compile Include="Enums\AttributeType.cs" />
     <Compile Include="Enums\Action.cs" />
     <Compile Include="Enums\ConnectionType.cs" />
+    <Compile Include="Enums\LogLevel.cs" />
     <Compile Include="Enums\Operation.cs" />
     <Compile Include="Enums\MappingState.cs" />
     <Compile Include="Enums\MappingType.cs" />
+    <Compile Include="External\FolderSelectDialog.cs" />
     <Compile Include="Forms\AttributeMapping.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -241,6 +243,7 @@
       <DependentUpon>ValueMapping.cs</DependentUpon>
     </Compile>
     <Compile Include="Helpers\ListViewComparer.cs" />
+    <Compile Include="Helpers\Logger.cs" />
     <Compile Include="Helpers\SettingsHelper.cs" />
     <Compile Include="Helpers\Utils.cs" />
     <Compile Include="Logic\DataLogic.cs" />

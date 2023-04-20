@@ -237,9 +237,9 @@
             this.pnlSettings.ColumnCount = 1;
             this.pnlSettings.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 100F));
             this.pnlSettings.Controls.Add(this.gbEnvironments, 0, 0);
-            this.pnlSettings.Controls.Add(this.gbViewSettings, 0, 1);
-            this.pnlSettings.Controls.Add(this.gbMappingSettings, 0, 2);
-            this.pnlSettings.Controls.Add(this.gbOpSettings, 0, 3);
+            this.pnlSettings.Controls.Add(this.gbMappingSettings, 0, 1);
+            this.pnlSettings.Controls.Add(this.gbOpSettings, 0, 2);
+            this.pnlSettings.Controls.Add(this.gbViewSettings, 0, 3);
             this.pnlSettings.Dock = System.Windows.Forms.DockStyle.Fill;
             this.pnlSettings.Location = new System.Drawing.Point(3, 2);
             this.pnlSettings.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
@@ -254,12 +254,13 @@
             // 
             // gbEnvironments
             // 
+            this.gbEnvironments.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
             this.gbEnvironments.Controls.Add(this.lblSource);
             this.gbEnvironments.Controls.Add(this.lblSourceValue);
             this.gbEnvironments.Controls.Add(this.lblTarget);
             this.gbEnvironments.Controls.Add(this.lblTargetValue);
             this.gbEnvironments.Controls.Add(this.btnSelectTarget);
-            this.gbEnvironments.Dock = System.Windows.Forms.DockStyle.Fill;
             this.gbEnvironments.Location = new System.Drawing.Point(3, 2);
             this.gbEnvironments.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
             this.gbEnvironments.Name = "gbEnvironments";
@@ -274,7 +275,7 @@
             this.lblSource.AutoSize = true;
             this.lblSource.Location = new System.Drawing.Point(5, 30);
             this.lblSource.Name = "lblSource";
-            this.lblSource.Size = new System.Drawing.Size(53, 17);
+            this.lblSource.Size = new System.Drawing.Size(50, 16);
             this.lblSource.TabIndex = 0;
             this.lblSource.Text = "Source";
             // 
@@ -294,7 +295,7 @@
             this.lblTarget.AutoSize = true;
             this.lblTarget.Location = new System.Drawing.Point(5, 59);
             this.lblTarget.Name = "lblTarget";
-            this.lblTarget.Size = new System.Drawing.Size(50, 17);
+            this.lblTarget.Size = new System.Drawing.Size(47, 16);
             this.lblTarget.TabIndex = 2;
             this.lblTarget.Text = "Target";
             // 
@@ -327,13 +328,14 @@
             // 
             // gbViewSettings
             // 
+            this.gbViewSettings.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
             this.gbViewSettings.Controls.Add(this.cbHideInvalid);
-            this.gbViewSettings.Dock = System.Windows.Forms.DockStyle.Fill;
             this.gbViewSettings.Location = new System.Drawing.Point(3, 141);
             this.gbViewSettings.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
             this.gbViewSettings.Name = "gbViewSettings";
             this.gbViewSettings.Padding = new System.Windows.Forms.Padding(3, 2, 3, 2);
-            this.gbViewSettings.Size = new System.Drawing.Size(310, 409);
+            this.gbViewSettings.Size = new System.Drawing.Size(310, 68);
             this.gbViewSettings.TabIndex = 0;
             this.gbViewSettings.TabStop = false;
             this.gbViewSettings.Text = "View Settings";
@@ -346,7 +348,7 @@
             this.cbHideInvalid.Location = new System.Drawing.Point(7, 26);
             this.cbHideInvalid.Margin = new System.Windows.Forms.Padding(4);
             this.cbHideInvalid.Name = "cbHideInvalid";
-            this.cbHideInvalid.Size = new System.Drawing.Size(167, 21);
+            this.cbHideInvalid.Size = new System.Drawing.Size(158, 20);
             this.cbHideInvalid.TabIndex = 0;
             this.cbHideInvalid.Text = "Hide Invalid Attributes";
             this.cbHideInvalid.UseVisualStyleBackColor = true;
@@ -354,6 +356,8 @@
             // 
             // gbMappingSettings
             // 
+            this.gbMappingSettings.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
             this.gbMappingSettings.Controls.Add(this.rbMapOnImport);
             this.gbMappingSettings.Controls.Add(this.rbMapOnExport);
             this.gbMappingSettings.Controls.Add(this.lblApplyMappingsOn);
@@ -361,13 +365,12 @@
             this.gbMappingSettings.Controls.Add(this.cbMapTeams);
             this.gbMappingSettings.Controls.Add(this.cbMapBu);
             this.gbMappingSettings.Controls.Add(this.btnMappings);
-            this.gbMappingSettings.Dock = System.Windows.Forms.DockStyle.Fill;
             this.gbMappingSettings.Enabled = false;
-            this.gbMappingSettings.Location = new System.Drawing.Point(3, 554);
+            this.gbMappingSettings.Location = new System.Drawing.Point(3, 213);
             this.gbMappingSettings.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
             this.gbMappingSettings.Name = "gbMappingSettings";
             this.gbMappingSettings.Padding = new System.Windows.Forms.Padding(3, 2, 3, 2);
-            this.gbMappingSettings.Size = new System.Drawing.Size(310, 222);
+            this.gbMappingSettings.Size = new System.Drawing.Size(310, 254);
             this.gbMappingSettings.TabIndex = 0;
             this.gbMappingSettings.TabStop = false;
             this.gbMappingSettings.Text = "Mapping Settings";
@@ -378,7 +381,7 @@
             this.rbMapOnImport.Location = new System.Drawing.Point(83, 130);
             this.rbMapOnImport.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
             this.rbMapOnImport.Name = "rbMapOnImport";
-            this.rbMapOnImport.Size = new System.Drawing.Size(68, 21);
+            this.rbMapOnImport.Size = new System.Drawing.Size(65, 20);
             this.rbMapOnImport.TabIndex = 105;
             this.rbMapOnImport.Text = "Import";
             this.rbMapOnImport.UseVisualStyleBackColor = true;
@@ -390,7 +393,7 @@
             this.rbMapOnExport.Location = new System.Drawing.Point(8, 130);
             this.rbMapOnExport.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
             this.rbMapOnExport.Name = "rbMapOnExport";
-            this.rbMapOnExport.Size = new System.Drawing.Size(69, 21);
+            this.rbMapOnExport.Size = new System.Drawing.Size(66, 20);
             this.rbMapOnExport.TabIndex = 104;
             this.rbMapOnExport.TabStop = true;
             this.rbMapOnExport.Text = "Export";
@@ -401,7 +404,7 @@
             this.lblApplyMappingsOn.AutoSize = true;
             this.lblApplyMappingsOn.Location = new System.Drawing.Point(5, 111);
             this.lblApplyMappingsOn.Name = "lblApplyMappingsOn";
-            this.lblApplyMappingsOn.Size = new System.Drawing.Size(132, 17);
+            this.lblApplyMappingsOn.Size = new System.Drawing.Size(126, 16);
             this.lblApplyMappingsOn.TabIndex = 103;
             this.lblApplyMappingsOn.Text = "Apply Mappings on:";
             // 
@@ -411,7 +414,7 @@
             this.cbMapUsers.Location = new System.Drawing.Point(8, 26);
             this.cbMapUsers.Margin = new System.Windows.Forms.Padding(4);
             this.cbMapUsers.Name = "cbMapUsers";
-            this.cbMapUsers.Size = new System.Drawing.Size(192, 21);
+            this.cbMapUsers.Size = new System.Drawing.Size(185, 20);
             this.cbMapUsers.TabIndex = 1;
             this.cbMapUsers.Text = "Map Users by User Name";
             this.cbMapUsers.UseVisualStyleBackColor = true;
@@ -423,7 +426,7 @@
             this.cbMapTeams.Location = new System.Drawing.Point(8, 54);
             this.cbMapTeams.Margin = new System.Windows.Forms.Padding(4);
             this.cbMapTeams.Name = "cbMapTeams";
-            this.cbMapTeams.Size = new System.Drawing.Size(164, 21);
+            this.cbMapTeams.Size = new System.Drawing.Size(160, 20);
             this.cbMapTeams.TabIndex = 2;
             this.cbMapTeams.Text = "Map Teams by Name";
             this.cbMapTeams.UseVisualStyleBackColor = true;
@@ -437,7 +440,7 @@
             this.cbMapBu.Location = new System.Drawing.Point(8, 82);
             this.cbMapBu.Margin = new System.Windows.Forms.Padding(4);
             this.cbMapBu.Name = "cbMapBu";
-            this.cbMapBu.Size = new System.Drawing.Size(181, 21);
+            this.cbMapBu.Size = new System.Drawing.Size(172, 20);
             this.cbMapBu.TabIndex = 3;
             this.cbMapBu.Text = "Map Root Business Unit";
             this.cbMapBu.UseVisualStyleBackColor = true;
@@ -461,18 +464,19 @@
             // 
             // gbOpSettings
             // 
+            this.gbOpSettings.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
             this.gbOpSettings.Controls.Add(this.cbCreate);
             this.gbOpSettings.Controls.Add(this.cbUpdate);
             this.gbOpSettings.Controls.Add(this.cbDelete);
             this.gbOpSettings.Controls.Add(this.lblBatchCount);
             this.gbOpSettings.Controls.Add(this.nudBatchCount);
-            this.gbOpSettings.Dock = System.Windows.Forms.DockStyle.Fill;
             this.gbOpSettings.Enabled = false;
-            this.gbOpSettings.Location = new System.Drawing.Point(3, 780);
+            this.gbOpSettings.Location = new System.Drawing.Point(4, 589);
             this.gbOpSettings.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
             this.gbOpSettings.Name = "gbOpSettings";
             this.gbOpSettings.Padding = new System.Windows.Forms.Padding(3, 2, 3, 2);
-            this.gbOpSettings.Size = new System.Drawing.Size(310, 153);
+            this.gbOpSettings.Size = new System.Drawing.Size(310, 169);
             this.gbOpSettings.TabIndex = 2;
             this.gbOpSettings.TabStop = false;
             this.gbOpSettings.Text = "Operation Settings";
@@ -485,7 +489,7 @@
             this.cbCreate.Location = new System.Drawing.Point(7, 26);
             this.cbCreate.Margin = new System.Windows.Forms.Padding(4);
             this.cbCreate.Name = "cbCreate";
-            this.cbCreate.Size = new System.Drawing.Size(72, 21);
+            this.cbCreate.Size = new System.Drawing.Size(69, 20);
             this.cbCreate.TabIndex = 0;
             this.cbCreate.Text = "Create";
             this.cbCreate.UseVisualStyleBackColor = true;
@@ -498,7 +502,7 @@
             this.cbUpdate.Location = new System.Drawing.Point(7, 55);
             this.cbUpdate.Margin = new System.Windows.Forms.Padding(4);
             this.cbUpdate.Name = "cbUpdate";
-            this.cbUpdate.Size = new System.Drawing.Size(76, 21);
+            this.cbUpdate.Size = new System.Drawing.Size(74, 20);
             this.cbUpdate.TabIndex = 1;
             this.cbUpdate.Text = "Update";
             this.cbUpdate.UseVisualStyleBackColor = true;
@@ -510,7 +514,7 @@
             this.cbDelete.Location = new System.Drawing.Point(7, 84);
             this.cbDelete.Margin = new System.Windows.Forms.Padding(4);
             this.cbDelete.Name = "cbDelete";
-            this.cbDelete.Size = new System.Drawing.Size(88, 21);
+            this.cbDelete.Size = new System.Drawing.Size(83, 20);
             this.cbDelete.TabIndex = 2;
             this.cbDelete.Text = "Delete (!)";
             this.cbDelete.UseVisualStyleBackColor = true;
@@ -520,7 +524,7 @@
             this.lblBatchCount.AutoSize = true;
             this.lblBatchCount.Location = new System.Drawing.Point(5, 121);
             this.lblBatchCount.Name = "lblBatchCount";
-            this.lblBatchCount.Size = new System.Drawing.Size(77, 17);
+            this.lblBatchCount.Size = new System.Drawing.Size(71, 16);
             this.lblBatchCount.TabIndex = 3;
             this.lblBatchCount.Text = "Batch size:";
             // 
@@ -592,7 +596,7 @@
             this.lblTableFilter.Location = new System.Drawing.Point(7, 25);
             this.lblTableFilter.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
             this.lblTableFilter.Name = "lblTableFilter";
-            this.lblTableFilter.Size = new System.Drawing.Size(43, 17);
+            this.lblTableFilter.Size = new System.Drawing.Size(39, 16);
             this.lblTableFilter.TabIndex = 0;
             this.lblTableFilter.Text = "Filter:";
             // 
@@ -662,7 +666,7 @@
             this.cbSelectAll.Location = new System.Drawing.Point(8, 26);
             this.cbSelectAll.Margin = new System.Windows.Forms.Padding(4);
             this.cbSelectAll.Name = "cbSelectAll";
-            this.cbSelectAll.Size = new System.Drawing.Size(147, 21);
+            this.cbSelectAll.Size = new System.Drawing.Size(142, 20);
             this.cbSelectAll.TabIndex = 0;
             this.cbSelectAll.Text = "Select/Unselect All";
             this.cbSelectAll.UseVisualStyleBackColor = true;
@@ -734,7 +738,7 @@
             this.lblFetchDescription.Location = new System.Drawing.Point(8, 23);
             this.lblFetchDescription.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
             this.lblFetchDescription.Name = "lblFetchDescription";
-            this.lblFetchDescription.Size = new System.Drawing.Size(312, 17);
+            this.lblFetchDescription.Size = new System.Drawing.Size(292, 16);
             this.lblFetchDescription.TabIndex = 0;
             this.lblFetchDescription.Text = "Records will be filtered using query defined here";
             // 

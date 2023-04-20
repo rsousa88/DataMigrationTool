@@ -9,7 +9,7 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("Rui Sousa")]
 [assembly: AssemblyProduct("Dataverse.XrmTools.DataMigrationTool")]
-[assembly: AssemblyCopyright("Copyright ©  2022")]
+[assembly: AssemblyCopyright("Copyright ©  2023")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
 
@@ -31,5 +31,5 @@ using System.Runtime.InteropServices;
 // You can specify all the values or you can default the Build and Revision Numbers 
 // by using the '*' as shown below:
 // [assembly: AssemblyVersion("1.0.*")]
-[assembly: AssemblyVersion("2022.5.23.1")]
-[assembly: AssemblyFileVersion("2022.5.23.1")]
+[assembly: AssemblyVersion("2023.4.20.1")]
+[assembly: AssemblyFileVersion("2023.4.20.1")]

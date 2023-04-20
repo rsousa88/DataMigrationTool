@@ -35,7 +35,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
     public partial class DataMigrationControl : MultipleConnectionsPluginControlBase, IStatusBarMessenger, IMessageBusHost
     {
         #region Variables
-        // settings
+        // general
+        private Logger _logger;
         private Settings _settings;
 
         // service
@@ -68,10 +69,14 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
             LogInfo("Initializing components...");
             InitializeComponent();
+
+            _logger = new Logger();
+            _logger.OnLog += Log;
         }
 
         public void DataMigrationControl_Load(object sender, EventArgs e)
         {
+            _logger.Log(LogLevel.INFO, "Data Migration tool initialized");
             ExecuteMethod(WhoAmI);
         }
 
@@ -83,22 +88,22 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             try
             {
-                LogInfo($"Updating connection...");
+                _logger.Log(LogLevel.INFO, $"Updating connection...");
                 base.UpdateConnection(newService, detail, actionName, parameter);
-                LogInfo($"Connection successfully updated...");
+                _logger.Log(LogLevel.INFO, $"Connection successfully updated...");
 
                 var client = detail.ServiceClient;
 
                 if (!actionName.Equals("AdditionalOrganization"))
                 {
-                    LogInfo($"Checking for legacy instances...");
+                    _logger.Log(LogLevel.INFO, $"Checking for legacy instances...");
                     UpdateLegacyInstance(detail.ConnectionId.Value, client);
 
-                    LogInfo($"Checking settings for known instances...");
+                    _logger.Log(LogLevel.INFO, $"Checking settings for known instances...");
                     var instance = _settings.Instances.FirstOrDefault(inst => inst.UniqueName.Equals(client.ConnectedOrgUniqueName));
                     if (instance is null)
                     {
-                        LogInfo($"New instance '{client.ConnectedOrgUniqueName}': Adding to settings...");
+                        _logger.Log(LogLevel.INFO, $"New instance '{client.ConnectedOrgUniqueName}': Adding to settings...");
                         instance = new Instance
                         {
                             Id = client.ConnectedOrgId,
@@ -112,37 +117,37 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     }
                     else
                     {
-                        LogInfo($"Found known instance '{instance.UniqueName}'");
+                        _logger.Log(LogLevel.INFO, $"Found known instance '{instance.UniqueName}'");
                     }
 
                     _sourceClient = client;
                     _sourceInstance = instance;
 
                     // load source instance mappings
-                    LogInfo($"Loading mappings...");
+                    _logger.Log(LogLevel.INFO, $"Loading mappings...");
                     try
                     {
                         var srcMappings = _sourceInstance.Mappings.Where(map => map.SourceInstanceName.Equals(_sourceInstance.FriendlyName));
                         _mappings = new List<Mapping>(srcMappings);
 
-                        LogInfo($"Clearing mappings...");
+                        _logger.Log(LogLevel.INFO, $"Clearing mappings...");
                         ClearMappings();
                     }
                     catch
                     {
-                        LogInfo($"Corrupt mappings detected: Resetting mappings...");
+                        _logger.Log(LogLevel.INFO, $"Corrupt mappings detected: Resetting mappings...");
                         ClearMappings(true);
                     }
 
                     // load sorts
-                    LogInfo($"Loading inital settings...");
+                    _logger.Log(LogLevel.INFO, $"Loading inital settings...");
                     LoadUiSettings();
 
                     // save settings file
                     SettingsHelper.SetSettings(_settings);
 
                     // render UI components
-                    LogInfo($"Rendering UI components...");
+                    _logger.Log(LogLevel.INFO, $"Rendering UI components...");
                     RenderConnectionLabel(ConnectionType.Source, instance.FriendlyName);
                     ReRenderComponents(true);
 
@@ -153,7 +158,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             catch (Exception ex)
             {
                 ManageWorkingState(false);
-                LogError(ex.Message);
+                _logger.Log(LogLevel.ERROR, ex.Message);
                 MessageBox.Show(this, $"An error occurred: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -174,16 +179,16 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     }
 
                     if (_sourceClient == null) { throw new Exception("Source connection is invalid"); }
-                    LogInfo($"Source OrgId: {_sourceClient.ConnectedOrgId}");
-                    LogInfo($"Source OrgUniqueName: {_sourceClient.ConnectedOrgUniqueName}");
-                    LogInfo($"Source OrgFriendlyName: {_sourceClient.ConnectedOrgFriendlyName}");
-                    LogInfo($"Source EnvId: {_sourceClient.EnvironmentId}");
+                    _logger.Log(LogLevel.INFO, $"Source OrgId: {_sourceClient.ConnectedOrgId}");
+                    _logger.Log(LogLevel.INFO, $"Source OrgUniqueName: {_sourceClient.ConnectedOrgUniqueName}");
+                    _logger.Log(LogLevel.INFO, $"Source OrgFriendlyName: {_sourceClient.ConnectedOrgFriendlyName}");
+                    _logger.Log(LogLevel.INFO, $"Source EnvId: {_sourceClient.EnvironmentId}");
 
                     if (client == null) { throw new Exception("Target connection is invalid"); }
-                    LogInfo($"Target OrgId: {client.ConnectedOrgId}");
-                    LogInfo($"Target OrgUniqueName: {client.ConnectedOrgUniqueName}");
-                    LogInfo($"Target OrgFriendlyName: {client.ConnectedOrgFriendlyName}");
-                    LogInfo($"Target EnvId: {client.EnvironmentId}");
+                    _logger.Log(LogLevel.INFO, $"Target OrgId: {client.ConnectedOrgId}");
+                    _logger.Log(LogLevel.INFO, $"Target OrgUniqueName: {client.ConnectedOrgUniqueName}");
+                    _logger.Log(LogLevel.INFO, $"Target OrgFriendlyName: {client.ConnectedOrgFriendlyName}");
+                    _logger.Log(LogLevel.INFO, $"Target EnvId: {client.EnvironmentId}");
 
                     if (_sourceClient.ConnectedOrgUniqueName.Equals(client.ConnectedOrgUniqueName))
                     {
@@ -228,7 +233,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             catch (Exception ex)
             {
                 ManageWorkingState(false);
-                LogError(ex.Message);
+                _logger.Log(LogLevel.ERROR, ex.Message);
                 MessageBox.Show(this, $"An error occurred: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -240,7 +245,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             // update instance
             if (legacy != null)
             {
-                LogInfo($"Found legacy instance: Updating...");
+                _logger.Log(LogLevel.INFO, $"Found legacy instance: Updating...");
 
                 legacy.Id = client.ConnectedOrgId;
                 legacy.FriendlyName = client.ConnectedOrgFriendlyName;
@@ -292,7 +297,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             catch (Exception ex)
             {
                 ManageWorkingState(false);
-                LogError(ex.Message);
+                _logger.Log(LogLevel.ERROR, ex.Message);
                 MessageBox.Show(this, $"An error occurred: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -306,7 +311,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void LoadTables()
         {
-            LogInfo($"Loading tables...");
+            _logger.Log(LogLevel.INFO, $"Loading tables...");
 
             gbAttributes.Enabled = false;
             gbFilters.Enabled = false;
@@ -361,7 +366,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void LoadTablesList()
         {
-            LogInfo($"Rendering tables list view...");
+            _logger.Log(LogLevel.INFO, $"Rendering tables list view...");
 
             var textFilter = txtTableFilter.Text;
             var filtered = _tables.Where(tbl => string.IsNullOrWhiteSpace(textFilter) || tbl.MatchFilter(textFilter));
@@ -383,7 +388,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void LoadAttributes()
         {
-            LogInfo($"Loading attributes...");
+            _logger.Log(LogLevel.INFO, $"Loading attributes...");
 
             if (_working) { return; }
 
@@ -445,7 +450,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void LoadAttributesList(TableData tableData)
         {
-            LogInfo($"Rendering attributes list view...");
+            _logger.Log(LogLevel.INFO, $"Rendering attributes list view...");
 
             var deselected = tableData.Settings.DeselectedAttributes;
             if (deselected == null)
@@ -501,7 +506,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void LoadFilters(TableData tableData)
         {
-            LogInfo($"Loading table filters...");
+            _logger.Log(LogLevel.INFO, $"Loading table filters...");
 
             rtbFilter.Text = string.Empty;
 
@@ -519,7 +524,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void PreviewData()
         {
-            LogInfo($"Previewing operation...");
+            _logger.Log(LogLevel.INFO, $"Previewing operation...");
 
             var tableData = GetSelectedTableItemData(targetRequired: false, attributeRequired: true);
             if(tableData == null) {
@@ -590,7 +595,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void ExportSettings(string dirPath)
         {
-            LogInfo($"Exporting table settings...");
+            _logger.Log(LogLevel.INFO, $"Exporting table settings...");
 
             if (string.IsNullOrEmpty(dirPath)) { return; }
 
@@ -610,7 +615,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void Export(string dirPath)
         {
-            LogInfo($"Export data operation...");
+            _logger.Log(LogLevel.INFO, $"Export data operation...");
 
             if (string.IsNullOrEmpty(dirPath)) { return; }
 
@@ -661,19 +666,10 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void LoadSettings()
         {
-            LogInfo($"Loading table settings...");
+            _logger.Log(LogLevel.INFO, $"Loading table settings...");
 
-            // get file path
-            var dialog = new OpenFileDialog
-            {
-                Title = "Select settings file...",
-                Filter = "Json files (*.json)|*.settings.json",
-                FilterIndex = 2,
-                RestoreDirectory = true
-            };
-
-            var path = GetFileDialogPath(Operation.Import, dialog);
-            if(string.IsNullOrEmpty(path)) { return; }
+            var path = this.SelectFile("Json files (*.json)|*.settings.json");
+            if (string.IsNullOrEmpty(path)) { return; }
 
             ManageWorkingState(true);
 
@@ -701,18 +697,10 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void Import(string path = null)
         {
-            LogInfo($"Import operation...");
+            _logger.Log(LogLevel.INFO, $"Import operation...");
 
             // get file path
-            var dialog = new OpenFileDialog
-            {
-                Title = "Select data file...",
-                Filter = "Json files (*.json)|*.json",
-                FilterIndex = 2,
-                RestoreDirectory = true
-            };
-
-            path = path is null ? GetFileDialogPath(Operation.Import, dialog) : path;
+            path = path is null ? this.SelectFile("Json files (*.json)|*.json") : path;
             if (string.IsNullOrEmpty(path)) { return; }
 
             ManageWorkingState(true);
@@ -765,51 +753,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             });
         }
 
-        private string GetExportDirectoryPath()
-        {
-            var path = string.Empty;
-
-            using (var fbd = new FolderBrowserDialog())
-            {
-                fbd.Description = "Select export directory";
-
-                if (fbd.ShowDialog(this) == DialogResult.OK)
-                {
-                    path = fbd.SelectedPath;
-                }
-            }
-
-            return path;
-        }
-
-        private string GetFileDialogPath(Operation action, FileDialog dialog)
-        {
-            var path = string.Empty;
-
-            if (action.Equals(Operation.Export))
-            {
-                using (var sfd = dialog as SaveFileDialog)
-                {
-                    if (sfd.ShowDialog() == DialogResult.OK)
-                    {
-                        path = sfd.FileName;
-                    }
-                }
-            }
-            else if (action.Equals(Operation.Import))
-            {
-                using (var ofd = dialog as OpenFileDialog)
-                {
-                    if (ofd.ShowDialog(this) == DialogResult.OK)
-                    {
-                        path = ofd.FileName;
-                    }
-                }
-            }
-
-            return path;
-        }
-
         private void LoadUiSettings()
         {
             var uiSettings = _settings.UiSettings;
@@ -856,7 +799,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void GenerateMappings()
         {
-            LogInfo($"Generating automatic mappings...");
+            _logger.Log(LogLevel.INFO, $"Generating automatic mappings...");
 
             ManageWorkingState(true);
 
@@ -900,7 +843,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private TableData GetSelectedTableItemData(bool targetRequired = true, bool attributeRequired = false)
         {
-            LogInfo($"Parsing table data...");
+            _logger.Log(LogLevel.INFO, $"Parsing table data...");
 
             if (Service == null || (targetRequired && _targetClient == null))
             {
@@ -941,7 +884,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private TableData GetTableDataByLogicalName(string logicalName, bool targetRequired = true)
         {
-            LogInfo($"Parsing table data...");
+            _logger.Log(LogLevel.INFO, $"Parsing table data...");
 
             if (Service == null || (targetRequired && _targetClient == null))
             {
@@ -968,7 +911,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void SetSelectedTableItem(TableData tableData)
         {
-            LogInfo($"Loading table data...");
+            _logger.Log(LogLevel.INFO, $"Loading table data...");
 
             var tableItems = lvTables.Items.Cast<ListViewItem>();
             var tableItem = tableItems.FirstOrDefault(lvi => lvi.SubItems[1].Text.Equals(tableData.Table.LogicalName));
@@ -1001,6 +944,25 @@ namespace Dataverse.XrmTools.DataMigrationTool
         #endregion Private Main Methods
 
         #region Private Helper Methods
+        private void Log(object sender, LoggerEventArgs args)
+        {
+            switch (args.Level)
+            {
+                case LogLevel.DEBUG:
+                case LogLevel.INFO:
+                    LogInfo(args.Message);
+                    break;
+                case LogLevel.WARN:
+                    LogWarning(args.Message);
+                    break;
+                case LogLevel.ERROR:
+                    LogError(args.Message);
+                    break;
+                default:
+                    break;
+            }
+        }
+
         private void ManageWorkingState(bool working)
         {
             pnlMain.Enabled = !working;
@@ -1215,7 +1177,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             catch (Exception ex)
             {
                 ManageWorkingState(false);
-                LogError(ex.Message);
+                _logger.Log(LogLevel.ERROR, ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally
@@ -1238,7 +1200,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             catch (Exception ex)
             {
                 ManageWorkingState(false);
-                LogError(ex.Message);
+                _logger.Log(LogLevel.ERROR, ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -1252,7 +1214,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             catch (Exception ex)
             {
                 ManageWorkingState(false);
-                LogError(ex.Message);
+                _logger.Log(LogLevel.ERROR, ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -1266,7 +1228,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             catch (Exception ex)
             {
                 ManageWorkingState(false);
-                LogError(ex.Message);
+                _logger.Log(LogLevel.ERROR, ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -1280,7 +1242,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             catch (Exception ex)
             {
                 ManageWorkingState(false);
-                LogError(ex.Message);
+                _logger.Log(LogLevel.ERROR, ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -1294,7 +1256,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             catch (Exception ex)
             {
                 ManageWorkingState(false);
-                LogError(ex.Message);
+                _logger.Log(LogLevel.ERROR, ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -1303,13 +1265,18 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             try
             {
-                var dirPath = GetExportDirectoryPath();
+                var dirPath = Handle.SelectDirectory(_settings.LastUsedDir);
+                if (string.IsNullOrEmpty(dirPath) || !Directory.Exists(dirPath)) { return; }
+
+                _settings.LastUsedDir = dirPath;
+                SettingsHelper.SetSettings(_settings);
+
                 Export(dirPath);
             }
             catch (Exception ex)
             {
                 ManageWorkingState(false);
-                LogError(ex.Message);
+                _logger.Log(LogLevel.ERROR, ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -1318,13 +1285,18 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             try
             {
-                var dirPath = GetExportDirectoryPath();
+                var dirPath = Handle.SelectDirectory(_settings.LastUsedDir);
+                if (string.IsNullOrEmpty(dirPath) || !Directory.Exists(dirPath)) { return; }
+
+                _settings.LastUsedDir = dirPath;
+                SettingsHelper.SetSettings(_settings);
+
                 ExportSettings(dirPath);
             }
             catch (Exception ex)
             {
                 ManageWorkingState(false);
-                LogError(ex.Message);
+                _logger.Log(LogLevel.ERROR, ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -1333,14 +1305,19 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             try
             {
-                var dirPath = GetExportDirectoryPath();
+                var dirPath = Handle.SelectDirectory(_settings.LastUsedDir);
+                if (string.IsNullOrEmpty(dirPath) || !Directory.Exists(dirPath)) { return; }
+
+                _settings.LastUsedDir = dirPath;
+                SettingsHelper.SetSettings(_settings);
+
                 ExportSettings(dirPath);
                 Export(dirPath);
             }
             catch (Exception ex)
             {
                 ManageWorkingState(false);
-                LogError(ex.Message);
+                _logger.Log(LogLevel.ERROR, ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -1354,7 +1331,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             catch (Exception ex)
             {
                 ManageWorkingState(false);
-                LogError(ex.Message);
+                _logger.Log(LogLevel.ERROR, ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -1368,7 +1345,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             catch (Exception ex)
             {
                 ManageWorkingState(false);
-                LogError(ex.Message);
+                _logger.Log(LogLevel.ERROR, ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -1382,7 +1359,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             catch (Exception ex)
             {
                 ManageWorkingState(false);
-                LogError(ex.Message);
+                _logger.Log(LogLevel.ERROR, ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -1397,7 +1374,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             catch (Exception ex)
             {
                 ManageWorkingState(false);
-                LogError(ex.Message);
+                _logger.Log(LogLevel.ERROR, ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -1427,7 +1404,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             catch (Exception ex)
             {
                 ManageWorkingState(false);
-                LogError(ex.Message);
+                _logger.Log(LogLevel.ERROR, ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -1456,7 +1433,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             catch (Exception ex)
             {
                 ManageWorkingState(false);
-                LogError(ex.Message);
+                _logger.Log(LogLevel.ERROR, ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -1481,7 +1458,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             catch (Exception ex)
             {
                 ManageWorkingState(false);
-                LogError(ex.Message);
+                _logger.Log(LogLevel.ERROR, ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -1501,7 +1478,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             catch (Exception ex)
             {
                 ManageWorkingState(false);
-                LogError(ex.Message);
+                _logger.Log(LogLevel.ERROR, ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -1526,7 +1503,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             catch (Exception ex)
             {
                 ManageWorkingState(false);
-                LogError(ex.Message);
+                _logger.Log(LogLevel.ERROR, ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }

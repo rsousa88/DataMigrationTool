@@ -16,6 +16,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.AppSettings
         public List<Sort> Sorts { get; set; }
         public UiSettings UiSettings { get; set; }
         public string LastDataFile { get; set; }
+        public string LastUsedDir { get; set; }
 
         public Instance this[Guid orgId]
         {

@@ -15,6 +15,7 @@ using Microsoft.Xrm.Sdk.Metadata;
 // DataMigrationTool
 using Dataverse.XrmTools.DataMigrationTool.Enums;
 using Dataverse.XrmTools.DataMigrationTool.Models;
+using Dataverse.XrmTools.DataMigrationTool.External;
 using Dataverse.XrmTools.DataMigrationTool.AppSettings;
 
 // 3rd Party
@@ -403,6 +404,35 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
             {
                 throw;
             }
+        }
+
+        public static string SelectDirectory(this IntPtr owner, string initialDir)
+        {
+            var dialog = new FolderSelectDialog
+            {
+                InitialDirectory = !string.IsNullOrEmpty(initialDir) ? initialDir : "C:\\",
+                Title = "Select directory..."
+            };
+
+            var dirPath = string.Empty;
+            if (dialog.Show(owner)) { dirPath = dialog.FileName; }
+            return dirPath;
+        }
+
+        public static string SelectFile(this IWin32Window owner, string filter)
+        {
+            var filePath = string.Empty;
+            using (var dialog = new OpenFileDialog())
+            {
+                dialog.Title = "Select file...";
+                dialog.Filter = filter;
+                dialog.FilterIndex = 2;
+                dialog.RestoreDirectory = true;
+
+                if (dialog.ShowDialog(owner).Equals(DialogResult.OK)) { filePath = dialog.FileName; }
+            }
+
+            return filePath;
         }
     }
 }

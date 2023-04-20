@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
   <metadata>
     <id>Dataverse.XrmTools.DataMigrationTool</id>
-    <version>2022.5.23.1</version>
+    <version>2023.4.20.1</version>
     <title>Data Migration Tool</title>
     <authors>Rui Sousa</authors>
     <owners>Rui Sousa</owners>
@@ -21,12 +21,11 @@
     </description>
     <summary>Migrate data between Dataverse instances</summary>
     <releaseNotes>
-		2022.5.23.x
-		- [NEW] Tool is now showing all attributes, instead of just valid on create
-		- [NEW] Tool is now showing all tables and attributes (even those without display name)
-		- [NEW] Added new setting for hiding invalid attributes on create and update
+		2023.4.20.x
+		- [NEW] Updated select directory dialog
+		- [NEW] Refactored logging
 	</releaseNotes>
-    <copyright>Copyright 2022</copyright>
+    <copyright>Copyright 2023</copyright>
     <tags>XrmToolBox dataverse data tool dynamics 365 crm migration xrm</tags>
     <dependencies>
       <dependency id="XrmToolBox" version="1.2021.6.51" />
