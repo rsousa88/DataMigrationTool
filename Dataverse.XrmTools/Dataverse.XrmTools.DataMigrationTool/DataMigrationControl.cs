@@ -192,7 +192,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
                     if (_sourceClient.ConnectedOrgUniqueName.Equals(client.ConnectedOrgUniqueName))
                     {
-                        throw new Exception("Source and Target connections must refer to different Dataverse instances");
+                       // throw new Exception("Source and Target connections must refer to different Dataverse instances");
                     }
 
                     var instance = _settings.Instances.FirstOrDefault(inst => !string.IsNullOrEmpty(inst.UniqueName) && inst.UniqueName.Equals(client.ConnectedOrgUniqueName));
