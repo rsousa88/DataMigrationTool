@@ -462,6 +462,24 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 tableData.Settings.DeselectedAttributes = deselected;
                 SettingsHelper.SetSettings(_settings);
             }
+            else
+            {
+                // migrate legacy entries saved as display names to logical names
+                var migrated = false;
+                for (var i = 0; i < deselected.Count; i++)
+                {
+                    if (!tableData.Table.AllAttributes.Any(a => a.LogicalName.Equals(deselected[i])))
+                    {
+                        var match = tableData.Table.AllAttributes.FirstOrDefault(a => a.DisplayName.Equals(deselected[i]));
+                        if (match != null)
+                        {
+                            deselected[i] = match.LogicalName;
+                            migrated = true;
+                        }
+                    }
+                }
+                if (migrated) { SettingsHelper.SetSettings(_settings); }
+            }
 
             foreach (var att in tableData.Table.AllAttributes)
             {
@@ -690,6 +708,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
             ManageWorkingState(false);
             SetSelectedTableItem(tableData);
+            LoadAttributes();
             SettingsHelper.SetSettings(_settings);
 
             SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Successfully imported settings for table '{tableData.Table.LogicalName}'"));
@@ -914,7 +933,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             _logger.Log(LogLevel.INFO, $"Loading table data...");
 
             var tableItems = lvTables.Items.Cast<ListViewItem>();
-            var tableItem = tableItems.FirstOrDefault(lvi => lvi.SubItems[1].Text.Equals(tableData.Table.LogicalName));
+            var tableItem = tableItems.FirstOrDefault(lvi => lvi.SubItems[0].Text.Equals(tableData.Table.LogicalName));
             if (tableItem == null)
             {
                 throw new Exception("Invalid Table: Please reload tables and try again");
@@ -1424,7 +1443,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     }
 
                     // save deselected attributes to settings
-                    var deselected = lvAttributes.Items.Cast<ListViewItem>().ToList().Where(lvi => !lvi.Checked).Select(lvi => lvi.SubItems[1].Text);
+                    var deselected = lvAttributes.Items.Cast<ListViewItem>().ToList().Where(lvi => !lvi.Checked).Select(lvi => lvi.SubItems[0].Text);
 
                     tableData.Settings.DeselectedAttributes.Clear();
                     tableData.Settings.DeselectedAttributes.AddRange(deselected);
