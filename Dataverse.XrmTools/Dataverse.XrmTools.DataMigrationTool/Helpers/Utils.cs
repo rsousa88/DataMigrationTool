@@ -265,22 +265,22 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
                         switch (attrMeta.AttributeType.Value)
                         {
                             case AttributeTypeCode.BigInt:
-                                attrValue = Convert.ToInt64(attr.Value);
+                                attrValue = ((JToken)attr.Value).ToObject<long>();
                                 break;
                             case AttributeTypeCode.Decimal:
-                                attrValue = Convert.ToDecimal(attr.Value);
+                                attrValue = ((JToken)attr.Value).ToObject<decimal>();
                                 break;
                             case AttributeTypeCode.Double:
-                                attrValue = Convert.ToDouble(attr.Value);
+                                attrValue = ((JToken)attr.Value).ToObject<double>();
                                 break;
                             case AttributeTypeCode.Integer:
-                                attrValue = Convert.ToInt32(attr.Value);
+                                attrValue = ((JToken)attr.Value).ToObject<int>();
                                 break;
                             case AttributeTypeCode.Money:
                                 var moneyObj = attr.Value as JObject;
                                 if (moneyObj != null && moneyObj.ContainsKey("Value"))
                                 {
-                                    attrValue = new Money(Convert.ToDecimal((moneyObj.GetValue("Value") as JValue).Value));
+                                    attrValue = new Money(moneyObj.GetValue("Value").ToObject<decimal>());
                                 }
                                 break;
                         }

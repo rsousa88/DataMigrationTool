@@ -58,13 +58,17 @@ Manual mappings can also be defined for any lookup field.
 
 ## Release Notes
 
-### 2026.4.29.1
+### 2026.4.30.x
+- [FIX] Import error (InvalidDataContractException) when record contains Money attributes
+- [FIX] Import type mismatch on Decimal attributes in non-English locales
+
+### 2026.4.29.x
 - [FIX] Loading a settings file now correctly selects the saved table
 - [FIX] Loading a settings file now correctly restores deselected attributes
 - [FIX] Deselected attributes are now stored by logical name (silent migration from legacy display name format)
 - [UPGRADE] Upgraded to .NET Framework 4.8 and XrmToolBox 1.2025.10.74
 
-### 2023.4.20.2
+### 2023.4.20.x
 - [NEW] Updated select directory dialog
 - [NEW] Refactored logging
 

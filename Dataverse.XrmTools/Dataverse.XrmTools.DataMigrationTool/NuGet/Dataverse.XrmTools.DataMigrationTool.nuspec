@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
   <metadata>
     <id>Dataverse.XrmTools.DataMigrationTool</id>
-    <version>2026.4.29.3</version>
+    <version>2026.4.30.1</version>
     <title>Data Migration Tool</title>
     <authors>Rui Sousa</authors>
     <owners>Rui Sousa</owners>
@@ -21,6 +21,9 @@
     </description>
     <summary>Migrate data between Dataverse instances</summary>
     <releaseNotes>
+		2026.4.30.x
+		- [FIX] Import error (InvalidDataContractException) when record contains Money attributes
+		- [FIX] Import type mismatch on Decimal attributes in non-English locales
 		2026.4.29.x
 		- [FIX] Loading a settings file now correctly selects the saved table
 		- [FIX] Loading a settings file now correctly restores deselected attributes
