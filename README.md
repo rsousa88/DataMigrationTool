@@ -59,6 +59,11 @@ Manual mappings can also be defined for any lookup field.
 ## Release Notes
 
 ### 2026.4.30.x
+- [NEW] SQL 4 CDS button now shows instructions for manually applying query changes back to Data Migration Tool
+- [NEW] Integration with SQL 4 CDS — filter can now be opened and edited in SQL 4 CDS
+- [NEW] Filter now supports link-entity nodes for filtering by related tables
+- [FIX] XML parsing error when sending filters with link-entity nodes to external query builders
+- [FIX] External plugin calls now properly isolated — prevents crashes if target plugin is not open
 - [FIX] Import error (InvalidDataContractException) when record contains Money attributes
 - [FIX] Import type mismatch on Decimal attributes in non-English locales
 

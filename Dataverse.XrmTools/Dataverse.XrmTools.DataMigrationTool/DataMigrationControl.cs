@@ -276,28 +276,41 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             try
             {
-                if (message.SourcePlugin.Equals("FetchXML Builder") && message.TargetArgument is string fetchXml && !string.IsNullOrWhiteSpace(fetchXml))
+                if (message == null) { return; }
+
+                var sourcePlugin = message.SourcePlugin;
+                var isSupportedPlugin = sourcePlugin.Equals("FetchXML Builder") || sourcePlugin.Equals("SQL 4 CDS");
+                if (!isSupportedPlugin) { return; }
+
+                if (!(message.TargetArgument is string incomingFetch) || string.IsNullOrWhiteSpace(incomingFetch))
                 {
-                    var filters = ExtractFilterNode(fetchXml);
+                    SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"{sourcePlugin} returned no query"));
+                    return;
+                }
+
+                try
+                {
+                    var filters = ExtractFilterNode(incomingFetch);
 
                     var tableData = GetSelectedTableItemData(false);
                     if (tableData == null)
                     {
-                        SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Error setting filters from FetchXML Builder"));
+                        SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Error setting filters from {sourcePlugin}"));
                         return;
                     }
 
-                    // save settings
                     tableData.Settings.Filter = filters;
                     SettingsHelper.SetSettings(_settings);
-
-                    // set text box
                     rtbFilter.Text = filters;
+                }
+                catch (Exception ex)
+                {
+                    _logger.Log(LogLevel.ERROR, ex.Message);
+                    MessageBox.Show(this, $"Error applying query from {sourcePlugin}: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
             catch (Exception ex)
             {
-                ManageWorkingState(false);
                 _logger.Log(LogLevel.ERROR, ex.Message);
                 MessageBox.Show(this, $"An error occurred: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
@@ -1134,18 +1147,9 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
             if(!string.IsNullOrWhiteSpace(filters))
             {
-                // load document from filters xml
-                var filtersDoc = new XmlDocument();
-                filtersDoc.LoadXml(filters);
-
-                // get node
-                var filtersNode = filtersDoc.FirstChild;
-
-                // need to import node to newDoc document before append
-                var importNode = newDoc.ImportNode(filtersNode, true);
-
-                // append to new document
-                entity.AppendChild(importNode);
+                var fragment = newDoc.CreateDocumentFragment();
+                fragment.InnerXml = filters;
+                entity.AppendChild(fragment);
             }
 
             return newDoc.OuterXml;
@@ -1506,6 +1510,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             try
             {
+                if (OnOutgoingMessage == null) { throw new Exception("FetchXML Builder is not open"); }
+
                 var filters = rtbFilter.Text;
                 var fetch = ParseFetchQuery(filters);
 
@@ -1513,6 +1519,37 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 {
                     TargetArgument = fetch
                 });
+            }
+            catch (Exception ex)
+            {
+                ManageWorkingState(false);
+                _logger.Log(LogLevel.ERROR, ex.Message);
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void btnSql4Cds_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                if (OnOutgoingMessage == null) { throw new Exception("SQL 4 CDS is not open"); }
+
+                var filters = rtbFilter.Text;
+                var fetch = ParseFetchQuery(filters);
+
+                OnOutgoingMessage(this, new MessageBusEventArgs("SQL 4 CDS")
+                {
+                    TargetArgument = fetch
+                });
+
+                MessageBox.Show(
+                    "Your query has been sent to SQL 4 CDS and converted to SQL.\n\n" +
+                    "SQL 4 CDS does not automatically send the query back. To apply your changes:\n\n" +
+                    "  1. Edit your query in SQL 4 CDS\n" +
+                    "  2. Use SQL 4 CDS to convert back to FetchXML\n" +
+                    "  3. Copy the <filter> and <link-entity> nodes from the FetchXML\n" +
+                    "  4. Paste them into the filter area in Data Migration Tool",
+                    "SQL 4 CDS", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {

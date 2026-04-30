@@ -78,6 +78,7 @@
             this.gbFilters = new System.Windows.Forms.GroupBox();
             this.lblFetchDescription = new System.Windows.Forms.Label();
             this.btnFetchXmlBuilder = new System.Windows.Forms.Button();
+            this.btnSql4Cds = new System.Windows.Forms.Button();
             this.rtbFilter = new System.Windows.Forms.RichTextBox();
             this.tsMain.SuspendLayout();
             this.pnlMain.SuspendLayout();
@@ -721,6 +722,7 @@
             // 
             this.gbFilters.Controls.Add(this.lblFetchDescription);
             this.gbFilters.Controls.Add(this.btnFetchXmlBuilder);
+            this.gbFilters.Controls.Add(this.btnSql4Cds);
             this.gbFilters.Controls.Add(this.rtbFilter);
             this.gbFilters.Dock = System.Windows.Forms.DockStyle.Fill;
             this.gbFilters.Location = new System.Drawing.Point(3, 750);
@@ -741,9 +743,9 @@
             this.lblFetchDescription.Size = new System.Drawing.Size(292, 16);
             this.lblFetchDescription.TabIndex = 0;
             this.lblFetchDescription.Text = "Records will be filtered using query defined here";
-            // 
+            //
             // btnFetchXmlBuilder
-            // 
+            //
             this.btnFetchXmlBuilder.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
             this.btnFetchXmlBuilder.FlatAppearance.BorderSize = 0;
             this.btnFetchXmlBuilder.FlatStyle = System.Windows.Forms.FlatStyle.Popup;
@@ -757,6 +759,22 @@
             this.btnFetchXmlBuilder.Text = "Edit in FetchXML Builder";
             this.btnFetchXmlBuilder.UseVisualStyleBackColor = true;
             this.btnFetchXmlBuilder.Click += new System.EventHandler(this.btnFetchXmlBuilder_Click);
+            //
+            // btnSql4Cds
+            //
+            this.btnSql4Cds.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
+            this.btnSql4Cds.FlatAppearance.BorderSize = 0;
+            this.btnSql4Cds.FlatStyle = System.Windows.Forms.FlatStyle.Popup;
+            this.btnSql4Cds.Image = global::Dataverse.XrmTools.DataMigrationTool.Properties.Resources.sql4cds20;
+            this.btnSql4Cds.ImageAlign = System.Drawing.ContentAlignment.MiddleLeft;
+            this.btnSql4Cds.Location = new System.Drawing.Point(1279, 14);
+            this.btnSql4Cds.Margin = new System.Windows.Forms.Padding(4);
+            this.btnSql4Cds.Name = "btnSql4Cds";
+            this.btnSql4Cds.Size = new System.Drawing.Size(259, 34);
+            this.btnSql4Cds.TabIndex = 2;
+            this.btnSql4Cds.Text = "Edit in SQL 4 CDS";
+            this.btnSql4Cds.UseVisualStyleBackColor = true;
+            this.btnSql4Cds.Click += new System.EventHandler(this.btnSql4Cds_Click);
             // 
             // rtbFilter
             // 
@@ -876,6 +894,7 @@
         private System.Windows.Forms.GroupBox gbFilters;
         private System.Windows.Forms.Label lblFetchDescription;
         private System.Windows.Forms.Button btnFetchXmlBuilder;
+        private System.Windows.Forms.Button btnSql4Cds;
         private System.Windows.Forms.RichTextBox rtbFilter;
         private System.Windows.Forms.ToolStripMenuItem tsmiImport;
         private System.Windows.Forms.ToolStripMenuItem tsmiImportData;

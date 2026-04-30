@@ -1,0 +1,1 @@
+{"forceServiceDetermination":true,"inScopeProcessPatterns":[".*\\\\chrome\\.exe.?$",".*\\\\firefox\\.exe.?$",".*\\\\iexplore\\.exe.?$",".*\\\\opera\\.exe.?$",".*\\\\brave\\.exe.?$"]}
