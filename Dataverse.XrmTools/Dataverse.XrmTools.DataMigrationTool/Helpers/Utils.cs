@@ -276,6 +276,13 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
                             case AttributeTypeCode.Integer:
                                 attrValue = Convert.ToInt32(attr.Value);
                                 break;
+                            case AttributeTypeCode.Money:
+                                var moneyObj = attr.Value as JObject;
+                                if (moneyObj != null && moneyObj.ContainsKey("Value"))
+                                {
+                                    attrValue = new Money(Convert.ToDecimal((moneyObj.GetValue("Value") as JValue).Value));
+                                }
+                                break;
                         }
                     }
                     return new KeyValuePair<string, object>(attr.Key, attrValue);
