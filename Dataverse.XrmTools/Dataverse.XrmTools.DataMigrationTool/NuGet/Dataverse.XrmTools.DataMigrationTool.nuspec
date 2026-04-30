@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
   <metadata>
     <id>Dataverse.XrmTools.DataMigrationTool</id>
-    <version>2023.4.20.2</version>
+    <version>2026.4.29.3</version>
     <title>Data Migration Tool</title>
     <authors>Rui Sousa</authors>
     <owners>Rui Sousa</owners>
@@ -21,18 +21,21 @@
     </description>
     <summary>Migrate data between Dataverse instances</summary>
     <releaseNotes>
-		2023.4.20.x
-		- [NEW] Updated select directory dialog
-		- [NEW] Refactored logging
+		2026.4.29.x
+		- [FIX] Loading a settings file now correctly selects the saved table
+		- [FIX] Loading a settings file now correctly restores deselected attributes
+		- [FIX] Deselected attributes are now stored by logical name (silent migration from legacy display name format)
 	</releaseNotes>
-    <copyright>Copyright 2023</copyright>
+    <copyright>Copyright 2026</copyright>
     <tags>XrmToolBox dataverse data tool dynamics 365 crm migration xrm</tags>
     <dependencies>
-      <dependency id="XrmToolBox" version="1.2021.6.51" />
+      <group targetFramework="net48">
+        <dependency id="XrmToolBox" version="1.2025.10.74" />
+      </group>
     </dependencies>
   </metadata>
   <files>
     <file src="..\Resources\icon.png" target="images\" />
-	<file src="..\bin\Release\Dataverse.XrmTools.DataMigrationTool.dll" target="lib\net462\Plugins\Dataverse.XrmTools.DataMigrationTool.dll" />
+	<file src="..\bin\Release\Dataverse.XrmTools.DataMigrationTool.dll" target="lib\net48\Plugins\Dataverse.XrmTools.DataMigrationTool.dll" />
   </files>
 </package>
