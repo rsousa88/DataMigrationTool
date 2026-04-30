@@ -4,6 +4,7 @@ using System.IO;
 using System.Xml;
 using System.Data;
 using System.Linq;
+using System.Text;
 using System.Drawing;
 using System.Windows.Forms;
 using System.Threading.Tasks;
@@ -1067,23 +1068,42 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private string ExtractFilterNode(string fetchXml)
         {
+            if (string.IsNullOrWhiteSpace(fetchXml)) return string.Empty;
+
             var doc = new XmlDocument();
+            doc.LoadXml(fetchXml);
 
-            var filters = string.Empty;
+            var sb = new StringBuilder();
 
-            if(!string.IsNullOrWhiteSpace(fetchXml))
+            // extract link-entity nodes (supports filtering by related table)
+            foreach (XmlNode node in doc.SelectNodes("/fetch/entity/link-entity"))
+                sb.Append(node.OuterXml);
+
+            // extract filter node
+            var filterNode = doc.SelectSingleNode("/fetch/entity/filter");
+            if (filterNode != null)
+                sb.Append(filterNode.OuterXml);
+
+            var fragment = sb.ToString();
+            if (string.IsNullOrEmpty(fragment)) return string.Empty;
+
+            // wrap in a root to allow indented formatting of a multi-element fragment
+            var wrapDoc = new XmlDocument();
+            wrapDoc.LoadXml($"<root>{fragment}</root>");
+
+            using (var ms = new MemoryStream())
+            using (var writer = new XmlTextWriter(ms, Encoding.Unicode) { Formatting = System.Xml.Formatting.Indented })
             {
-                // load xml
-                doc.LoadXml(fetchXml);
+                foreach (XmlNode child in wrapDoc.DocumentElement.ChildNodes)
+                    child.WriteTo(writer);
 
-                var filterNodes = doc.SelectNodes("/fetch/entity/filter");
-                if (filterNodes.Count > 0)
-                {
-                    filters = filterNodes[0].OuterXml;
-                }
+                writer.Flush();
+                ms.Flush();
+                ms.Position = 0;
+
+                using (var reader = new StreamReader(ms))
+                    return reader.ReadToEnd().Trim();
             }
-
-            return filters.FormatXml();
         }
 
         private string ParseFetchQuery(string filters)
