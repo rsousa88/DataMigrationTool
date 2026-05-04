@@ -59,6 +59,9 @@ Manual mappings can also be defined for any lookup field.
 ## Release Notes
 
 ### 2026.5.4.x
+- [FIX] Excel export now includes the ClosedXML runtime dependencies in the package
+
+### 2026.5.4.x
 - [NEW] Added Excel export and import support for table data
 - [NEW] Excel export configuration supports lookup resolution by GUID, alternate keys, or selected custom attributes
 - [NEW] Option set and multi-select option set values can be exported/imported using labels or raw values

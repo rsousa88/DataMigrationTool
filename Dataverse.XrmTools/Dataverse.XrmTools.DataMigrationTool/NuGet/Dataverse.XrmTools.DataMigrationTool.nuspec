@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
   <metadata>
     <id>Dataverse.XrmTools.DataMigrationTool</id>
-    <version>2026.5.4.1</version>
+    <version>2026.5.4.2</version>
     <title>Data Migration Tool</title>
     <authors>Rui Sousa</authors>
     <owners>Rui Sousa</owners>
@@ -21,6 +21,8 @@
     </description>
     <summary>Migrate data between Dataverse instances</summary>
     <releaseNotes>
+		2026.5.4.x
+		- [FIX] Excel export now includes the ClosedXML runtime dependencies in the package
 		2026.5.4.x
 		- [NEW] Added Excel export and import support for table data
 		- [NEW] Excel export configuration supports lookup resolution by GUID, alternate keys, or selected custom attributes
@@ -53,5 +55,9 @@
   <files>
     <file src="..\Resources\icon.png" target="images\" />
 	<file src="..\bin\Release\Dataverse.XrmTools.DataMigrationTool.dll" target="lib\net48\Plugins\Dataverse.XrmTools.DataMigrationTool.dll" />
+	<file src="..\bin\Release\ClosedXML.dll" target="lib\net48\Plugins\ClosedXML.dll" />
+	<file src="..\bin\Release\DocumentFormat.OpenXml.dll" target="lib\net48\Plugins\DocumentFormat.OpenXml.dll" />
+	<file src="..\bin\Release\ExcelNumberFormat.dll" target="lib\net48\Plugins\ExcelNumberFormat.dll" />
+	<file src="..\bin\Release\System.IO.Packaging.dll" target="lib\net48\Plugins\System.IO.Packaging.dll" />
   </files>
 </package>
