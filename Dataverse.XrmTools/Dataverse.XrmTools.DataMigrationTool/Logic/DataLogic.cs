@@ -68,6 +68,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             };
         }
 
+        public IEnumerable<Entity> GetSourceEntities(TableData tableData, UiSettings uiSettings)
+        {
+            RetrieveSourceData(tableData, uiSettings.BatchSize);
+            return _sourceCollection?.Entities ?? Enumerable.Empty<Entity>();
+        }
+
         public bool Export(TableData tableData, UiSettings uiSettings, string filePath, List<Mapping> mappings)
         {
             RetrieveSourceData(tableData, uiSettings.BatchSize);

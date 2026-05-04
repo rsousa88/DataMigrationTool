@@ -33,10 +33,12 @@
             this.tsmiExportData = new System.Windows.Forms.ToolStripMenuItem();
             this.tsmiExportSettings = new System.Windows.Forms.ToolStripMenuItem();
             this.tsmiExportWithSettings = new System.Windows.Forms.ToolStripMenuItem();
+            this.tsmiExportToExcel = new System.Windows.Forms.ToolStripMenuItem();
             this.tsmiImport = new System.Windows.Forms.ToolStripMenuItem();
             this.tsmiImportData = new System.Windows.Forms.ToolStripMenuItem();
             this.tsmiImportSettings = new System.Windows.Forms.ToolStripMenuItem();
             this.tsmiImportLastFile = new System.Windows.Forms.ToolStripMenuItem();
+            this.tsmiImportFromExcel = new System.Windows.Forms.ToolStripMenuItem();
             this.tsbAbort = new System.Windows.Forms.ToolStripButton();
             this.pnlMain = new System.Windows.Forms.TableLayoutPanel();
             this.pnlSettings = new System.Windows.Forms.TableLayoutPanel();
@@ -144,7 +146,8 @@
             this.tsmiExport.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.tsmiExportData,
             this.tsmiExportSettings,
-            this.tsmiExportWithSettings});
+            this.tsmiExportWithSettings,
+            this.tsmiExportToExcel});
             this.tsmiExport.Enabled = false;
             this.tsmiExport.Image = global::Dataverse.XrmTools.DataMigrationTool.Properties.Resources.export;
             this.tsmiExport.Name = "tsmiExport";
@@ -174,13 +177,21 @@
             this.tsmiExportWithSettings.Size = new System.Drawing.Size(197, 22);
             this.tsmiExportWithSettings.Text = "Data and Table Settings";
             this.tsmiExportWithSettings.Click += new System.EventHandler(this.tsmiExportWithSettings_Click);
-            // 
+            //
+            // tsmiExportToExcel
+            //
+            this.tsmiExportToExcel.Enabled = false;
+            this.tsmiExportToExcel.Name = "tsmiExportToExcel";
+            this.tsmiExportToExcel.Text = "To Excel";
+            this.tsmiExportToExcel.Click += new System.EventHandler(this.tsmiExportToExcel_Click);
+            //
             // tsmiImport
             // 
             this.tsmiImport.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.tsmiImportData,
             this.tsmiImportSettings,
-            this.tsmiImportLastFile});
+            this.tsmiImportLastFile,
+            this.tsmiImportFromExcel});
             this.tsmiImport.Image = global::Dataverse.XrmTools.DataMigrationTool.Properties.Resources.import;
             this.tsmiImport.Name = "tsmiImport";
             this.tsmiImport.Size = new System.Drawing.Size(75, 25);
@@ -208,7 +219,13 @@
             this.tsmiImportLastFile.Size = new System.Drawing.Size(172, 22);
             this.tsmiImportLastFile.Text = "From last exported";
             this.tsmiImportLastFile.Click += new System.EventHandler(this.tsmiImportLastFile_Click);
-            // 
+            //
+            // tsmiImportFromExcel
+            //
+            this.tsmiImportFromExcel.Name = "tsmiImportFromExcel";
+            this.tsmiImportFromExcel.Text = "From Excel";
+            this.tsmiImportFromExcel.Click += new System.EventHandler(this.tsmiImportFromExcel_Click);
+            //
             // tsbAbort
             // 
             this.tsbAbort.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
@@ -842,6 +859,8 @@
         private System.Windows.Forms.ToolStripMenuItem tsmiExport;
         private System.Windows.Forms.ToolStripMenuItem tsmiExportData;
         private System.Windows.Forms.ToolStripMenuItem tsmiExportWithSettings;
+        private System.Windows.Forms.ToolStripMenuItem tsmiExportToExcel;
+        private System.Windows.Forms.ToolStripMenuItem tsmiImportFromExcel;
         private System.Windows.Forms.ToolStripButton tsbAbort;
 
         // Main panel

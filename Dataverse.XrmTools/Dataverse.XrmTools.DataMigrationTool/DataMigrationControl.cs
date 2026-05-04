@@ -728,6 +728,183 @@ namespace Dataverse.XrmTools.DataMigrationTool
             SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Successfully imported settings for table '{tableData.Table.LogicalName}'"));
         }
 
+        private void ExportToExcel()
+        {
+            _logger.Log(LogLevel.INFO, "Export to Excel operation...");
+
+            var tableData = GetSelectedTableItemData(false, true);
+            if (tableData == null)
+            {
+                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Export to Excel aborted"));
+                return;
+            }
+
+            tableData.SelectedAttributes = lvAttributes.CheckedItems
+                .Cast<ListViewItem>()
+                .Select(lvi => lvi.ToObject(new Models.Attribute()) as Models.Attribute)
+                .Select(attr => tableData.Table.AllAttributes.FirstOrDefault(a => a.LogicalName == attr.LogicalName))
+                .Where(a => a != null)
+                .ToList();
+
+            var selectedAttrMeta = tableData.SelectedAttributes
+                .Select(a => tableData.Metadata.Attributes.FirstOrDefault(m => m.LogicalName == a.LogicalName))
+                .Where(m => m != null)
+                .ToList();
+
+            var repo = new CrmRepo(_sourceClient);
+            using (var dlg = new Forms.ExcelExportConfigDialog(selectedAttrMeta, tableData.Metadata, repo))
+            {
+                if (dlg.ShowDialog(ParentForm) != System.Windows.Forms.DialogResult.OK) return;
+                var config = dlg.Config;
+
+                var filePath = this.SelectFile("Excel files (*.xlsx)|*.xlsx", save: true,
+                    defaultFileName: $"{tableData.Table.LogicalName}.xlsx");
+                if (string.IsNullOrEmpty(filePath)) return;
+
+                ManageWorkingState(true);
+
+                var uiSettings = ReadSettings(Enums.Action.None);
+                tableData.SelectedAttributes = lvAttributes.CheckedItems
+                    .Cast<ListViewItem>()
+                    .Select(lvi => lvi.ToObject(new Models.Attribute()) as Models.Attribute)
+                    .Select(attr => tableData.Table.AllAttributes.FirstOrDefault(a => a.LogicalName == attr.LogicalName))
+                    .ToList();
+
+                WorkAsync(new WorkAsyncInfo
+                {
+                    Message = "Exporting to Excel...",
+                    AsyncArgument = new { config, tableData, uiSettings, filePath },
+                    IsCancelable = false,
+                    Work = (worker, evt) =>
+                    {
+                        dynamic args = evt.Argument;
+                        ExcelExportConfig cfg = args.config;
+                        TableData td = args.tableData;
+                        UiSettings ui = args.uiSettings;
+                        string path = args.filePath;
+
+                        var logic = new DataLogic(worker, _sourceClient, _targetClient);
+                        var sourceCollection = logic.GetSourceEntities(td, ui);
+
+                        var excelLogic = new Logic.ExcelLogic();
+                        excelLogic.Export(cfg, sourceCollection, path);
+                    },
+                    PostWorkCallBack = evt =>
+                    {
+                        ManageWorkingState(false);
+                        if (evt.Error != null)
+                        {
+                            _logger.Log(LogLevel.ERROR, evt.Error.Message);
+                            MessageBox.Show(evt.Error.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        }
+                        else
+                        {
+                            MessageBox.Show("Records successfully exported to Excel", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Excel export complete"));
+                        }
+                        ReRenderComponents(true);
+                    }
+                });
+            }
+        }
+
+        private void ImportFromExcel()
+        {
+            _logger.Log(LogLevel.INFO, "Import from Excel operation...");
+
+            if (_targetClient == null)
+            {
+                MessageBox.Show("A target connection is required for Excel import.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            var path = this.SelectFile("Excel files (*.xlsx)|*.xlsx");
+            if (string.IsNullOrEmpty(path)) return;
+
+            ManageWorkingState(true);
+
+            WorkAsync(new WorkAsyncInfo
+            {
+                Message = "Importing from Excel...",
+                AsyncArgument = path,
+                IsCancelable = false,
+                Work = (worker, evt) =>
+                {
+                    var filePath = evt.Argument as string;
+                    var excelLogic = new Logic.ExcelLogic();
+
+                    var config = excelLogic.ReadMetadata(filePath);
+                    var collection = excelLogic.ImportFromExcel(filePath, config, _targetClient);
+
+                    evt.Result = collection;
+                },
+                PostWorkCallBack = evt =>
+                {
+                    ManageWorkingState(false);
+
+                    if (evt.Error != null)
+                    {
+                        _logger.Log(LogLevel.ERROR, evt.Error.Message);
+                        MessageBox.Show(evt.Error.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+
+                    var collection = evt.Result as Models.RecordCollection;
+                    if (collection == null || collection.Count == 0)
+                    {
+                        MessageBox.Show("No records found in the Excel file.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        return;
+                    }
+
+                    var tableData = GetTableDataByLogicalName(collection.LogicalName, false);
+                    if (tableData == null)
+                    {
+                        MessageBox.Show($"Table '{collection.LogicalName}' not found. Please load tables first.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+
+                    var uiSettings = ReadSettings(Enums.Action.None);
+                    var msg = $"You are about to import {collection.Count} {collection.LogicalName} records into '{_targetInstance.FriendlyName}'. Continue?";
+                    if (MessageBox.Show(msg, "Confirm Import", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != System.Windows.Forms.DialogResult.Yes) return;
+
+                    ManageWorkingState(true);
+                    WorkAsync(new WorkAsyncInfo
+                    {
+                        Message = "Importing records...",
+                        AsyncArgument = new { collection, tableData, uiSettings },
+                        IsCancelable = false,
+                        Work = (worker2, evt2) =>
+                        {
+                            dynamic args = evt2.Argument;
+                            var logic = new DataLogic(worker2, _sourceClient, _targetClient);
+                            evt2.Result = logic.Import(args.tableData, args.collection, args.uiSettings, _mappings);
+                        },
+                        PostWorkCallBack = evt2 =>
+                        {
+                            ManageWorkingState(false);
+                            if (evt2.Error != null)
+                            {
+                                _logger.Log(LogLevel.ERROR, evt2.Error.Message);
+                                MessageBox.Show(evt2.Error.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                                return;
+                            }
+
+                            var result = evt2.Result as Models.OperationResult;
+                            if (result != null)
+                            {
+                                var resDialog = new Forms.Results(result.Items, _settings);
+                                resDialog.ShowDialog(ParentForm);
+                                SettingsHelper.SetSettings(_settings);
+                            }
+
+                            SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Excel import complete"));
+                            ReRenderComponents(true);
+                        }
+                    });
+                }
+            });
+        }
+
         private void Import(string path = null)
         {
             _logger.Log(LogLevel.INFO, $"Import operation...");
@@ -1033,6 +1210,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 if (targetReady) // source and target connection is available
                 {
                     tsmiImportData.Enabled = enable;
+                    tsmiImportFromExcel.Enabled = enable;
                     gbMappingSettings.Enabled = enable;
                     gbOpSettings.Enabled = enable;
                     
@@ -1052,6 +1230,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     tsmiExportData.Enabled = enable;
                     tsmiExportSettings.Enabled = enable;
                     tsmiExportWithSettings.Enabled = enable;
+                    tsmiExportToExcel.Enabled = enable;
                 }
             }
         }
@@ -1452,6 +1631,34 @@ namespace Dataverse.XrmTools.DataMigrationTool
             try
             {
                 Import(_settings.LastDataFile);
+            }
+            catch (Exception ex)
+            {
+                ManageWorkingState(false);
+                _logger.Log(LogLevel.ERROR, ex.Message);
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void tsmiExportToExcel_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                ExportToExcel();
+            }
+            catch (Exception ex)
+            {
+                ManageWorkingState(false);
+                _logger.Log(LogLevel.ERROR, ex.Message);
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void tsmiImportFromExcel_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                ImportFromExcel();
             }
             catch (Exception ex)
             {

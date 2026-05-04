@@ -465,5 +465,24 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
 
             return filePath;
         }
+
+        public static string SelectFile(this IWin32Window owner, string filter, bool save, string defaultFileName = "")
+        {
+            if (!save) return SelectFile(owner, filter);
+
+            var filePath = string.Empty;
+            using (var dialog = new SaveFileDialog())
+            {
+                dialog.Title = "Save file...";
+                dialog.Filter = filter;
+                dialog.FilterIndex = 1;
+                dialog.RestoreDirectory = true;
+                dialog.FileName = defaultFileName;
+
+                if (dialog.ShowDialog(owner).Equals(DialogResult.OK)) { filePath = dialog.FileName; }
+            }
+
+            return filePath;
+        }
     }
 }

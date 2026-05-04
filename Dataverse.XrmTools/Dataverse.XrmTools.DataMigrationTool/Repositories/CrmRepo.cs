@@ -206,6 +206,36 @@ namespace Dataverse.XrmTools.DataMigrationTool.Repositories
                 throw;
             }
         }
+        public IEnumerable<EntityKeyMetadata> GetAlternateKeys(string logicalName)
+        {
+            var request = new RetrieveEntityRequest
+            {
+                LogicalName = logicalName,
+                EntityFilters = EntityFilters.All
+            };
+
+            var response = _service.Execute(request) as RetrieveEntityResponse;
+            return response.EntityMetadata.Keys ?? Enumerable.Empty<EntityKeyMetadata>();
+        }
+
+        public Guid? ResolveByAlternateKey(string logicalName, Dictionary<string, string> keyValues)
+        {
+            var filter = new FilterExpression(LogicalOperator.And);
+            foreach (var kv in keyValues)
+            {
+                filter.Conditions.Add(new ConditionExpression(kv.Key, ConditionOperator.Equal, kv.Value));
+            }
+
+            var query = new QueryExpression(logicalName)
+            {
+                ColumnSet = new ColumnSet(false),
+                Criteria = filter,
+                TopCount = 1
+            };
+
+            var response = _service.Execute(new RetrieveMultipleRequest { Query = query }) as RetrieveMultipleResponse;
+            return response?.EntityCollection?.Entities?.FirstOrDefault()?.Id;
+        }
         #endregion Interface Methods
 
         #region Private Methods

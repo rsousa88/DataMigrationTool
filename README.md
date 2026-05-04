@@ -58,6 +58,13 @@ Manual mappings can also be defined for any lookup field.
 
 ## Release Notes
 
+### 2026.5.4.x
+- [NEW] Added Excel export and import support for table data
+- [NEW] Excel export configuration supports lookup resolution by GUID, alternate keys, or selected custom attributes
+- [NEW] Option set and multi-select option set values can be exported/imported using labels or raw values
+- [NEW] Added Switch Source / Target action to swap active connections and reload tables
+- [FIX] Results dialog now uses a fixed dialog size to avoid layout resizing issues
+
 ### 2026.4.30.x
 - [NEW] SQL 4 CDS button now shows instructions for manually applying query changes back to Data Migration Tool
 - [NEW] Integration with SQL 4 CDS — filter can now be opened and edited in SQL 4 CDS
