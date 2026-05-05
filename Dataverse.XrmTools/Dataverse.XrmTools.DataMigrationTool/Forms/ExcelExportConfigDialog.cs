@@ -1,10 +1,13 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Drawing;
 using System.Windows.Forms;
 using System.Collections.Generic;
 using Microsoft.Xrm.Sdk.Metadata;
 using Dataverse.XrmTools.DataMigrationTool.Models;
+using Dataverse.XrmTools.DataMigrationTool.AppSettings;
+using Dataverse.XrmTools.DataMigrationTool.Helpers;
 using Dataverse.XrmTools.DataMigrationTool.Repositories;
 
 namespace Dataverse.XrmTools.DataMigrationTool.Forms
@@ -23,32 +26,42 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         private readonly Dictionary<string, List<string>> _customSelections = new Dictionary<string, List<string>>();
         private readonly Dictionary<string, Label> _customSelectionLabels = new Dictionary<string, Label>();
         private readonly Dictionary<string, NestedLookupConfig> _nestedLookupConfigs = new Dictionary<string, NestedLookupConfig>();
+        private readonly Dictionary<string, ColumnManagerState> _columnStates = new Dictionary<string, ColumnManagerState>();
 
         // Per-attribute option set state
         private readonly Dictionary<string, RadioButton> _optionLabelRadios = new Dictionary<string, RadioButton>();
+        private DataGridView _columnsGrid;
+        private ComboBox _matchKeyCombo;
+        private bool _columnsTabInitialized;
 
         public ExcelExportConfig Config { get; private set; }
 
-        public ExcelExportConfigDialog(IEnumerable<AttributeMetadata> selectedAttributes, EntityMetadata metadata, CrmRepo repo)
+        private ExcelExportConfig _savedConfig;
+
+        public ExcelExportConfigDialog(IEnumerable<AttributeMetadata> selectedAttributes, EntityMetadata metadata, CrmRepo repo, ExcelExportConfig savedConfig = null)
         {
             _selectedAttributes = selectedAttributes.ToList();
             _metadata = metadata;
             _repo = repo;
+            _savedConfig = savedConfig;
 
             BuildLayout();
             PopulateLookupSection();
             PopulateOptionSetSection();
+
+            if (_savedConfig != null) ApplySavedConfig(_savedConfig);
         }
 
         #region Layout
 
         private Panel _lookupPanel;
         private Panel _optionSetPanel;
+        private TabControl _tabs;
 
         private void BuildLayout()
         {
             Text = "Excel Export Configuration";
-            ClientSize = new Size(940, 700);
+            ClientSize = new Size(980, 740);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
@@ -59,21 +72,35 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             var outer = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                RowCount = 3,
+                RowCount = 2,
                 ColumnCount = 1,
                 Padding = new Padding(10)
             };
-            outer.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
-            outer.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
+            outer.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             outer.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
+
+            _tabs = new TabControl { Dock = DockStyle.Fill };
+            var tabLookups = new TabPage("Lookups");
+            var tabOptionSets = new TabPage("Option Sets");
+            var tabColumns = new TabPage("Columns");
+            _tabs.TabPages.Add(tabLookups);
+            _tabs.TabPages.Add(tabOptionSets);
+            _tabs.TabPages.Add(tabColumns);
+            _tabs.SelectedIndexChanged += (s, e) =>
+            {
+                if (_tabs.SelectedTab == tabColumns) RefreshColumnsGrid();
+            };
 
             var grpLookup = new GroupBox { Text = "A — Lookup resolution", Dock = DockStyle.Fill, Padding = new Padding(5) };
             _lookupPanel = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
             grpLookup.Controls.Add(_lookupPanel);
+            tabLookups.Controls.Add(grpLookup);
 
             var grpOptionSet = new GroupBox { Text = "B — Option sets", Dock = DockStyle.Fill, Padding = new Padding(5) };
             _optionSetPanel = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
             grpOptionSet.Controls.Add(_optionSetPanel);
+            tabOptionSets.Controls.Add(grpOptionSet);
+            tabColumns.Controls.Add(BuildColumnsTab());
 
             var btnRow = new FlowLayoutPanel
             {
@@ -84,16 +111,89 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             var btnCancel = new Button { Text = "Cancel", Width = 90, Height = 30, DialogResult = DialogResult.Cancel };
             var btnOk = new Button { Text = "Export", Width = 90, Height = 30 };
             btnOk.Click += OnExportClick;
+            var btnLoad = new Button { Text = "Load from file...", Width = 130, Height = 30 };
+            btnLoad.Click += OnLoadFromFileClick;
             btnRow.Controls.Add(btnCancel);
             btnRow.Controls.Add(btnOk);
+            btnRow.Controls.Add(btnLoad);
 
-            outer.Controls.Add(grpLookup, 0, 0);
-            outer.Controls.Add(grpOptionSet, 0, 1);
-            outer.Controls.Add(btnRow, 0, 2);
+            outer.Controls.Add(_tabs, 0, 0);
+            outer.Controls.Add(btnRow, 0, 1);
 
             Controls.Add(outer);
             AcceptButton = btnOk;
             CancelButton = btnCancel;
+        }
+
+        private Control BuildColumnsTab()
+        {
+            var outer = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                RowCount = 2,
+                ColumnCount = 1,
+                Padding = new Padding(8)
+            };
+            outer.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            outer.RowStyles.Add(new RowStyle(SizeType.Absolute, 38F));
+
+            var body = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 1, ColumnCount = 2 };
+            body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            body.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 42F));
+
+            _columnsGrid = new DataGridView
+            {
+                Dock = DockStyle.Fill,
+                AllowUserToAddRows = false,
+                AllowUserToDeleteRows = false,
+                AllowUserToResizeRows = false,
+                MultiSelect = false,
+                RowHeadersVisible = false,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                AutoGenerateColumns = false
+            };
+            _columnsGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Order", HeaderText = "#", Width = 42, ReadOnly = true });
+            _columnsGrid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "Include", HeaderText = "Include", Width = 65 });
+            _columnsGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "LogicalName", HeaderText = "Logical name", Width = 260, ReadOnly = true });
+            _columnsGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "DisplayName", HeaderText = "Display name", Width = 260, ReadOnly = true });
+            _columnsGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Hint", HeaderText = "Hint", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill });
+            foreach (DataGridViewColumn column in _columnsGrid.Columns)
+                column.SortMode = DataGridViewColumnSortMode.NotSortable;
+            _columnsGrid.CellValueChanged += (s, e) => SaveColumnGridState();
+            _columnsGrid.CurrentCellDirtyStateChanged += (s, e) =>
+            {
+                if (_columnsGrid.IsCurrentCellDirty) _columnsGrid.CommitEdit(DataGridViewDataErrorContexts.Commit);
+            };
+
+            var buttons = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.TopDown,
+                Padding = new Padding(4, 0, 0, 0)
+            };
+            var btnUp = new Button { Text = "↑", Width = 32, Height = 32 };
+            var btnDown = new Button { Text = "↓", Width = 32, Height = 32 };
+            btnUp.Click += (s, e) => MoveSelectedColumnGroup(-1);
+            btnDown.Click += (s, e) => MoveSelectedColumnGroup(1);
+            buttons.Controls.Add(btnUp);
+            buttons.Controls.Add(btnDown);
+
+            body.Controls.Add(_columnsGrid, 0, 0);
+            body.Controls.Add(buttons, 1, 0);
+
+            var matchRow = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.LeftToRight,
+                Padding = new Padding(0, 8, 0, 0)
+            };
+            matchRow.Controls.Add(new Label { Text = "Match key for import:", AutoSize = true, Padding = new Padding(0, 5, 8, 0) });
+            _matchKeyCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 320 };
+            matchRow.Controls.Add(_matchKeyCombo);
+
+            outer.Controls.Add(body, 0, 0);
+            outer.Controls.Add(matchRow, 0, 1);
+            return outer;
         }
 
         #endregion
@@ -552,14 +652,146 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
 
         #region Build config
 
+        private void OnLoadFromFileClick(object sender, EventArgs e)
+        {
+            var path = string.Empty;
+            using (var dlg = new OpenFileDialog { Title = "Load Excel config from settings file", Filter = "Settings files (*.settings.json)|*.settings.json" })
+            {
+                if (dlg.ShowDialog(this) != DialogResult.OK) return;
+                path = dlg.FileName;
+            }
+
+            try
+            {
+                var json = File.ReadAllText(path);
+                var tableSettings = json.DeserializeObject<TableSettings>();
+
+                if (tableSettings?.ExcelConfig == null)
+                {
+                    MessageBox.Show("This settings file does not contain a saved Excel configuration.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                if (!string.IsNullOrEmpty(tableSettings.LogicalName)
+                    && !tableSettings.LogicalName.Equals(_metadata.LogicalName, StringComparison.OrdinalIgnoreCase))
+                {
+                    var result = MessageBox.Show(
+                        $"This config was saved for table '{tableSettings.LogicalName}' but the current table is '{_metadata.LogicalName}'.\nApply anyway?",
+                        "Table mismatch", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+                    if (result != DialogResult.Yes) return;
+                }
+
+                ApplySavedConfig(tableSettings.ExcelConfig);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Could not load settings file: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void ApplySavedConfig(ExcelExportConfig config)
+        {
+            if (config?.Columns == null) return;
+            _savedConfig = config;
+
+            for (var i = 0; i < config.Columns.Count; i++)
+            {
+                var col = config.Columns[i];
+                _columnStates[col.LogicalName] = new ColumnManagerState
+                {
+                    Include = !col.Hidden,
+                    HintOverride = col.HintOverride,
+                    Order = i
+                };
+
+                if (col.Type == "LookupKeyField" && col.KeyFieldType == "Lookup")
+                {
+                    _nestedLookupConfigs[col.LogicalName] = new NestedLookupConfig
+                    {
+                        Resolution = col.Resolution ?? "Guid",
+                        Fields = col.AlternateKeyFields != null ? new List<string>(col.AlternateKeyFields) : new List<string>()
+                    };
+                }
+            }
+
+            foreach (var col in config.Columns)
+            {
+                // Restore lookup resolution
+                if (col.Type == "Lookup")
+                {
+                    // Related table (polymorphic)
+                    if (_targetTableCombos.TryGetValue(col.LogicalName, out var tblCbo)
+                        && !string.IsNullOrEmpty(col.RelatedTable))
+                    {
+                        for (var i = 0; i < tblCbo.Items.Count; i++)
+                            if (tblCbo.Items[i]?.ToString() == col.RelatedTable) { tblCbo.SelectedIndex = i; break; }
+                    }
+
+                    if (col.Resolution == "AlternateKey"
+                        && _altKeyRadios.TryGetValue(col.LogicalName, out var rbAlt) && rbAlt.Enabled)
+                    {
+                        rbAlt.Checked = true;
+
+                        // Select the matching key in the combo
+                        if (_altKeyCombos.TryGetValue(col.LogicalName, out var altCbo) && col.AlternateKeyFields != null)
+                        {
+                            for (var i = 0; i < altCbo.Items.Count; i++)
+                            {
+                                if (altCbo.Items[i] is AltKeyItem item
+                                    && item.Key.KeyAttributes.SequenceEqual(col.AlternateKeyFields))
+                                {
+                                    altCbo.SelectedIndex = i;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    else if (col.Resolution == "Custom"
+                        && _customRadios.TryGetValue(col.LogicalName, out var rbCustom))
+                    {
+                        rbCustom.Checked = true;
+                        if (col.AlternateKeyFields != null)
+                        {
+                            _customSelections[col.LogicalName] = new List<string>(col.AlternateKeyFields);
+                            if (_customSelectionLabels.TryGetValue(col.LogicalName, out var lbl))
+                                lbl.Text = string.Join(", ", col.AlternateKeyFields);
+                        }
+                    }
+                }
+
+                // Restore option set export mode
+                if ((col.Type == "OptionSet" || col.Type == "MultiOptionSet")
+                    && _optionLabelRadios.TryGetValue(col.LogicalName, out var rbLbl))
+                {
+                    var useLabel = col.ExportMode == "Label";
+                    rbLbl.Checked = useLabel;
+
+                    // Find and check the Value radio (sibling control)
+                    var valueRb = rbLbl.Parent?.Controls.OfType<RadioButton>()
+                        .FirstOrDefault(r => r.Text == "Value");
+                    if (valueRb != null) valueRb.Checked = !useLabel;
+                }
+            }
+
+            if (_columnsTabInitialized) RefreshColumnsGrid();
+        }
+
         private void OnExportClick(object sender, EventArgs e)
         {
+            SaveColumnGridState();
             Config = BuildConfig();
             DialogResult = DialogResult.OK;
             Close();
         }
 
         private ExcelExportConfig BuildConfig()
+        {
+            var config = BuildBaseConfig();
+            ApplyColumnManager(config);
+            return config;
+        }
+
+        private ExcelExportConfig BuildBaseConfig()
         {
             var config = new ExcelExportConfig
             {
@@ -635,6 +867,229 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             }
 
             return config;
+        }
+
+        private void RefreshColumnsGrid()
+        {
+            if (_columnsGrid == null) return;
+
+            SaveColumnGridState();
+            var config = BuildBaseConfig();
+            var columns = ApplyStoredColumnOrder(config.Columns).ToList();
+
+            _columnsGrid.Rows.Clear();
+            foreach (var column in columns)
+                AddColumnGridRow(column);
+
+            PopulateMatchKeyCombo(columns);
+            _columnsTabInitialized = true;
+        }
+
+        private int AddColumnGridRow(ExcelColumnConfig column)
+        {
+            var state = GetColumnState(column);
+            var displayName = column.Type == "LookupKeyField" ? "  " + column.DisplayName : column.DisplayName;
+            var rowIndex = _columnsGrid.Rows.Add(
+                _columnsGrid.Rows.Count + 1,
+                state.Include,
+                column.LogicalName,
+                displayName,
+                state.HintOverride ?? GetDefaultHintText(column));
+            var row = _columnsGrid.Rows[rowIndex];
+            row.Tag = column;
+            if (column.Type == "LookupKeyField") row.DefaultCellStyle.ForeColor = Color.DimGray;
+            return rowIndex;
+        }
+
+        private IEnumerable<ExcelColumnConfig> ApplyStoredColumnOrder(IEnumerable<ExcelColumnConfig> columns)
+        {
+            return columns
+                .Select((column, index) => new { column, index, state = GetColumnState(column) })
+                .OrderBy(x => x.state.Order ?? int.MaxValue)
+                .ThenBy(x => x.index)
+                .Select(x => x.column);
+        }
+
+        private ColumnManagerState GetColumnState(ExcelColumnConfig column)
+        {
+            if (!_columnStates.TryGetValue(column.LogicalName, out var state))
+            {
+                state = new ColumnManagerState { Include = !column.Hidden, HintOverride = column.HintOverride };
+                _columnStates[column.LogicalName] = state;
+            }
+            return state;
+        }
+
+        private void SaveColumnGridState()
+        {
+            if (_columnsGrid == null || _columnsGrid.Rows.Count == 0) return;
+
+            for (var i = 0; i < _columnsGrid.Rows.Count; i++)
+            {
+                var row = _columnsGrid.Rows[i];
+                if (!(row.Tag is ExcelColumnConfig column)) continue;
+
+                var state = GetColumnState(column);
+                state.Order = i;
+                state.Include = Convert.ToBoolean(row.Cells["Include"].Value);
+                var hint = row.Cells["Hint"].Value?.ToString();
+                state.HintOverride = string.Equals(hint, GetDefaultHintText(column), StringComparison.Ordinal)
+                    ? null
+                    : hint;
+            }
+        }
+
+        private void PopulateMatchKeyCombo(List<ExcelColumnConfig> columns)
+        {
+            var selected = _matchKeyCombo.SelectedItem as MatchKeyItem;
+            var previous = selected?.LogicalName;
+
+            _matchKeyCombo.Items.Clear();
+            _matchKeyCombo.Items.Add(new MatchKeyItem(null, "(none - use record GUID)"));
+            foreach (var column in columns.Where(IsMatchKeyCandidate))
+                _matchKeyCombo.Items.Add(new MatchKeyItem(column.LogicalName, $"{column.DisplayName} ({column.LogicalName})"));
+
+            var target = _columnsTabInitialized ? previous : _savedConfig?.MatchKey;
+            var index = 0;
+            for (var i = 0; i < _matchKeyCombo.Items.Count; i++)
+            {
+                if ((_matchKeyCombo.Items[i] as MatchKeyItem)?.LogicalName == target)
+                {
+                    index = i;
+                    break;
+                }
+            }
+            _matchKeyCombo.SelectedIndex = index;
+        }
+
+        private bool IsMatchKeyCandidate(ExcelColumnConfig column)
+        {
+            if (column.Type == "Lookup" || column.Type == "LookupKeyField") return false;
+            if (string.Equals(column.LogicalName, _metadata.PrimaryIdAttribute, StringComparison.OrdinalIgnoreCase)) return false;
+            return GetColumnState(column).Include;
+        }
+
+        private void ApplyColumnManager(ExcelExportConfig config)
+        {
+            if (_columnsTabInitialized)
+                SaveColumnGridState();
+            else if (_savedConfig?.Columns != null)
+                foreach (var saved in _savedConfig.Columns)
+                    GetColumnState(saved);
+
+            config.Columns = ApplyStoredColumnOrder(config.Columns)
+                .Where(column => GetColumnState(column).Include)
+                .Select(column =>
+                {
+                    var state = GetColumnState(column);
+                    column.Hidden = false;
+                    column.HintOverride = state.HintOverride;
+                    return column;
+                })
+                .ToList();
+
+            if (_matchKeyCombo?.SelectedItem is MatchKeyItem selectedMatchKey)
+                config.MatchKey = selectedMatchKey.LogicalName;
+            else
+                config.MatchKey = _savedConfig?.MatchKey;
+            if (!config.Columns.Any(c => c.LogicalName == config.MatchKey)) config.MatchKey = null;
+        }
+
+        private void MoveSelectedColumnGroup(int direction)
+        {
+            if (_columnsGrid.SelectedRows.Count == 0) return;
+            SaveColumnGridState();
+
+            var rowIndex = _columnsGrid.SelectedRows[0].Index;
+            var group = GetColumnGroup(rowIndex);
+            if (group.Count == 0) return;
+
+            var target = direction < 0
+                ? GetPreviousGroupStart(group[0])
+                : GetNextGroupStart(group[group.Count - 1]);
+            if (target < 0) return;
+
+            var rows = _columnsGrid.Rows.Cast<DataGridViewRow>().ToList();
+            var moving = group.Select(i => rows[i]).ToList();
+            foreach (var row in moving) rows.Remove(row);
+            var insertAt = direction < 0 ? target : target - moving.Count + 1;
+            rows.InsertRange(insertAt, moving);
+
+            _columnsGrid.Rows.Clear();
+            foreach (var row in rows)
+            {
+                var column = row.Tag as ExcelColumnConfig;
+                if (column == null) continue;
+                AddColumnGridRow(column);
+            }
+            _columnsGrid.Rows[Math.Max(0, Math.Min(insertAt, _columnsGrid.Rows.Count - 1))].Selected = true;
+            SaveColumnGridState();
+        }
+
+        private List<int> GetColumnGroup(int rowIndex)
+        {
+            var column = _columnsGrid.Rows[rowIndex].Tag as ExcelColumnConfig;
+            if (column == null) return new List<int>();
+
+            var start = rowIndex;
+            if (column.Type == "LookupKeyField")
+            {
+                for (var i = rowIndex - 1; i >= 0; i--)
+                {
+                    var candidate = _columnsGrid.Rows[i].Tag as ExcelColumnConfig;
+                    if (candidate?.Type == "Lookup" && column.LogicalName.StartsWith(candidate.LogicalName + ".", StringComparison.Ordinal))
+                    {
+                        start = i;
+                        break;
+                    }
+                }
+            }
+
+            var root = _columnsGrid.Rows[start].Tag as ExcelColumnConfig;
+            var end = start;
+            if (root?.Type == "Lookup")
+            {
+                for (var i = start + 1; i < _columnsGrid.Rows.Count; i++)
+                {
+                    var candidate = _columnsGrid.Rows[i].Tag as ExcelColumnConfig;
+                    if (candidate?.Type == "LookupKeyField" && candidate.LogicalName.StartsWith(root.LogicalName + ".", StringComparison.Ordinal))
+                        end = i;
+                    else
+                        break;
+                }
+            }
+            return Enumerable.Range(start, end - start + 1).ToList();
+        }
+
+        private int GetPreviousGroupStart(int groupStart)
+        {
+            return groupStart <= 0 ? -1 : GetColumnGroup(groupStart - 1).First();
+        }
+
+        private int GetNextGroupStart(int groupEnd)
+        {
+            return groupEnd >= _columnsGrid.Rows.Count - 1 ? -1 : GetColumnGroup(groupEnd + 1).First();
+        }
+
+        private string GetDefaultHintText(ExcelColumnConfig column)
+        {
+            switch (column.Type)
+            {
+                case "Lookup":
+                    return string.IsNullOrEmpty(column.RelatedTable) ? "Lookup (GUID)" : $"Lookup -> {column.RelatedTable} (GUID)";
+                case "LookupKeyField":
+                    if (column.KeyFieldType == "OptionSet") return column.ExportMode == "Label" ? "Key choice label" : "Key choice value";
+                    if (column.KeyFieldType == "Lookup") return string.IsNullOrEmpty(column.RelatedTable) ? $"Lookup key for {column.OwnerAttribute}" : $"Lookup key -> {column.RelatedTable}";
+                    return $"Key for {column.OwnerAttribute}";
+                case "OptionSet":
+                    return column.ExportMode == "Label" ? "Option Label" : "Option Value (Integer)";
+                case "MultiOptionSet":
+                    return column.ExportMode == "Label" ? "Labels (comma-separated)" : "Values (comma-separated integers)";
+                case "DateTime": return "DateTime (UTC ISO 8601)";
+                case "Money": return "Money (Decimal)";
+                case "Boolean": return "true / false";
+                default: return column.Type;
+            }
         }
 
         private void AddLookupColumns(
@@ -795,6 +1250,27 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         {
             public string Resolution { get; set; } = "Guid";
             public List<string> Fields { get; set; } = new List<string>();
+        }
+
+        private class ColumnManagerState
+        {
+            public bool Include { get; set; } = true;
+            public string HintOverride { get; set; }
+            public int? Order { get; set; }
+        }
+
+        private class MatchKeyItem
+        {
+            public string LogicalName { get; }
+            private readonly string _display;
+
+            public MatchKeyItem(string logicalName, string display)
+            {
+                LogicalName = logicalName;
+                _display = display;
+            }
+
+            public override string ToString() => _display;
         }
 
         #endregion

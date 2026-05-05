@@ -23,6 +23,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
         public IEnumerable<Record> Records { get; set; }
         [DataMember]
         public int Count { get; set; }
+        public List<string> ImportErrors { get; set; } = new List<string>();
 
         public RecordCollection() { }
 

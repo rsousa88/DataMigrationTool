@@ -63,9 +63,10 @@ Manual mappings can also be defined for any lookup field.
 - [NEW] Nested lookup key fields can be resolved by GUID or selected custom attributes
 - [FIX] Related option set key fields now export as labels and import back to option values
 - [FIX] Blank nullable lookup key fields are now treated as null conditions during import resolution
-
-### 2026.5.4.x
-- [FIX] Excel export now includes the ClosedXML runtime dependencies in the package
+- [NEW] Excel export configuration now includes a Columns tab to reorder, hide, and customize hint text
+- [NEW] Excel imports can match records by a selected custom match key for upsert scenarios
+- [NEW] Excel exports now use filter-friendly header notes for hints and highlight related-table columns
+- [FIX] Column manager sorting/reordering and row-level Excel import errors now behave consistently
 
 ### 2026.5.4.x
 - [NEW] Added Excel export and import support for table data

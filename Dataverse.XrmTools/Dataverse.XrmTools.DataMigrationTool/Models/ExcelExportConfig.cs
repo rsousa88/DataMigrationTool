@@ -5,6 +5,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
     public class ExcelExportConfig
     {
         public string Version { get; set; } = "1.0";
+        public string MatchKey { get; set; }
         public ExcelTableConfig Table { get; set; }
         public List<ExcelColumnConfig> Columns { get; set; } = new List<ExcelColumnConfig>();
     }
@@ -20,6 +21,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
     {
         public string LogicalName { get; set; }
         public string DisplayName { get; set; }
+        public bool Hidden { get; set; }
+        public string HintOverride { get; set; }
 
         // String, Integer, BigInt, Decimal, Double, Money, Boolean, DateTime, Guid,
         // Lookup, LookupKeyField, OptionSet, MultiOptionSet

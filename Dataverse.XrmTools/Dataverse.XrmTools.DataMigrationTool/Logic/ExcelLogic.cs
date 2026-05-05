@@ -40,7 +40,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
                 WriteMetadata(metaSheet, config);
                 WriteHeaders(dataSheet, config);
-                WriteHints(dataSheet, config);
                 WriteData(dataSheet, config, records, sourceService);
 
                 // Hide the GUID column for lookups resolved via alt-key or custom — users only need the key field columns
@@ -52,7 +51,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                         dataSheet.Column(i + 1).Hide();
                 }
 
-                dataSheet.SheetView.FreezeRows(2);
+                ApplyDataRange(dataSheet, config);
+                dataSheet.SheetView.FreezeRows(1);
                 dataSheet.Columns().AdjustToContents();
 
                 wb.SaveAs(filePath);
@@ -72,27 +72,46 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 var cell = sheet.Cell(1, col);
                 cell.Value = column.LogicalName;
                 cell.Style.Font.Bold = true;
-                cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#D9E1F2");
+                cell.Style.Fill.BackgroundColor = IsRelatedColumn(column)
+                    ? XLColor.FromHtml("#E2F0D9")
+                    : XLColor.FromHtml("#D9E1F2");
+                AddHintComment(cell, GetHintText(column, config));
                 col++;
             }
         }
 
-        private void WriteHints(IXLWorksheet sheet, ExcelExportConfig config)
+        private void AddHintComment(IXLCell cell, string hint)
         {
-            var col = 1;
-            foreach (var column in config.Columns)
-            {
-                var cell = sheet.Cell(2, col);
-                cell.Value = GetHintText(column);
-                cell.Style.Font.Italic = true;
-                cell.Style.Font.FontColor = XLColor.Gray;
-                cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#F2F2F2");
-                col++;
-            }
+            if (string.IsNullOrWhiteSpace(hint)) return;
+
+            cell.Comment.AddText(hint);
+            cell.Comment.SetAuthor("Data Migration Tool");
+            cell.Comment.Style.Size.SetAutomaticSize(false);
+            cell.Comment.Style.Size.SetWidth(60);
+            cell.Comment.Style.Size.SetHeight(25);
         }
 
-        private string GetHintText(ExcelColumnConfig column)
+        private bool IsRelatedColumn(ExcelColumnConfig column)
         {
+            return column.Type == "LookupKeyField";
+        }
+
+        private void ApplyDataRange(IXLWorksheet sheet, ExcelExportConfig config)
+        {
+            if (!config.Columns.Any()) return;
+
+            var lastRow = Math.Max(1, sheet.LastRowUsed()?.RowNumber() ?? 1);
+            var range = sheet.Range(1, 1, lastRow, config.Columns.Count);
+            range.SetAutoFilter();
+        }
+
+        private string GetHintText(ExcelColumnConfig column, ExcelExportConfig config)
+        {
+            if (!string.IsNullOrEmpty(column.HintOverride)) return column.HintOverride;
+            if (!string.IsNullOrEmpty(config.MatchKey)
+                && string.Equals(column.LogicalName, config.MatchKey, StringComparison.OrdinalIgnoreCase))
+                return "Match key (used for import upsert)";
+
             switch (column.Type)
             {
                 case "Lookup":
@@ -135,7 +154,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 .ToDictionary(x => x.column.LogicalName, x => x.index + 1);
             var relatedRecordCache = new Dictionary<string, Entity>();
 
-            var row = 3;
+            var row = 2;
             foreach (var entity in records)
             {
                 var col = 1;
@@ -386,7 +405,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             for (var i = 0; i < config.Columns.Count; i++)
                 colIndex[config.Columns[i].LogicalName] = i + 1;
 
-            var row = 3;
+            var row = 2;
             foreach (var entity in records)
             {
                 for (var i = 0; i < config.Columns.Count; i++)
@@ -455,10 +474,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 var dataSheet = wb.Worksheet(DataSheetName);
 
                 var records = new List<Record>();
+                var importErrors = new List<string>();
                 var lastRow = dataSheet.LastRowUsed()?.RowNumber() ?? 2;
 
                 // Build column map: header name → column config
                 var headerMap = BuildHeaderMap(dataSheet, config);
+                var firstDataRow = GetFirstDataRow(dataSheet, config, headerMap);
 
                 // Group LookupKeyField columns by their owner attribute for resolution
                 var altKeyGroups = config.Columns
@@ -468,7 +489,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
                 var targetRepo = targetService != null ? new CrmRepo(targetService) : null;
 
-                for (var row = 3; row <= lastRow; row++)
+                for (var row = firstDataRow; row <= lastRow; row++)
                 {
                     var attributes = new List<RecordAttribute>();
                     var rowErrors = new List<string>();
@@ -493,9 +514,21 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
                     if (rowErrors.Any())
                     {
-                        // Log errors but skip row — surfaced in results
-                        // TODO: expose errors through results view
+                        importErrors.AddRange(rowErrors);
                         continue;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(config.MatchKey))
+                    {
+                        try
+                        {
+                            ApplyMatchKey(config, attributes, targetRepo);
+                        }
+                        catch (Exception ex)
+                        {
+                            importErrors.Add($"Row {row}: {ex.Message}");
+                            continue;
+                        }
                     }
 
                     records.Add(new Record { Attributes = attributes });
@@ -506,7 +539,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     LogicalName = config.Table.LogicalName,
                     PrimaryIdAttribute = config.Table.PrimaryIdAttribute,
                     Records = records,
-                    Count = records.Count
+                    Count = records.Count,
+                    ImportErrors = importErrors
                 };
             }
         }
@@ -524,6 +558,76 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             }
 
             return map;
+        }
+
+        private int GetFirstDataRow(IXLWorksheet sheet, ExcelExportConfig config, Dictionary<string, int> headerMap)
+        {
+            var checkedColumns = 0;
+            var matchingHints = 0;
+
+            foreach (var column in config.Columns)
+            {
+                if (!headerMap.TryGetValue(column.LogicalName, out var colNum)) continue;
+
+                var rowTwoValue = sheet.Cell(2, colNum).GetString();
+                if (string.IsNullOrWhiteSpace(rowTwoValue)) continue;
+
+                checkedColumns++;
+                if (string.Equals(rowTwoValue, GetHintText(column, config), StringComparison.Ordinal))
+                    matchingHints++;
+            }
+
+            return checkedColumns > 0 && matchingHints >= Math.Max(1, checkedColumns / 2)
+                ? 3
+                : 2;
+        }
+
+        private void ApplyMatchKey(ExcelExportConfig config, List<RecordAttribute> attributes, CrmRepo targetRepo)
+        {
+            if (targetRepo == null) throw new Exception("Target connection required for match key resolution.");
+
+            var matchAttr = attributes.FirstOrDefault(a => a.Key.Equals(config.MatchKey, StringComparison.OrdinalIgnoreCase));
+            if (matchAttr == null) throw new Exception($"Match key field '{config.MatchKey}' not present in this record.");
+
+            var target = targetRepo.FindByFieldValue(config.Table.LogicalName, config.MatchKey, ToQueryValue(matchAttr.Value));
+            if (target != null)
+                SetPrimaryIdAttribute(config.Table.PrimaryIdAttribute, target.Id, attributes);
+            else
+                EnsurePrimaryIdAttribute(config.Table.PrimaryIdAttribute, attributes);
+        }
+
+        private object ToQueryValue(object value)
+        {
+            if (value is OptionSetValue option) return option.Value;
+            if (value is Money money) return money.Value;
+            if (value is EntityReference reference) return reference.Id;
+            return value;
+        }
+
+        private void SetPrimaryIdAttribute(string primaryIdAttribute, Guid id, List<RecordAttribute> attributes)
+        {
+            var existing = attributes.FirstOrDefault(a => a.Key.Equals(primaryIdAttribute, StringComparison.OrdinalIgnoreCase));
+            if (existing != null)
+            {
+                existing.Value = id;
+                existing.Type = Enums.AttributeType.Identifier;
+            }
+            else
+            {
+                attributes.Add(new RecordAttribute
+                {
+                    Key = primaryIdAttribute,
+                    Type = Enums.AttributeType.Identifier,
+                    Value = id
+                });
+            }
+        }
+
+        private void EnsurePrimaryIdAttribute(string primaryIdAttribute, List<RecordAttribute> attributes)
+        {
+            var existing = attributes.FirstOrDefault(a => a.Key.Equals(primaryIdAttribute, StringComparison.OrdinalIgnoreCase));
+            if (existing == null || existing.Value == null || string.IsNullOrWhiteSpace(existing.Value.ToString()))
+                SetPrimaryIdAttribute(primaryIdAttribute, Guid.NewGuid(), attributes);
         }
 
         private RecordAttribute ParseCell(

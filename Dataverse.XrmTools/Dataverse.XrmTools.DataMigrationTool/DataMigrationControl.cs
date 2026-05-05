@@ -752,10 +752,14 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 .ToList();
 
             var repo = new CrmRepo(_sourceClient);
-            using (var dlg = new Forms.ExcelExportConfigDialog(selectedAttrMeta, tableData.Metadata, repo))
+            using (var dlg = new Forms.ExcelExportConfigDialog(selectedAttrMeta, tableData.Metadata, repo, tableData.Settings.ExcelConfig))
             {
                 if (dlg.ShowDialog(ParentForm) != System.Windows.Forms.DialogResult.OK) return;
                 var config = dlg.Config;
+
+                // persist the config so next open pre-populates automatically
+                tableData.Settings.ExcelConfig = config;
+                SettingsHelper.SetSettings(_settings);
 
                 var filePath = this.SelectFile("Excel files (*.xlsx)|*.xlsx", save: true,
                     defaultFileName: $"{tableData.Table.LogicalName}.xlsx");
@@ -852,8 +856,26 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     var collection = evt.Result as Models.RecordCollection;
                     if (collection == null || collection.Count == 0)
                     {
-                        MessageBox.Show("No records found in the Excel file.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        var message = "No records found in the Excel file.";
+                        if (collection?.ImportErrors?.Any() == true)
+                        {
+                            var errors = string.Join(Environment.NewLine, collection.ImportErrors.Take(10));
+                            var suffix = collection.ImportErrors.Count > 10 ? $"{Environment.NewLine}..." : string.Empty;
+                            message = $"{message}{Environment.NewLine}{Environment.NewLine}Import errors:{Environment.NewLine}{errors}{suffix}";
+                        }
+                        MessageBox.Show(message, "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
                         return;
+                    }
+
+                    if (collection.ImportErrors?.Any() == true)
+                    {
+                        var errors = string.Join(Environment.NewLine, collection.ImportErrors.Take(10));
+                        var suffix = collection.ImportErrors.Count > 10 ? $"{Environment.NewLine}..." : string.Empty;
+                        MessageBox.Show(
+                            $"{collection.ImportErrors.Count} row(s) were skipped while reading the Excel file.{Environment.NewLine}{Environment.NewLine}{errors}{suffix}",
+                            "Excel import warnings",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Warning);
                     }
 
                     var tableData = GetTableDataByLogicalName(collection.LogicalName, false);

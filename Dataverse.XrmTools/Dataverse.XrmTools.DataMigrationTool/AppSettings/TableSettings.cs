@@ -1,6 +1,9 @@
 ﻿// System
 using System.Collections.Generic;
 
+// DataMigrationTool
+using Dataverse.XrmTools.DataMigrationTool.Models;
+
 namespace Dataverse.XrmTools.DataMigrationTool.AppSettings
 {
     public class TableSettings
@@ -10,5 +13,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.AppSettings
         public bool IsCustomizable { get; set; }
         public List<string> DeselectedAttributes { get; set; }
         public string Filter { get; set; }
+        public ExcelExportConfig ExcelConfig { get; set; }
     }
 }

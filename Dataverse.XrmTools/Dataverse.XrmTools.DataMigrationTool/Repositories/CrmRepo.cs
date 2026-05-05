@@ -238,6 +238,27 @@ namespace Dataverse.XrmTools.DataMigrationTool.Repositories
             var response = _service.Execute(new RetrieveMultipleRequest { Query = query }) as RetrieveMultipleResponse;
             return response?.EntityCollection?.Entities?.FirstOrDefault()?.Id;
         }
+
+        public Entity FindByFieldValue(string logicalName, string field, object value)
+        {
+            var filter = new FilterExpression(LogicalOperator.And);
+            filter.Conditions.Add(value == null
+                ? new ConditionExpression(field, ConditionOperator.Null)
+                : new ConditionExpression(field, ConditionOperator.Equal, value));
+
+            var query = new QueryExpression(logicalName)
+            {
+                ColumnSet = new ColumnSet(false),
+                Criteria = filter,
+                TopCount = 2
+            };
+
+            var response = _service.Execute(new RetrieveMultipleRequest { Query = query }) as RetrieveMultipleResponse;
+            var results = response?.EntityCollection?.Entities;
+            if (results == null || results.Count == 0) return null;
+            if (results.Count > 1) throw new Exception($"Multiple records found for {field} = '{value}'");
+            return results[0];
+        }
         #endregion Interface Methods
 
         #region Private Methods
