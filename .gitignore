@@ -16,6 +16,7 @@
 /TODO.md
 /DEV-NOTES.md
 /PLAN-*.md
+**/XrmToolBox.exe.WebView2/
 
 **/Dataverse.XrmTools.DataMigrationTool.Tests/[Bb]in/*
 .claude/
