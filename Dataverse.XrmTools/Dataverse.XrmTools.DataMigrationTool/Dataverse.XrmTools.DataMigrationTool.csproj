@@ -122,6 +122,9 @@
     <Compile Include="Forms\ExcelExportConfigDialog.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="Forms\ExcelImportPreviewDialog.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="Logic\DataLogic.cs" />
     <Compile Include="Logic\ExcelLogic.cs" />
     <Compile Include="Logic\MappingsLogic.cs" />
@@ -133,6 +136,7 @@
     <Compile Include="Models\Record.cs" />
     <Compile Include="Models\RecordCollection.cs" />
     <Compile Include="Models\ExcelExportConfig.cs" />
+    <Compile Include="Models\ExcelImportPreview.cs" />
     <Compile Include="Models\Table.cs" />
     <Compile Include="Models\TableData.cs" />
     <Compile Include="Models\UiSettings.cs" />

@@ -36,11 +36,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             var createCount = _recordItems.Where(prv => prv.Text.Equals("Create")).Count();
             var updateCount = _recordItems.Where(prv => prv.Text.Equals("Update")).Count();
             var deleteCount = _recordItems.Where(prv => prv.Text.Equals("Delete")).Count();
+            var previewCount = _recordItems.Where(prv => prv.Text.Equals("Preview")).Count();
 
             lblSumCreateValue.Text = createCount.ToString();
             lblSumUpdateValue.Text = updateCount.ToString();
             lblSumDeleteValue.Text = deleteCount.ToString();
-            lblSumTotalValue.Text = (createCount + updateCount + deleteCount).ToString();
+            lblSumTotalValue.Text = (createCount + updateCount + deleteCount + previewCount).ToString();
         }
 
         private void listView_ColumnClick(object sender, ColumnClickEventArgs e)

@@ -31,7 +31,11 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         // Per-attribute option set state
         private readonly Dictionary<string, RadioButton> _optionLabelRadios = new Dictionary<string, RadioButton>();
         private DataGridView _columnsGrid;
-        private ComboBox _matchKeyCombo;
+        private ComboBox _matchKeyModeCombo;
+        private ComboBox _matchKeyAltCombo;
+        private Label _matchKeyCustomLabel;
+        private Button _matchKeyCustomButton;
+        private List<string> _matchKeyCustomFields = new List<string>();
         private bool _columnsTabInitialized;
 
         public ExcelExportConfig Config { get; private set; }
@@ -181,15 +185,34 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             body.Controls.Add(_columnsGrid, 0, 0);
             body.Controls.Add(buttons, 1, 0);
 
-            var matchRow = new FlowLayoutPanel
+            var matchRow = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                FlowDirection = FlowDirection.LeftToRight,
-                Padding = new Padding(0, 8, 0, 0)
+                ColumnCount = 6,
+                RowCount = 1,
+                Padding = new Padding(0, 7, 0, 0)
             };
-            matchRow.Controls.Add(new Label { Text = "Match key for import:", AutoSize = true, Padding = new Padding(0, 5, 8, 0) });
-            _matchKeyCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 320 };
-            matchRow.Controls.Add(_matchKeyCombo);
+            matchRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 128F));
+            matchRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 125F));
+            matchRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130F));
+            matchRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 210F));
+            matchRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 92F));
+            matchRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            matchRow.Controls.Add(new Label { Text = "Match key for import:", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 0);
+            _matchKeyModeCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill };
+            _matchKeyModeCombo.Items.Add(new MatchKeyModeItem("Guid", "Record GUID"));
+            _matchKeyModeCombo.Items.Add(new MatchKeyModeItem("AlternateKey", "Alternate key"));
+            _matchKeyModeCombo.Items.Add(new MatchKeyModeItem("Custom", "Custom"));
+            _matchKeyModeCombo.SelectedIndexChanged += (s, e) => UpdateMatchKeyControls();
+            matchRow.Controls.Add(_matchKeyModeCombo, 1, 0);
+            matchRow.Controls.Add(new Label { Text = "Alternate key:", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleRight, Padding = new Padding(0, 0, 6, 0) }, 2, 0);
+            _matchKeyAltCombo = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill };
+            matchRow.Controls.Add(_matchKeyAltCombo, 3, 0);
+            _matchKeyCustomButton = new Button { Text = "Configure", Dock = DockStyle.Fill };
+            _matchKeyCustomButton.Click += (s, e) => ConfigureExportCustomMatchKey();
+            matchRow.Controls.Add(_matchKeyCustomButton, 4, 0);
+            _matchKeyCustomLabel = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true, Padding = new Padding(6, 0, 0, 0) };
+            matchRow.Controls.Add(_matchKeyCustomLabel, 5, 0);
 
             outer.Controls.Add(body, 0, 0);
             outer.Controls.Add(matchRow, 0, 1);
@@ -941,25 +964,34 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
 
         private void PopulateMatchKeyCombo(List<ExcelColumnConfig> columns)
         {
-            var selected = _matchKeyCombo.SelectedItem as MatchKeyItem;
-            var previous = selected?.LogicalName;
+            var previous = GetCurrentMatchKeySelection();
+            var target = _columnsTabInitialized ? previous : GetSavedMatchKeySelection();
+            var availableFields = columns.Where(IsMatchKeyCandidate).Select(c => c.LogicalName).ToList();
 
-            _matchKeyCombo.Items.Clear();
-            _matchKeyCombo.Items.Add(new MatchKeyItem(null, "(none - use record GUID)"));
-            foreach (var column in columns.Where(IsMatchKeyCandidate))
-                _matchKeyCombo.Items.Add(new MatchKeyItem(column.LogicalName, $"{column.DisplayName} ({column.LogicalName})"));
-
-            var target = _columnsTabInitialized ? previous : _savedConfig?.MatchKey;
-            var index = 0;
-            for (var i = 0; i < _matchKeyCombo.Items.Count; i++)
+            _matchKeyAltCombo.Items.Clear();
+            foreach (var key in GetImportAlternateKeys(availableFields))
             {
-                if ((_matchKeyCombo.Items[i] as MatchKeyItem)?.LogicalName == target)
+                _matchKeyAltCombo.Items.Add(new MatchKeyItem
                 {
-                    index = i;
-                    break;
-                }
+                    Mode = "AlternateKey",
+                    AlternateKeyName = key.LogicalName,
+                    Fields = key.KeyAttributes.ToList(),
+                    Display = $"{GetAlternateKeyDisplayName(key)} ({string.Join(", ", key.KeyAttributes)})"
+                });
             }
-            _matchKeyCombo.SelectedIndex = index;
+
+            _matchKeyCustomFields = target.Fields
+                .Where(availableFields.Contains)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            SelectMatchKeyMode(target.Mode);
+            if (string.Equals(target.Mode, "AlternateKey", StringComparison.OrdinalIgnoreCase))
+                SelectAlternateKey(target);
+            if (_matchKeyAltCombo.SelectedIndex < 0 && _matchKeyAltCombo.Items.Count > 0)
+                _matchKeyAltCombo.SelectedIndex = 0;
+
+            UpdateMatchKeyControls();
         }
 
         private bool IsMatchKeyCandidate(ExcelColumnConfig column)
@@ -988,11 +1020,120 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                 })
                 .ToList();
 
-            if (_matchKeyCombo?.SelectedItem is MatchKeyItem selectedMatchKey)
-                config.MatchKey = selectedMatchKey.LogicalName;
-            else
-                config.MatchKey = _savedConfig?.MatchKey;
-            if (!config.Columns.Any(c => c.LogicalName == config.MatchKey)) config.MatchKey = null;
+            var selection = GetCurrentMatchKeySelection();
+            var included = new HashSet<string>(config.Columns.Select(c => c.LogicalName), StringComparer.OrdinalIgnoreCase);
+            var fields = selection.Fields.Where(included.Contains).ToList();
+            config.MatchKeyMode = fields.Any() ? selection.Mode : "Guid";
+            config.MatchKeys = fields;
+            config.MatchKey = fields.Count == 1 ? fields[0] : null;
+            config.MatchAlternateKeyName = string.Equals(config.MatchKeyMode, "AlternateKey", StringComparison.OrdinalIgnoreCase)
+                ? selection.AlternateKeyName
+                : null;
+        }
+
+        private MatchKeyItem GetCurrentMatchKeySelection()
+        {
+            var mode = (_matchKeyModeCombo?.SelectedItem as MatchKeyModeItem)?.Mode ?? "Guid";
+            if (mode == "AlternateKey" && _matchKeyAltCombo?.SelectedItem is MatchKeyItem alt)
+                return alt;
+            if (mode == "Custom")
+                return new MatchKeyItem { Mode = "Custom", Fields = new List<string>(_matchKeyCustomFields), Display = "Custom" };
+            return new MatchKeyItem { Mode = "Guid", Fields = new List<string>(), Display = "Record GUID" };
+        }
+
+        private MatchKeyItem GetSavedMatchKeySelection()
+        {
+            if (_savedConfig?.MatchKeys?.Any() == true)
+            {
+                return new MatchKeyItem
+                {
+                    Mode = string.IsNullOrWhiteSpace(_savedConfig.MatchKeyMode) ? "Custom" : _savedConfig.MatchKeyMode,
+                    Fields = new List<string>(_savedConfig.MatchKeys),
+                    AlternateKeyName = _savedConfig.MatchAlternateKeyName
+                };
+            }
+
+            if (!string.IsNullOrWhiteSpace(_savedConfig?.MatchKey))
+                return new MatchKeyItem { Mode = "Custom", Fields = new List<string> { _savedConfig.MatchKey } };
+
+            return new MatchKeyItem { Mode = "Guid", Fields = new List<string>() };
+        }
+
+        private void SelectMatchKeyMode(string mode)
+        {
+            mode = string.IsNullOrWhiteSpace(mode) ? "Guid" : mode;
+            for (var i = 0; i < _matchKeyModeCombo.Items.Count; i++)
+            {
+                if ((_matchKeyModeCombo.Items[i] as MatchKeyModeItem)?.Mode == mode)
+                {
+                    _matchKeyModeCombo.SelectedIndex = i;
+                    return;
+                }
+            }
+            _matchKeyModeCombo.SelectedIndex = 0;
+        }
+
+        private void SelectAlternateKey(MatchKeyItem target)
+        {
+            for (var i = 0; i < _matchKeyAltCombo.Items.Count; i++)
+            {
+                if (_matchKeyAltCombo.Items[i] is MatchKeyItem item && item.Matches(target))
+                {
+                    _matchKeyAltCombo.SelectedIndex = i;
+                    return;
+                }
+            }
+        }
+
+        private void UpdateMatchKeyControls()
+        {
+            if (_matchKeyModeCombo == null) return;
+            var mode = (_matchKeyModeCombo.SelectedItem as MatchKeyModeItem)?.Mode ?? "Guid";
+            _matchKeyAltCombo.Enabled = mode == "AlternateKey" && _matchKeyAltCombo.Items.Count > 0;
+            _matchKeyCustomButton.Enabled = mode == "Custom";
+            _matchKeyCustomLabel.Text = mode == "Custom" && _matchKeyCustomFields.Any()
+                ? string.Join(", ", _matchKeyCustomFields)
+                : string.Empty;
+        }
+
+        private void ConfigureExportCustomMatchKey()
+        {
+            var available = GetCurrentMatchKeyCandidates();
+            var attributes = _metadata.Attributes
+                .Where(a => available.Contains(a.LogicalName))
+                .OrderBy(a => a.DisplayName?.UserLocalizedLabel?.Label ?? a.LogicalName)
+                .ToList();
+            using (var dlg = new PropertySelectorDialog(_metadata.LogicalName, attributes, _matchKeyCustomFields))
+            {
+                if (dlg.ShowDialog(this) != DialogResult.OK) return;
+                _matchKeyCustomFields = dlg.SelectedProperties;
+                UpdateMatchKeyControls();
+            }
+        }
+
+        private List<string> GetCurrentMatchKeyCandidates()
+        {
+            SaveColumnGridState();
+            return _columnsGrid.Rows.Cast<DataGridViewRow>()
+                .Where(row => row.Tag is ExcelColumnConfig column && IsMatchKeyCandidate(column))
+                .Select(row => ((ExcelColumnConfig)row.Tag).LogicalName)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(name => name)
+                .ToList();
+        }
+
+        private List<EntityKeyMetadata> GetImportAlternateKeys(List<string> availableFields)
+        {
+            var available = new HashSet<string>(availableFields, StringComparer.OrdinalIgnoreCase);
+            return _metadata.Keys?
+                .Where(k => k.KeyAttributes?.Any() == true && k.KeyAttributes.All(available.Contains))
+                .OrderBy(k => GetAlternateKeyDisplayName(k))
+                .ToList() ?? new List<EntityKeyMetadata>();
+        }
+
+        private string GetAlternateKeyDisplayName(EntityKeyMetadata key)
+        {
+            return key.DisplayName?.UserLocalizedLabel?.Label ?? key.LogicalName;
         }
 
         private void MoveSelectedColumnGroup(int direction)
@@ -1261,12 +1402,30 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
 
         private class MatchKeyItem
         {
-            public string LogicalName { get; }
+            public string Mode { get; set; }
+            public List<string> Fields { get; set; } = new List<string>();
+            public string AlternateKeyName { get; set; }
+            public string Display { get; set; }
+
+            public bool Matches(MatchKeyItem other)
+            {
+                if (other == null) return false;
+                if (!string.Equals(Mode, other.Mode, StringComparison.OrdinalIgnoreCase)) return false;
+                if (Mode == "AlternateKey" && !string.Equals(AlternateKeyName, other.AlternateKeyName, StringComparison.OrdinalIgnoreCase)) return false;
+                return Fields.SequenceEqual(other.Fields ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
+            }
+
+            public override string ToString() => Display;
+        }
+
+        private class MatchKeyModeItem
+        {
+            public string Mode { get; }
             private readonly string _display;
 
-            public MatchKeyItem(string logicalName, string display)
+            public MatchKeyModeItem(string mode, string display)
             {
-                LogicalName = logicalName;
+                Mode = mode;
                 _display = display;
             }
 

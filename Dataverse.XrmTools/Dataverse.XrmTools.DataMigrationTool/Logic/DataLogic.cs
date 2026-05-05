@@ -91,14 +91,16 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             }
         }
 
-        public OperationResult Import(TableData tableData, RecordCollection collection, UiSettings uiSettings, List<Mapping> mappings)
+        public OperationResult Import(TableData tableData, RecordCollection collection, UiSettings uiSettings, List<Mapping> mappings, bool confirm = true)
         {
             _sourceCollection = collection.ToEntityCollection(tableData.Metadata.Attributes);
             RetrieveTargetData(tableData.Table.LogicalName, tableData.Table.IdAttribute, uiSettings.BatchSize);
 
-            var msg = $"You are about to import {_sourceCollection.Entities.Count} {tableData.Table.LogicalName} records. Continue?";
-            var result = MessageBox.Show(msg, "Info", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-            if (result.Equals(DialogResult.Yes))
+            var matchKey = string.IsNullOrWhiteSpace(collection.ImportMatchKey)
+                ? "record GUID"
+                : collection.ImportMatchKey;
+            var msg = $"You are about to import {_sourceCollection.Entities.Count} {tableData.Table.LogicalName} records using '{matchKey}' as the matching key. Continue?";
+            if (!confirm || MessageBox.Show(msg, "Info", MessageBoxButtons.YesNo, MessageBoxIcon.Question).Equals(DialogResult.Yes))
             {
                 ExecuteTargetOperations(uiSettings, tableData.Table, false, true, mappings);
 

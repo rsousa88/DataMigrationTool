@@ -67,6 +67,10 @@ Manual mappings can also be defined for any lookup field.
 - [NEW] Excel imports can match records by a selected custom match key for upsert scenarios
 - [NEW] Excel exports now use filter-friendly header notes for hints and highlight related-table columns
 - [FIX] Column manager sorting/reordering and row-level Excel import errors now behave consistently
+- [NEW] Excel and JSON imports now use a preview wizard with import settings, mappings, and record actions
+- [NEW] Import matching can now use GUIDs, alternate keys, or multiple selected custom columns
+- [FIX] Import preview now formats option set match values and supports sorting and copying rows
+- [FIX] Data and settings JSON exports now prompt for separate filenames instead of a folder
 
 ### 2026.5.4.x
 - [NEW] Added Excel export and import support for table data

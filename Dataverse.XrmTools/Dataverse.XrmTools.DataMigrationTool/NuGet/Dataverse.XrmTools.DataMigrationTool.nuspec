@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
   <metadata>
     <id>Dataverse.XrmTools.DataMigrationTool</id>
-    <version>2026.5.5.2</version>
+    <version>2026.5.5.3</version>
     <title>Data Migration Tool</title>
     <authors>Rui Sousa</authors>
     <owners>Rui Sousa</owners>
@@ -30,6 +30,10 @@
 		- [NEW] Nested lookup key fields can be resolved by GUID or selected custom attributes
 		- [FIX] Related option set key fields now export as labels and import back to option values
 		- [FIX] Blank nullable lookup key fields are now treated as null conditions during import resolution
+		- [NEW] Excel and JSON imports now use a preview wizard with import settings, mappings, and record actions
+		- [NEW] Import matching can now use GUIDs, alternate keys, or multiple selected custom columns
+		- [FIX] Import preview now formats option set match values and supports sorting and copying rows
+		- [FIX] Data and settings JSON exports now prompt for separate filenames instead of a folder
 		2026.5.4.x
 		- [NEW] Added Excel export and import support for table data
 		- [NEW] Excel export configuration supports lookup resolution by GUID, alternate keys, or selected custom attributes

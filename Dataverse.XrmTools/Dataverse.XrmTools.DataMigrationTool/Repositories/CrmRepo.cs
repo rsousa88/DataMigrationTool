@@ -241,10 +241,18 @@ namespace Dataverse.XrmTools.DataMigrationTool.Repositories
 
         public Entity FindByFieldValue(string logicalName, string field, object value)
         {
+            return FindByFieldValues(logicalName, new Dictionary<string, object> { { field, value } });
+        }
+
+        public Entity FindByFieldValues(string logicalName, Dictionary<string, object> fieldValues)
+        {
             var filter = new FilterExpression(LogicalOperator.And);
-            filter.Conditions.Add(value == null
-                ? new ConditionExpression(field, ConditionOperator.Null)
-                : new ConditionExpression(field, ConditionOperator.Equal, value));
+            foreach (var kv in fieldValues)
+            {
+                filter.Conditions.Add(kv.Value == null
+                    ? new ConditionExpression(kv.Key, ConditionOperator.Null)
+                    : new ConditionExpression(kv.Key, ConditionOperator.Equal, kv.Value));
+            }
 
             var query = new QueryExpression(logicalName)
             {
@@ -256,8 +264,13 @@ namespace Dataverse.XrmTools.DataMigrationTool.Repositories
             var response = _service.Execute(new RetrieveMultipleRequest { Query = query }) as RetrieveMultipleResponse;
             var results = response?.EntityCollection?.Entities;
             if (results == null || results.Count == 0) return null;
-            if (results.Count > 1) throw new Exception($"Multiple records found for {field} = '{value}'");
+            if (results.Count > 1) throw new Exception($"Multiple records found for {FormatFieldValues(fieldValues)}");
             return results[0];
+        }
+
+        private string FormatFieldValues(Dictionary<string, object> fieldValues)
+        {
+            return string.Join(", ", fieldValues.Select(kv => $"{kv.Key} = '{kv.Value}'"));
         }
         #endregion Interface Methods
 

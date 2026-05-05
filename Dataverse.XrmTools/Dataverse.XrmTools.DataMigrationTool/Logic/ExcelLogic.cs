@@ -87,7 +87,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             cell.Comment.AddText(hint);
             cell.Comment.SetAuthor("Data Migration Tool");
             cell.Comment.Style.Size.SetAutomaticSize(false);
-            cell.Comment.Style.Size.SetWidth(60);
+            cell.Comment.Style.Size.SetWidth(40);
             cell.Comment.Style.Size.SetHeight(25);
         }
 
@@ -278,6 +278,21 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 case Money money:
                     cell.SetValue(money.Value);
                     break;
+                case int integer:
+                    cell.SetValue(integer);
+                    break;
+                case long bigInt:
+                    cell.SetValue(bigInt);
+                    break;
+                case decimal decimalValue:
+                    cell.SetValue(decimalValue);
+                    break;
+                case double doubleValue:
+                    cell.SetValue(doubleValue);
+                    break;
+                case float floatValue:
+                    cell.SetValue(floatValue);
+                    break;
                 case DateTime date:
                     cell.SetValue(date.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture));
                     cell.Style.NumberFormat.NumberFormatId = 49;
@@ -366,6 +381,22 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 case "Money":
                     if (value is Money money)
                         cell.SetValue(money.Value);
+                    break;
+
+                case "Integer":
+                    cell.SetValue(Convert.ToInt32(value, CultureInfo.InvariantCulture));
+                    break;
+
+                case "BigInt":
+                    cell.SetValue(Convert.ToInt64(value, CultureInfo.InvariantCulture));
+                    break;
+
+                case "Decimal":
+                    cell.SetValue(Convert.ToDecimal(value, CultureInfo.InvariantCulture));
+                    break;
+
+                case "Double":
+                    cell.SetValue(Convert.ToDouble(value, CultureInfo.InvariantCulture));
                     break;
 
                 case "Boolean":
@@ -518,7 +549,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                         continue;
                     }
 
-                    if (!string.IsNullOrWhiteSpace(config.MatchKey))
+                    if (GetMatchKeys(config).Any())
                     {
                         try
                         {
@@ -540,7 +571,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     PrimaryIdAttribute = config.Table.PrimaryIdAttribute,
                     Records = records,
                     Count = records.Count,
-                    ImportErrors = importErrors
+                    ImportErrors = importErrors,
+                    ImportMatchKey = GetMatchKeyDisplay(config),
+                    ImportMatchKeys = GetMatchKeys(config),
+                    ImportMatchKeyMode = GetMatchKeys(config).Any()
+                        ? (string.IsNullOrWhiteSpace(config.MatchKeyMode) ? "Custom" : config.MatchKeyMode)
+                        : "Guid"
                 };
             }
         }
@@ -586,14 +622,42 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
         {
             if (targetRepo == null) throw new Exception("Target connection required for match key resolution.");
 
-            var matchAttr = attributes.FirstOrDefault(a => a.Key.Equals(config.MatchKey, StringComparison.OrdinalIgnoreCase));
-            if (matchAttr == null) throw new Exception($"Match key field '{config.MatchKey}' not present in this record.");
+            var keyValues = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            foreach (var key in GetMatchKeys(config))
+            {
+                var matchAttr = attributes.FirstOrDefault(a => a.Key.Equals(key, StringComparison.OrdinalIgnoreCase));
+                if (matchAttr == null) throw new Exception($"Match key field '{key}' not present in this record.");
+                if (matchAttr.Value == null || string.IsNullOrWhiteSpace(matchAttr.Value.ToString()))
+                    throw new Exception($"Match key field '{key}' is blank.");
 
-            var target = targetRepo.FindByFieldValue(config.Table.LogicalName, config.MatchKey, ToQueryValue(matchAttr.Value));
+                keyValues[key] = ToQueryValue(matchAttr.Value);
+            }
+
+            var target = targetRepo.FindByFieldValues(config.Table.LogicalName, keyValues);
             if (target != null)
                 SetPrimaryIdAttribute(config.Table.PrimaryIdAttribute, target.Id, attributes);
             else
                 EnsurePrimaryIdAttribute(config.Table.PrimaryIdAttribute, attributes);
+        }
+
+        private List<string> GetMatchKeys(ExcelExportConfig config)
+        {
+            if (config?.MatchKeys?.Any() == true)
+                return config.MatchKeys.Where(k => !string.IsNullOrWhiteSpace(k)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+            return string.IsNullOrWhiteSpace(config?.MatchKey)
+                ? new List<string>()
+                : new List<string> { config.MatchKey };
+        }
+
+        private string GetMatchKeyDisplay(ExcelExportConfig config)
+        {
+            var keys = GetMatchKeys(config);
+            if (!keys.Any()) return null;
+            if (string.Equals(config.MatchKeyMode, "AlternateKey", StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(config.MatchAlternateKeyName))
+                return $"{config.MatchAlternateKeyName} ({string.Join(", ", keys)})";
+            return string.Join(", ", keys);
         }
 
         private object ToQueryValue(object value)
@@ -719,6 +783,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     {
                         if (targetRepo == null) throw new Exception("Target connection required for alternate key resolution.");
                         var keyValues = BuildLookupKeyValues(column, row, sheet, headerMap, altKeyGroups, targetRepo);
+                        if (AllKeyValuesBlank(keyValues)) return null;
                         var resolvedId = targetRepo.ResolveByAlternateKey(column.RelatedTable, keyValues);
                         if (!resolvedId.HasValue) throw new Exception($"No match found in '{column.RelatedTable}' for keys: {FormatKeyValues(keyValues)}");
 
@@ -818,12 +883,20 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             if (keyColumn.Resolution != "Guid" && altKeyGroups.ContainsKey(keyColumn.LogicalName))
             {
                 var nestedKeyValues = BuildLookupKeyValues(keyColumn, row, sheet, headerMap, altKeyGroups, targetRepo);
+                if (AllKeyValuesBlank(nestedKeyValues)) return Guid.Empty;
                 var resolvedId = targetRepo.ResolveByAlternateKey(keyColumn.RelatedTable, nestedKeyValues);
                 if (!resolvedId.HasValue) throw new Exception($"No match found in '{keyColumn.RelatedTable}' for keys: {FormatKeyValues(nestedKeyValues)}");
                 return resolvedId.Value;
             }
 
             return Guid.Parse(cellValue);
+        }
+
+        private bool AllKeyValuesBlank(Dictionary<string, object> keyValues)
+        {
+            return keyValues == null
+                || keyValues.Count == 0
+                || keyValues.Values.All(v => v == null || string.IsNullOrWhiteSpace(v.ToString()));
         }
 
         private OptionConfig MatchOptionLabel(ExcelColumnConfig column, string label)

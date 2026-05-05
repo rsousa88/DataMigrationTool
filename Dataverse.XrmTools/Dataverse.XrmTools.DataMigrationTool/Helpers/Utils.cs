@@ -7,6 +7,7 @@ using System.Linq;
 using System.Data;
 using System.Windows.Forms;
 using System.Collections.Generic;
+using System.Globalization;
 
 // Microsoft
 using Microsoft.Xrm.Sdk;
@@ -220,25 +221,37 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
                 }
 
                 // EntityReference
-                if (attr.Type.Equals(AttributeType.EntityReference) && (attr.Value as JObject).ContainsKey("Id") && (attr.Value as JObject).ContainsKey("LogicalName"))
+                if (attr.Type.Equals(AttributeType.EntityReference) && attr.Value is EntityReference)
                 {
-                    var logicalName = ((attr.Value as JObject).GetValue("LogicalName") as JValue).Value.ToString();
-                    var id = ((attr.Value as JObject).GetValue("Id") as JValue).Value.ToString();
+                    return new KeyValuePair<string, object>(attr.Key, attr.Value);
+                }
+                if (attr.Type.Equals(AttributeType.EntityReference) && attr.Value is JObject referenceObj && referenceObj.ContainsKey("Id") && referenceObj.ContainsKey("LogicalName"))
+                {
+                    var logicalName = (referenceObj.GetValue("LogicalName") as JValue).Value.ToString();
+                    var id = (referenceObj.GetValue("Id") as JValue).Value.ToString();
 
                     var reference = new EntityReference(logicalName, Guid.Parse(id));
                     return new KeyValuePair<string, object>(attr.Key, reference);
                 }
 
                 // OptionSetValue
-                if (attr.Type.Equals(AttributeType.OptionSet) && (attr.Value as JObject).ContainsKey("Value"))
+                if (attr.Type.Equals(AttributeType.OptionSet) && attr.Value is OptionSetValue)
                 {
-                    var value = ((attr.Value as JObject).GetValue("Value") as JValue).Value.ToString().ToInt();
+                    return new KeyValuePair<string, object>(attr.Key, attr.Value);
+                }
+                if (attr.Type.Equals(AttributeType.OptionSet) && attr.Value is JObject optionObj && optionObj.ContainsKey("Value"))
+                {
+                    var value = (optionObj.GetValue("Value") as JValue).Value.ToString().ToInt();
                     var optionSet = new OptionSetValue(value.Value);
 
                     return new KeyValuePair<string, object>(attr.Key, optionSet);
                 }
 
                 // OptionSetValueCollection
+                if (attr.Type.Equals(AttributeType.MultiOptionSet) && attr.Value is OptionSetValueCollection)
+                {
+                    return new KeyValuePair<string, object>(attr.Key, attr.Value);
+                }
                 if (attr.Type.Equals(AttributeType.MultiOptionSet) && attr.Value is JArray)
                 {
                     var options = (attr.Value as JArray)
@@ -265,18 +278,31 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
                         switch (attrMeta.AttributeType.Value)
                         {
                             case AttributeTypeCode.BigInt:
-                                attrValue = ((JToken)attr.Value).ToObject<long>();
+                                attrValue = attr.Value is JToken bigIntToken
+                                    ? bigIntToken.ToObject<long>()
+                                    : Convert.ToInt64(attr.Value, CultureInfo.InvariantCulture);
                                 break;
                             case AttributeTypeCode.Decimal:
-                                attrValue = ((JToken)attr.Value).ToObject<decimal>();
+                                attrValue = attr.Value is JToken decimalToken
+                                    ? decimalToken.ToObject<decimal>()
+                                    : Convert.ToDecimal(attr.Value, CultureInfo.InvariantCulture);
                                 break;
                             case AttributeTypeCode.Double:
-                                attrValue = ((JToken)attr.Value).ToObject<double>();
+                                attrValue = attr.Value is JToken doubleToken
+                                    ? doubleToken.ToObject<double>()
+                                    : Convert.ToDouble(attr.Value, CultureInfo.InvariantCulture);
                                 break;
                             case AttributeTypeCode.Integer:
-                                attrValue = ((JToken)attr.Value).ToObject<int>();
+                                attrValue = attr.Value is JToken integerToken
+                                    ? integerToken.ToObject<int>()
+                                    : Convert.ToInt32(attr.Value, CultureInfo.InvariantCulture);
                                 break;
                             case AttributeTypeCode.Money:
+                                if (attr.Value is Money)
+                                {
+                                    attrValue = attr.Value;
+                                    break;
+                                }
                                 var moneyObj = attr.Value as JObject;
                                 if (moneyObj != null && moneyObj.ContainsKey("Value"))
                                 {

@@ -6,6 +6,9 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
     {
         public string Version { get; set; } = "1.0";
         public string MatchKey { get; set; }
+        public string MatchKeyMode { get; set; }
+        public List<string> MatchKeys { get; set; } = new List<string>();
+        public string MatchAlternateKeyName { get; set; }
         public ExcelTableConfig Table { get; set; }
         public List<ExcelColumnConfig> Columns { get; set; } = new List<ExcelColumnConfig>();
     }

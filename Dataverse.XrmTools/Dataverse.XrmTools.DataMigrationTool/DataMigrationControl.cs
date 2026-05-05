@@ -14,6 +14,7 @@ using System.Collections.Specialized;
 // Microsoft
 using Microsoft.Xrm.Sdk;
 using Microsoft.Crm.Sdk.Messages;
+using Microsoft.Xrm.Sdk.Query;
 using Microsoft.Xrm.Tooling.Connector;
 
 // 3rd Party
@@ -70,6 +71,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
             LogInfo("Initializing components...");
             InitializeComponent();
+            MoveImportSettingsIntoDialogs();
 
             _logger = new Logger();
             _logger.OnLog += Log;
@@ -564,23 +566,9 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 return;
             }
 
-            if (cbDelete.Checked)
-            {
-                if (string.IsNullOrWhiteSpace(tableData.Settings.Filter))
-                {
-                    throw new Exception("Delete operation whithout any filter applied is not supported. You must add a filter in order to perform a Delete operation");
-                }
-                else
-                {
-                    var msg = $"WARNING: Delete operation\nAll '{tableData.Table.LogicalName}' records on target instance that doesn't match the filter will be deleted!\n\nContinue?";
-                    var result = MessageBox.Show(msg, "Warning", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-                    if (result.Equals(DialogResult.No)) { return; }
-                }
-            }
-
             ManageWorkingState(true);
 
-            var uiSettings = ReadSettings(Enums.Action.Preview);
+            var uiSettings = GetDefaultImportSettings(Enums.Action.Preview);
 
             tableData.SelectedAttributes = lvAttributes.CheckedItems
                 .Cast<ListViewItem>()
@@ -598,7 +586,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     var data = evt.Argument as TableData;
 
                     var logic = new DataLogic(worker, _sourceClient, _targetClient);
-                    var result = Task.Run(() => logic.Preview(data, uiSettings, _targetClient != null && _targetClient.IsReady));
+                    var result = Task.Run(() => logic.Preview(data, uiSettings, false));
 
                     evt.Result = result.Result;
                 },
@@ -625,11 +613,9 @@ namespace Dataverse.XrmTools.DataMigrationTool
             });
         }
 
-        private void ExportSettings(string dirPath)
+        private void ExportSettings()
         {
             _logger.Log(LogLevel.INFO, $"Exporting table settings...");
-
-            if (string.IsNullOrEmpty(dirPath)) { return; }
 
             var tableData = GetSelectedTableItemData(false);
             if (tableData == null)
@@ -638,20 +624,17 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 return;
             }
 
-            // save serialized json with settings
-            var filename = $"{dirPath}\\{tableData.Table.LogicalName}.settings.json";
+            var filePath = this.SelectFile("Settings files (*.settings.json)|*.settings.json|Json files (*.json)|*.json", save: true,
+                defaultFileName: $"{tableData.Table.LogicalName}.settings.json");
+            if (string.IsNullOrEmpty(filePath)) { return; }
 
             var json = tableData.Settings.SerializeObject();
-            File.WriteAllText(filename, json);
+            File.WriteAllText(filePath, json);
         }
 
-        private void Export(string dirPath)
+        private void Export()
         {
             _logger.Log(LogLevel.INFO, $"Export data operation...");
-
-            if (string.IsNullOrEmpty(dirPath)) { return; }
-
-            ManageWorkingState(true);
 
             var tableData = GetSelectedTableItemData(false, true);
             if (tableData == null)
@@ -660,7 +643,11 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 return;
             }
 
-            var filePath = $"{dirPath}/{tableData.Table.LogicalName}.json";
+            var filePath = this.SelectFile("Json files (*.json)|*.json", save: true,
+                defaultFileName: $"{tableData.Table.LogicalName}.json");
+            if (string.IsNullOrEmpty(filePath)) { return; }
+
+            ManageWorkingState(true);
 
             var uiSettings = ReadSettings(Enums.Action.None);
 
@@ -829,7 +816,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
             WorkAsync(new WorkAsyncInfo
             {
-                Message = "Importing from Excel...",
+                Message = "Reading Excel file...",
                 AsyncArgument = path,
                 IsCancelable = false,
                 Work = (worker, evt) =>
@@ -840,7 +827,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     var config = excelLogic.ReadMetadata(filePath);
                     var collection = excelLogic.ImportFromExcel(filePath, config, _targetClient);
 
-                    evt.Result = collection;
+                    evt.Result = new ExcelImportSession { FilePath = filePath, Config = config, Collection = collection };
                 },
                 PostWorkCallBack = evt =>
                 {
@@ -853,7 +840,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         return;
                     }
 
-                    var collection = evt.Result as Models.RecordCollection;
+                    var session = evt.Result as ExcelImportSession;
+                    var collection = session?.Collection;
                     if (collection == null || collection.Count == 0)
                     {
                         var message = "No records found in the Excel file.";
@@ -867,17 +855,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         return;
                     }
 
-                    if (collection.ImportErrors?.Any() == true)
-                    {
-                        var errors = string.Join(Environment.NewLine, collection.ImportErrors.Take(10));
-                        var suffix = collection.ImportErrors.Count > 10 ? $"{Environment.NewLine}..." : string.Empty;
-                        MessageBox.Show(
-                            $"{collection.ImportErrors.Count} row(s) were skipped while reading the Excel file.{Environment.NewLine}{Environment.NewLine}{errors}{suffix}",
-                            "Excel import warnings",
-                            MessageBoxButtons.OK,
-                            MessageBoxIcon.Warning);
-                    }
-
                     var tableData = GetTableDataByLogicalName(collection.LogicalName, false);
                     if (tableData == null)
                     {
@@ -885,46 +862,293 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         return;
                     }
 
-                    var uiSettings = ReadSettings(Enums.Action.None);
-                    var msg = $"You are about to import {collection.Count} {collection.LogicalName} records into '{_targetInstance.FriendlyName}'. Continue?";
-                    if (MessageBox.Show(msg, "Confirm Import", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != System.Windows.Forms.DialogResult.Yes) return;
-
-                    ManageWorkingState(true);
-                    WorkAsync(new WorkAsyncInfo
-                    {
-                        Message = "Importing records...",
-                        AsyncArgument = new { collection, tableData, uiSettings },
-                        IsCancelable = false,
-                        Work = (worker2, evt2) =>
-                        {
-                            dynamic args = evt2.Argument;
-                            var logic = new DataLogic(worker2, _sourceClient, _targetClient);
-                            evt2.Result = logic.Import(args.tableData, args.collection, args.uiSettings, _mappings);
-                        },
-                        PostWorkCallBack = evt2 =>
-                        {
-                            ManageWorkingState(false);
-                            if (evt2.Error != null)
-                            {
-                                _logger.Log(LogLevel.ERROR, evt2.Error.Message);
-                                MessageBox.Show(evt2.Error.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                                return;
-                            }
-
-                            var result = evt2.Result as Models.OperationResult;
-                            if (result != null)
-                            {
-                                var resDialog = new Forms.Results(result.Items, _settings);
-                                resDialog.ShowDialog(ParentForm);
-                                SettingsHelper.SetSettings(_settings);
-                            }
-
-                            SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Excel import complete"));
-                            ReRenderComponents(true);
-                        }
-                    });
+                    var previewSettings = GetDefaultImportSettings(Enums.Action.None);
+                    StartExcelImportPreview(session, tableData, previewSettings);
                 }
             });
+        }
+
+        private void StartExcelImportPreview(ExcelImportSession session, TableData tableData, UiSettings uiSettings)
+        {
+            ManageWorkingState(true);
+            WorkAsync(new WorkAsyncInfo
+            {
+                Message = "Preparing import preview...",
+                AsyncArgument = new { session, tableData, uiSettings },
+                IsCancelable = false,
+                Work = (worker, evt) =>
+                {
+                    dynamic args = evt.Argument;
+                    evt.Result = BuildExcelImportPreview(args.tableData, args.session.Collection, args.session.Config, args.uiSettings, args.session.FilePath);
+                },
+                PostWorkCallBack = evt =>
+                {
+                    ManageWorkingState(false);
+                    if (evt.Error != null)
+                    {
+                        _logger.Log(LogLevel.ERROR, evt.Error.Message);
+                        MessageBox.Show(evt.Error.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+
+                    var preview = evt.Result as ExcelImportPreview;
+                    if (preview == null) return;
+
+                    using (var dlg = new ExcelImportPreviewDialog(preview))
+                    {
+                        var result = dlg.ShowDialog(ParentForm);
+                        if (result == DialogResult.Retry)
+                        {
+                            if (session.Config == null)
+                                StartExcelImportPreview(session, tableData, dlg.Settings);
+                            else
+                                ReloadExcelImportSession(session.FilePath, dlg.SelectedMatchKey, tableData, dlg.Settings);
+                            return;
+                        }
+                        if (result != DialogResult.OK) return;
+
+                        StartExcelImport(session.Collection, tableData, dlg.Settings);
+                    }
+                }
+            });
+        }
+
+        private void ReloadExcelImportSession(string filePath, ExcelImportMatchKeySelection matchKey, TableData tableData, UiSettings uiSettings)
+        {
+            ManageWorkingState(true);
+            WorkAsync(new WorkAsyncInfo
+            {
+                Message = "Reading Excel file...",
+                AsyncArgument = new { filePath, matchKey },
+                IsCancelable = false,
+                Work = (worker, evt) =>
+                {
+                    dynamic args = evt.Argument;
+                    var excelLogic = new Logic.ExcelLogic();
+                    var config = excelLogic.ReadMetadata(args.filePath);
+                    ApplyImportMatchKeySelection(config, args.matchKey as ExcelImportMatchKeySelection);
+                    var collection = excelLogic.ImportFromExcel(args.filePath, config, _targetClient);
+                    evt.Result = new ExcelImportSession { FilePath = args.filePath, Config = config, Collection = collection };
+                },
+                PostWorkCallBack = evt =>
+                {
+                    ManageWorkingState(false);
+                    if (evt.Error != null)
+                    {
+                        _logger.Log(LogLevel.ERROR, evt.Error.Message);
+                        MessageBox.Show(evt.Error.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+
+                    var session = evt.Result as ExcelImportSession;
+                    if (session != null) StartExcelImportPreview(session, tableData, uiSettings);
+                }
+            });
+        }
+
+        private void StartExcelImport(RecordCollection collection, TableData tableData, UiSettings uiSettings)
+        {
+            ManageWorkingState(true);
+            WorkAsync(new WorkAsyncInfo
+            {
+                Message = "Importing records...",
+                AsyncArgument = new { collection, tableData, uiSettings },
+                IsCancelable = false,
+                Work = (worker, evt) =>
+                {
+                    dynamic args = evt.Argument;
+                    var logic = new DataLogic(worker, _sourceClient, _targetClient);
+                    var mappings = BuildMappingsForImport(args.uiSettings);
+                    evt.Result = logic.Import(args.tableData, args.collection, args.uiSettings, mappings, false);
+                },
+                PostWorkCallBack = evt =>
+                {
+                    ManageWorkingState(false);
+                    if (evt.Error != null)
+                    {
+                        _logger.Log(LogLevel.ERROR, evt.Error.Message);
+                        MessageBox.Show(evt.Error.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+
+                    var result = evt.Result as Models.OperationResult;
+                    if (result != null)
+                    {
+                        var resDialog = new Forms.Results(result.Items, _settings);
+                        resDialog.ShowDialog(ParentForm);
+                        SettingsHelper.SetSettings(_settings);
+                    }
+
+                    SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Excel import complete"));
+                    ReRenderComponents(true);
+                }
+            });
+        }
+
+        private List<Mapping> BuildMappingsForImport(UiSettings uiSettings)
+        {
+            var mappings = new List<Mapping>(_mappings ?? new List<Mapping>());
+            if (uiSettings.MapUsers || uiSettings.MapTeams || uiSettings.MapBu)
+            {
+                var mappingsLogic = new MappingsLogic(_sourceClient, _targetClient);
+                if (uiSettings.MapUsers)
+                    mappings.AddRange(mappingsLogic.GetUserMappings(_sourceInstance.FriendlyName, _targetInstance.FriendlyName));
+                if (uiSettings.MapTeams)
+                    mappings.AddRange(mappingsLogic.GetTeamMappings(_sourceInstance.FriendlyName, _targetInstance.FriendlyName));
+                if (uiSettings.MapBu)
+                {
+                    var buMapping = mappingsLogic.GetBusinessUnitMapping(_sourceInstance.FriendlyName, _targetInstance.FriendlyName);
+                    if (buMapping != null) mappings.Add(buMapping);
+                }
+            }
+            return mappings;
+        }
+
+        private ExcelImportPreview BuildExcelImportPreview(TableData tableData, RecordCollection collection, ExcelExportConfig config, UiSettings uiSettings, string filePath)
+        {
+            var sourceCollection = collection.ToEntityCollection(tableData.Metadata.Attributes);
+            var targetIds = GetExistingTargetIds(tableData.Table.LogicalName, tableData.Table.IdAttribute, sourceCollection.Entities.Select(e => e.Id), uiSettings.BatchSize);
+            var nameAttribute = tableData.Table.NameAttribute;
+
+            var preview = new ExcelImportPreview
+            {
+                FilePath = filePath,
+                TableLogicalName = collection.LogicalName,
+                TargetName = _targetInstance?.FriendlyName ?? string.Empty,
+                MatchKey = collection.ImportMatchKey,
+                MatchKeyMode = collection.ImportMatchKeyMode,
+                MatchKeys = collection.ImportMatchKeys ?? new List<string>(),
+                MatchAlternateKeyName = config?.MatchAlternateKeyName,
+                TotalRows = collection.Count,
+                ImportErrors = collection.ImportErrors ?? new List<string>(),
+                Settings = uiSettings,
+                MappingCount = BuildMappingsForImport(uiSettings).Count,
+                AvailableMatchKeys = config?.Columns == null
+                    ? new List<string>()
+                    : config.Columns
+                    .Where(c => c.Type != "Lookup" && c.Type != "LookupKeyField" && c.LogicalName != config.Table.PrimaryIdAttribute)
+                    .Select(c => c.LogicalName)
+                    .ToList(),
+                AvailableAlternateKeys = GetAvailableImportAlternateKeys(tableData, config)
+            };
+
+            foreach (var entity in sourceCollection.Entities)
+            {
+                var exists = targetIds.Contains(entity.Id);
+                var action = exists ? Enums.Action.Update : Enums.Action.Create;
+                var enabled = (uiSettings.Action & action) == action;
+                var actionText = enabled ? action.ToString() : "Skip";
+                var description = enabled
+                    ? (exists ? "Target record found" : "Target record not found")
+                    : $"{action} is not enabled in operation settings";
+                var name = !string.IsNullOrWhiteSpace(nameAttribute) && entity.Attributes.Contains(nameAttribute)
+                    ? entity[nameAttribute]?.ToString() ?? string.Empty
+                    : string.Empty;
+
+                if (actionText == "Create") preview.CreateCount++;
+                else if (actionText == "Update") preview.UpdateCount++;
+                else preview.SkippedCount++;
+
+                preview.Items.Add(new ExcelImportPreviewItem
+                {
+                    Action = actionText,
+                    RecordId = entity.Id.ToString("D"),
+                    MatchValue = GetPreviewMatchValue(entity, collection.ImportMatchKeys),
+                    Name = name,
+                    Description = description
+                });
+            }
+
+            return preview;
+        }
+
+        private string GetPreviewMatchValue(Entity entity, List<string> matchKeys)
+        {
+            if (matchKeys == null || !matchKeys.Any()) return entity.Id.ToString("D");
+            return string.Join(", ", matchKeys.Select(key =>
+            {
+                var value = entity.Attributes.Contains(key) && entity[key] != null ? FormatPreviewMatchValue(entity[key]) : string.Empty;
+                return $"{key}={value}";
+            }));
+        }
+
+        private string FormatPreviewMatchValue(object value)
+        {
+            if (value == null) return string.Empty;
+            if (value is OptionSetValue option) return option.Value.ToString();
+            if (value is OptionSetValueCollection options) return string.Join(", ", options.Select(o => o.Value));
+            if (value is Money money) return money.Value.ToString();
+            if (value is EntityReference reference) return reference.Id.ToString("D");
+            return value.ToString();
+        }
+
+        private void ApplyImportMatchKeySelection(ExcelExportConfig config, ExcelImportMatchKeySelection selection)
+        {
+            if (config == null || selection == null) return;
+
+            var fields = selection.Fields?
+                .Where(f => !string.IsNullOrWhiteSpace(f))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList() ?? new List<string>();
+
+            config.MatchKeyMode = fields.Any() ? selection.Mode : "Guid";
+            config.MatchKeys = fields;
+            config.MatchKey = fields.Count == 1 ? fields[0] : null;
+            config.MatchAlternateKeyName = string.Equals(config.MatchKeyMode, "AlternateKey", StringComparison.OrdinalIgnoreCase)
+                ? selection.AlternateKeyName
+                : null;
+        }
+
+        private List<ExcelImportAlternateKeyOption> GetAvailableImportAlternateKeys(TableData tableData, ExcelExportConfig config)
+        {
+            var availableColumns = config?.Columns == null
+                ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                : new HashSet<string>(config.Columns
+                    .Where(c => c.Type != "Lookup" && c.Type != "LookupKeyField" && c.LogicalName != config.Table.PrimaryIdAttribute)
+                    .Select(c => c.LogicalName), StringComparer.OrdinalIgnoreCase);
+
+            return tableData.Metadata.Keys?
+                .Where(key => key.KeyAttributes?.Any() == true)
+                .Select(key => new ExcelImportAlternateKeyOption
+                {
+                    Name = key.LogicalName,
+                    Fields = key.KeyAttributes.ToList()
+                })
+                .Where(key => key.Fields.All(availableColumns.Contains))
+                .OrderBy(key => key.Name)
+                .ToList() ?? new List<ExcelImportAlternateKeyOption>();
+        }
+
+        private HashSet<Guid> GetExistingTargetIds(string logicalName, string idAttribute, IEnumerable<Guid> sourceIds, int batchSize)
+        {
+            var existing = new HashSet<Guid>();
+            var ids = sourceIds.Distinct().ToList();
+            var repo = new CrmRepo(_targetClient);
+
+            foreach (var batch in ids.Select((id, index) => new { id, index }).GroupBy(x => x.index / Math.Max(batchSize, 1)).Select(g => g.Select(x => x.id).ToArray()))
+            {
+                if (!batch.Any()) continue;
+
+                var query = new QueryExpression(logicalName)
+                {
+                    ColumnSet = new ColumnSet(idAttribute),
+                    Criteria = new FilterExpression(LogicalOperator.And)
+                };
+                query.Criteria.Conditions.Add(new ConditionExpression(idAttribute, ConditionOperator.In, batch.Cast<object>().ToArray()));
+
+                var targetCollection = repo.GetCollectionByExpression(query, Math.Max(batchSize, 1));
+                foreach (var entity in targetCollection.Entities)
+                    existing.Add(entity.Id);
+            }
+
+            return existing;
+        }
+
+        private class ExcelImportSession
+        {
+            public string FilePath { get; set; }
+            public ExcelExportConfig Config { get; set; }
+            public RecordCollection Collection { get; set; }
         }
 
         private void Import(string path = null)
@@ -934,8 +1158,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             // get file path
             path = path is null ? this.SelectFile("Json files (*.json)|*.json") : path;
             if (string.IsNullOrEmpty(path)) { return; }
-
-            ManageWorkingState(true);
 
             var json = File.ReadAllText(path);
             var importData = json.DeserializeObject<RecordCollection>();
@@ -948,41 +1170,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 return;
             }
 
-            // get ui settings
-            var uiSettings = ReadSettings(Enums.Action.None);
-
-            WorkAsync(new WorkAsyncInfo
-            {
-                Message = "Importing records...",
-                AsyncArgument = tableData,
-                IsCancelable = true,
-                Work = (worker, evt) =>
-                {
-                    var data = evt.Argument as TableData;
-
-                    var logic = new DataLogic(worker, _sourceClient, _targetClient);
-
-                    var result = Task.Run(() => logic.Import(data, importData, uiSettings, _mappings));
-
-                    evt.Result = result.Result;
-                },
-                PostWorkCallBack = evt =>
-                {
-                    if (evt.Result != null)
-                    {
-                        // show results form
-                        var result = evt.Result as OperationResult;
-
-                        var resDialog = new Results(result.Items, _settings);
-                        resDialog.ShowDialog(ParentForm);
-
-                        SettingsHelper.SetSettings(_settings);
-                    }
-
-                    ManageWorkingState(false);
-                    SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Import complete"));
-                }
-            });
+            var session = new ExcelImportSession { FilePath = path, Collection = importData };
+            StartExcelImportPreview(session, tableData, GetDefaultImportSettings(Enums.Action.None));
         }
 
         private void LoadUiSettings()
@@ -1217,6 +1406,21 @@ namespace Dataverse.XrmTools.DataMigrationTool
             btnMappings.Font = _sourceInstance.Mappings.Any() ? new Font(btnMappings.Font.Name, btnMappings.Font.Size, FontStyle.Bold) : new Font(btnMappings.Font.Name, btnMappings.Font.Size, FontStyle.Regular);
         }
 
+        private void MoveImportSettingsIntoDialogs()
+        {
+            tsmiImportData.Text = "From JSON";
+            tsmiExportWithSettings.Visible = false;
+            tsmiExportWithSettings.Enabled = false;
+            gbViewSettings.Controls.Remove(cbHideInvalid);
+            cbHideInvalid.Location = new Point(cbSelectAll.Right + 18, cbSelectAll.Top);
+            gbAttributes.Controls.Add(cbHideInvalid);
+            cbHideInvalid.BringToFront();
+            gbMappingSettings.Visible = false;
+            gbOpSettings.Visible = false;
+            gbViewSettings.Visible = false;
+            gbViewSettings.Location = gbMappingSettings.Location;
+        }
+
         private void ReRenderComponents(bool enable)
         {
             var sourceReady = _sourceClient != null && _sourceClient.IsReady;
@@ -1233,8 +1437,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 {
                     tsmiImportData.Enabled = enable;
                     tsmiImportFromExcel.Enabled = enable;
-                    gbMappingSettings.Enabled = enable;
-                    gbOpSettings.Enabled = enable;
+                    gbMappingSettings.Enabled = false;
+                    gbOpSettings.Enabled = false;
                     
                     RenderMappingsButton();
 
@@ -1251,7 +1455,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     tsmiExport.Enabled = enable;
                     tsmiExportData.Enabled = enable;
                     tsmiExportSettings.Enabled = enable;
-                    tsmiExportWithSettings.Enabled = enable;
+                    tsmiExportWithSettings.Enabled = false;
+                    tsmiExportWithSettings.Visible = false;
                     tsmiExportToExcel.Enabled = enable;
                 }
             }
@@ -1279,6 +1484,27 @@ namespace Dataverse.XrmTools.DataMigrationTool
             SettingsHelper.SetSettings(_settings);
 
             return uiSettings;
+        }
+
+        private UiSettings GetDefaultImportSettings(Enums.Action initial)
+        {
+            var saved = _settings.UiSettings ?? new UiSettings();
+            var action = initial;
+            if ((saved.Action & Enums.Action.Create) == Enums.Action.Create || saved.Action == Enums.Action.None)
+                action |= Enums.Action.Create;
+            if ((saved.Action & Enums.Action.Update) == Enums.Action.Update || saved.Action == Enums.Action.None)
+                action |= Enums.Action.Update;
+
+            return new UiSettings
+            {
+                Action = action,
+                BatchSize = saved.BatchSize > 0 ? saved.BatchSize : 250,
+                MapUsers = saved.MapUsers,
+                MapTeams = saved.MapTeams,
+                MapBu = saved.MapBu,
+                ApplyMappingsOn = saved.ApplyMappingsOn,
+                HideInvalidAttributes = saved.HideInvalidAttributes
+            };
         }
 
         private string ExtractFilterNode(string fetchXml)
@@ -1563,13 +1789,9 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             try
             {
-                var dirPath = Handle.SelectDirectory(_settings.LastUsedDir);
-                if (string.IsNullOrEmpty(dirPath) || !Directory.Exists(dirPath)) { return; }
-
-                _settings.LastUsedDir = dirPath;
                 SettingsHelper.SetSettings(_settings);
 
-                Export(dirPath);
+                Export();
             }
             catch (Exception ex)
             {
@@ -1583,13 +1805,9 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             try
             {
-                var dirPath = Handle.SelectDirectory(_settings.LastUsedDir);
-                if (string.IsNullOrEmpty(dirPath) || !Directory.Exists(dirPath)) { return; }
-
-                _settings.LastUsedDir = dirPath;
                 SettingsHelper.SetSettings(_settings);
 
-                ExportSettings(dirPath);
+                ExportSettings();
             }
             catch (Exception ex)
             {
@@ -1601,23 +1819,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void tsmiExportWithSettings_Click(object sender, EventArgs e)
         {
-            try
-            {
-                var dirPath = Handle.SelectDirectory(_settings.LastUsedDir);
-                if (string.IsNullOrEmpty(dirPath) || !Directory.Exists(dirPath)) { return; }
-
-                _settings.LastUsedDir = dirPath;
-                SettingsHelper.SetSettings(_settings);
-
-                ExportSettings(dirPath);
-                Export(dirPath);
-            }
-            catch (Exception ex)
-            {
-                ManageWorkingState(false);
-                _logger.Log(LogLevel.ERROR, ex.Message);
-                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
+            tsmiExportWithSettings.Visible = false;
+            tsmiExportWithSettings.Enabled = false;
         }
 
         private void tsmiImportData_Click(object sender, EventArgs e)

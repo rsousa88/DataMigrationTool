@@ -24,6 +24,9 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
         [DataMember]
         public int Count { get; set; }
         public List<string> ImportErrors { get; set; } = new List<string>();
+        public string ImportMatchKey { get; set; }
+        public List<string> ImportMatchKeys { get; set; } = new List<string>();
+        public string ImportMatchKeyMode { get; set; }
 
         public RecordCollection() { }
 
