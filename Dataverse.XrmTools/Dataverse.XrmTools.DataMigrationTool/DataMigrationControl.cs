@@ -787,7 +787,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         var sourceCollection = logic.GetSourceEntities(td, ui);
 
                         var excelLogic = new Logic.ExcelLogic();
-                        excelLogic.Export(cfg, sourceCollection, path);
+                        excelLogic.Export(cfg, sourceCollection, path, _sourceClient);
                     },
                     PostWorkCallBack = evt =>
                     {

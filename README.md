@@ -58,6 +58,12 @@ Manual mappings can also be defined for any lookup field.
 
 ## Release Notes
 
+### 2026.5.5.x
+- [NEW] Excel lookup key fields can now populate related columns during export
+- [NEW] Nested lookup key fields can be resolved by GUID or selected custom attributes
+- [FIX] Related option set key fields now export as labels and import back to option values
+- [FIX] Blank nullable lookup key fields are now treated as null conditions during import resolution
+
 ### 2026.5.4.x
 - [FIX] Excel export now includes the ClosedXML runtime dependencies in the package
 

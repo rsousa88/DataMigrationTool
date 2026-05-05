@@ -22,6 +22,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         private readonly Dictionary<string, RadioButton> _customRadios = new Dictionary<string, RadioButton>();
         private readonly Dictionary<string, List<string>> _customSelections = new Dictionary<string, List<string>>();
         private readonly Dictionary<string, Label> _customSelectionLabels = new Dictionary<string, Label>();
+        private readonly Dictionary<string, NestedLookupConfig> _nestedLookupConfigs = new Dictionary<string, NestedLookupConfig>();
 
         // Per-attribute option set state
         private readonly Dictionary<string, RadioButton> _optionLabelRadios = new Dictionary<string, RadioButton>();
@@ -220,7 +221,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             var altInfoLabel = new Label
             {
                 Location = new Point(Col4X, 28),
-                Width = 355,
+                Width = 230,
                 Height = 18,
                 AutoSize = false,
                 ForeColor = Color.DimGray,
@@ -228,6 +229,16 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                 Visible = false
             };
             row.Controls.Add(altInfoLabel);
+
+            var btnNested = new Button
+            {
+                Text = "Nested lookups...",
+                Location = new Point(Col4X + 235, 24),
+                Width = 120,
+                Height = 24,
+                Visible = false
+            };
+            row.Controls.Add(btnNested);
 
             // Col 4 — Custom: warning + select button + selection label
             var warningLabel = new Label
@@ -273,10 +284,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                 {
                     altInfoLabel.Text = $"Fields: {string.Join(" + ", item.Key.KeyAttributes)}";
                     altInfoLabel.Visible = true;
+                    btnNested.Visible = HasNestedLookupFields(attr.LogicalName, item.Key.KeyAttributes.ToList());
                 }
                 else
                 {
                     altInfoLabel.Visible = false;
+                    btnNested.Visible = false;
                 }
             }
 
@@ -299,6 +312,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                 warningLabel.Visible = rbCustom.Checked;
                 btnSelect.Visible = rbCustom.Checked;
                 selLabel.Visible = rbCustom.Checked;
+                btnNested.Visible = rbCustom.Checked && HasNestedLookupFields(attr.LogicalName, _customSelections[attr.LogicalName]);
             };
 
             rbGuid.CheckedChanged += (s, e) =>
@@ -310,11 +324,24 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                     warningLabel.Visible = false;
                     btnSelect.Visible = false;
                     selLabel.Visible = false;
+                    btnNested.Visible = false;
                 }
             };
 
             // Wire select button
-            btnSelect.Click += (s, e) => OpenPropertySelector(attr.LogicalName, targets, selLabel);
+            btnSelect.Click += (s, e) =>
+            {
+                if (OpenPropertySelector(attr.LogicalName, targets, selLabel))
+                    btnNested.Visible = rbCustom.Checked && HasNestedLookupFields(attr.LogicalName, _customSelections[attr.LogicalName]);
+            };
+            btnNested.Click += (s, e) =>
+            {
+                var tableName = GetSelectedRelatedTable(attr.LogicalName, targets);
+                var fields = rbAlt.Checked && altCombo.SelectedItem is AltKeyItem item
+                    ? item.Key.KeyAttributes.ToList()
+                    : _customSelections[attr.LogicalName];
+                OpenNestedLookupConfig(attr.LogicalName, tableName, fields);
+            };
 
             // Make row taller to fit 3 radio buttons
             row.Height = 60;
@@ -367,13 +394,11 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                 lbl.Text = "(none selected)";
         }
 
-        private void OpenPropertySelector(string attrLogicalName, string[] targets, Label selLabel)
+        private bool OpenPropertySelector(string attrLogicalName, string[] targets, Label selLabel)
         {
-            var tableName = _targetTableCombos.TryGetValue(attrLogicalName, out var tblCbo)
-                ? (string)tblCbo.SelectedItem
-                : targets.FirstOrDefault() ?? string.Empty;
+            var tableName = GetSelectedRelatedTable(attrLogicalName, targets);
 
-            if (string.IsNullOrEmpty(tableName)) return;
+            if (string.IsNullOrEmpty(tableName)) return false;
 
             List<AttributeMetadata> attrs;
             try
@@ -389,7 +414,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             catch (Exception ex)
             {
                 MessageBox.Show($"Could not load attributes for '{tableName}': {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
+                return false;
             }
             finally
             {
@@ -400,11 +425,47 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
 
             using (var dlg = new PropertySelectorDialog(tableName, attrs, existing))
             {
-                if (dlg.ShowDialog(this) != DialogResult.OK) return;
+                if (dlg.ShowDialog(this) != DialogResult.OK) return false;
                 _customSelections[attrLogicalName] = dlg.SelectedProperties;
                 selLabel.Text = dlg.SelectedProperties.Any()
                     ? string.Join(", ", dlg.SelectedProperties)
                     : "(none selected)";
+                return true;
+            }
+        }
+
+        private string GetSelectedRelatedTable(string attrLogicalName, string[] targets)
+        {
+            return _targetTableCombos.TryGetValue(attrLogicalName, out var tblCbo)
+                ? (string)tblCbo.SelectedItem
+                : targets.FirstOrDefault() ?? string.Empty;
+        }
+
+        private bool HasNestedLookupFields(string ownerLogicalName, List<string> fields)
+        {
+            var targets = _selectedAttributes
+                .OfType<LookupAttributeMetadata>()
+                .FirstOrDefault(a => a.LogicalName == ownerLogicalName)
+                ?.Targets ?? new string[0];
+            var tableName = GetSelectedRelatedTable(ownerLogicalName, targets);
+
+            return fields.Any(field => GetAttributeMetadata(tableName, field) is LookupAttributeMetadata);
+        }
+
+        private void OpenNestedLookupConfig(string ownerLogicalName, string ownerTable, List<string> fields)
+        {
+            var lookupFields = fields
+                .Select(field => GetAttributeMetadata(ownerTable, field))
+                .OfType<LookupAttributeMetadata>()
+                .ToList();
+
+            if (!lookupFields.Any()) return;
+
+            using (var dlg = new NestedLookupConfigDialog(ownerLogicalName, lookupFields, _repo, _nestedLookupConfigs))
+            {
+                if (dlg.ShowDialog(this) != DialogResult.OK) return;
+                foreach (var config in dlg.Configs)
+                    _nestedLookupConfigs[config.Key] = config.Value;
             }
         }
 
@@ -533,36 +594,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                     if (rbAlt?.Checked == true && altCombo?.SelectedItem is AltKeyItem keyItem)
                     {
                         var keyFields = keyItem.Key.KeyAttributes.ToList();
-                        config.Columns.Add(new ExcelColumnConfig
-                        {
-                            LogicalName = attr.LogicalName, DisplayName = displayName,
-                            Type = "Lookup", RelatedTable = relatedTable,
-                            Resolution = "AlternateKey", AlternateKeyFields = keyFields
-                        });
-                        foreach (var f in keyFields)
-                            config.Columns.Add(new ExcelColumnConfig
-                            {
-                                LogicalName = $"{attr.LogicalName}.{f}",
-                                DisplayName = $"{displayName} ({f})",
-                                Type = "LookupKeyField", OwnerAttribute = attr.LogicalName
-                            });
+                        AddLookupColumns(config, attr.LogicalName, displayName, relatedTable, "AlternateKey", keyFields);
                     }
                     else if (rbCustom?.Checked == true)
                     {
                         var fields = _customSelections.TryGetValue(attr.LogicalName, out var sel) ? sel : new List<string>();
-                        config.Columns.Add(new ExcelColumnConfig
-                        {
-                            LogicalName = attr.LogicalName, DisplayName = displayName,
-                            Type = "Lookup", RelatedTable = relatedTable,
-                            Resolution = "Custom", AlternateKeyFields = fields
-                        });
-                        foreach (var f in fields)
-                            config.Columns.Add(new ExcelColumnConfig
-                            {
-                                LogicalName = $"{attr.LogicalName}.{f}",
-                                DisplayName = $"{displayName} ({f})",
-                                Type = "LookupKeyField", OwnerAttribute = attr.LogicalName
-                            });
+                        AddLookupColumns(config, attr.LogicalName, displayName, relatedTable, "Custom", fields);
                     }
                     else
                     {
@@ -598,6 +635,118 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             }
 
             return config;
+        }
+
+        private void AddLookupColumns(
+            ExcelExportConfig config,
+            string logicalName,
+            string displayName,
+            string relatedTable,
+            string resolution,
+            List<string> keyFields)
+        {
+            config.Columns.Add(new ExcelColumnConfig
+            {
+                LogicalName = logicalName,
+                DisplayName = displayName,
+                Type = "Lookup",
+                RelatedTable = relatedTable,
+                Resolution = resolution,
+                AlternateKeyFields = keyFields
+            });
+
+            foreach (var field in keyFields)
+                AddLookupKeyFieldColumns(config, logicalName, displayName, relatedTable, field, new HashSet<string>(), 0);
+        }
+
+        private void AddLookupKeyFieldColumns(
+            ExcelExportConfig config,
+            string ownerLogicalName,
+            string ownerDisplayName,
+            string ownerTable,
+            string fieldLogicalName,
+            HashSet<string> visited,
+            int depth)
+        {
+            var attr = GetAttributeMetadata(ownerTable, fieldLogicalName);
+            var type = attr != null ? GetExcelType(attr) : "String";
+            var displayName = attr?.DisplayName.UserLocalizedLabel?.Label ?? fieldLogicalName;
+
+            var column = new ExcelColumnConfig
+            {
+                LogicalName = $"{ownerLogicalName}.{fieldLogicalName}",
+                DisplayName = $"{ownerDisplayName} ({displayName})",
+                Type = "LookupKeyField",
+                OwnerAttribute = ownerLogicalName,
+                KeyFieldType = type
+            };
+
+            if (type == "OptionSet" || type == "MultiOptionSet")
+            {
+                column.ExportMode = "Label";
+                column.Options = GetOptions(attr);
+            }
+            else if (type == "Lookup")
+            {
+                var targets = (attr as LookupAttributeMetadata)?.Targets ?? new string[0];
+                var nestedTable = targets.FirstOrDefault() ?? string.Empty;
+                column.RelatedTable = nestedTable;
+
+                var key = column.LogicalName;
+                var nestedConfig = _nestedLookupConfigs.TryGetValue(key, out var cfg) ? cfg : null;
+                if (nestedConfig?.Resolution == "Custom" && nestedConfig.Fields.Any())
+                {
+                    column.Resolution = "Custom";
+                    column.AlternateKeyFields = nestedConfig.Fields;
+                }
+                else
+                {
+                    column.Resolution = "Guid";
+                }
+            }
+
+            config.Columns.Add(column);
+
+            if (column.KeyFieldType == "Lookup"
+                && column.Resolution == "Custom"
+                && column.AlternateKeyFields?.Any() == true)
+            {
+                foreach (var nestedField in column.AlternateKeyFields)
+                    AddLookupKeyFieldColumns(config, column.LogicalName, column.DisplayName, column.RelatedTable, nestedField, new HashSet<string>(visited), depth + 1);
+            }
+        }
+
+        private AttributeMetadata GetAttributeMetadata(string tableName, string attributeName)
+        {
+            if (string.IsNullOrWhiteSpace(tableName) || string.IsNullOrWhiteSpace(attributeName)) return null;
+
+            try
+            {
+                return _repo.GetTableMetadata(tableName)
+                    .Attributes
+                    .FirstOrDefault(a => a.LogicalName == attributeName);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private EntityKeyMetadata GetDefaultAlternateKey(string tableName)
+        {
+            if (string.IsNullOrWhiteSpace(tableName)) return null;
+
+            try
+            {
+                return _repo.GetAlternateKeys(tableName)
+                    .OrderBy(k => k.KeyAttributes?.Length ?? int.MaxValue)
+                    .ThenBy(k => k.LogicalName)
+                    .FirstOrDefault();
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         private string GetExcelType(AttributeMetadata attr)
@@ -640,6 +789,207 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             private readonly string _display;
             public AltKeyItem(EntityKeyMetadata key, string display) { Key = key; _display = display; }
             public override string ToString() => _display;
+        }
+
+        private class NestedLookupConfig
+        {
+            public string Resolution { get; set; } = "Guid";
+            public List<string> Fields { get; set; } = new List<string>();
+        }
+
+        #endregion
+
+        #region Nested lookup dialog
+
+        private class NestedLookupConfigDialog : Form
+        {
+            private readonly string _ownerLogicalName;
+            private readonly List<LookupAttributeMetadata> _lookupFields;
+            private readonly CrmRepo _repo;
+            private readonly Dictionary<string, NestedLookupConfig> _existing;
+            private readonly Dictionary<string, RadioButton> _customRadios = new Dictionary<string, RadioButton>();
+            private readonly Dictionary<string, Label> _selectionLabels = new Dictionary<string, Label>();
+            private readonly Dictionary<string, List<string>> _selections = new Dictionary<string, List<string>>();
+
+            public Dictionary<string, NestedLookupConfig> Configs { get; private set; } = new Dictionary<string, NestedLookupConfig>();
+
+            public NestedLookupConfigDialog(
+                string ownerLogicalName,
+                List<LookupAttributeMetadata> lookupFields,
+                CrmRepo repo,
+                Dictionary<string, NestedLookupConfig> existing)
+            {
+                _ownerLogicalName = ownerLogicalName;
+                _lookupFields = lookupFields;
+                _repo = repo;
+                _existing = existing;
+
+                BuildLayout();
+            }
+
+            private void BuildLayout()
+            {
+                Text = "Nested Lookup Resolution";
+                ClientSize = new Size(720, Math.Max(160, Math.Min(560, 72 + _lookupFields.Count * 58)));
+                FormBorderStyle = FormBorderStyle.FixedDialog;
+                MaximizeBox = false;
+                MinimizeBox = false;
+                StartPosition = FormStartPosition.CenterParent;
+                ShowIcon = false;
+                ShowInTaskbar = false;
+
+                var outer = new TableLayoutPanel
+                {
+                    Dock = DockStyle.Fill,
+                    RowCount = 2,
+                    ColumnCount = 1,
+                    Padding = new Padding(10)
+                };
+                outer.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+                outer.RowStyles.Add(new RowStyle(SizeType.Absolute, 44F));
+
+                var panel = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
+                var y = 0;
+                foreach (var field in _lookupFields)
+                {
+                    var row = BuildRow(field, y);
+                    panel.Controls.Add(row);
+                    y += row.Height + 6;
+                }
+
+                var btnRow = new FlowLayoutPanel
+                {
+                    Dock = DockStyle.Fill,
+                    FlowDirection = FlowDirection.RightToLeft,
+                    Padding = new Padding(0, 8, 0, 0)
+                };
+                var btnCancel = new Button { Text = "Cancel", Width = 90, Height = 28, DialogResult = DialogResult.Cancel };
+                var btnOk = new Button { Text = "OK", Width = 90, Height = 28 };
+                btnOk.Click += (s, e) =>
+                {
+                    BuildConfigs();
+                    DialogResult = DialogResult.OK;
+                    Close();
+                };
+                btnRow.Controls.Add(btnCancel);
+                btnRow.Controls.Add(btnOk);
+
+                outer.Controls.Add(panel, 0, 0);
+                outer.Controls.Add(btnRow, 0, 1);
+                Controls.Add(outer);
+                AcceptButton = btnOk;
+                CancelButton = btnCancel;
+            }
+
+            private Panel BuildRow(LookupAttributeMetadata field, int y)
+            {
+                var key = $"{_ownerLogicalName}.{field.LogicalName}";
+                var displayName = field.DisplayName.UserLocalizedLabel?.Label ?? field.LogicalName;
+                var targets = field.Targets ?? new string[0];
+                var target = targets.FirstOrDefault() ?? string.Empty;
+                var existing = _existing.TryGetValue(key, out var cfg) ? cfg : new NestedLookupConfig();
+                _selections[key] = new List<string>(existing.Fields ?? new List<string>());
+
+                var row = new Panel { Location = new Point(0, y), Width = 680, Height = 52 };
+                row.Controls.Add(new Label
+                {
+                    Text = $"{displayName} ({field.LogicalName})",
+                    Location = new Point(0, 6),
+                    Width = 230,
+                    AutoSize = false
+                });
+
+                row.Controls.Add(new Label
+                {
+                    Text = target,
+                    Location = new Point(235, 6),
+                    Width = 120,
+                    ForeColor = Color.DimGray,
+                    AutoSize = false
+                });
+
+                var rbGuid = new RadioButton { Text = "GUID", Location = new Point(360, 4), AutoSize = true, Checked = existing.Resolution != "Custom" };
+                var rbCustom = new RadioButton { Text = "Custom", Location = new Point(360, 24), AutoSize = true, Checked = existing.Resolution == "Custom" };
+                row.Controls.Add(rbGuid);
+                row.Controls.Add(rbCustom);
+                _customRadios[key] = rbCustom;
+
+                var btnSelect = new Button
+                {
+                    Text = "Select attributes...",
+                    Location = new Point(445, 22),
+                    Width = 130,
+                    Height = 24,
+                    Enabled = rbCustom.Checked
+                };
+                var label = new Label
+                {
+                    Text = _selections[key].Any() ? string.Join(", ", _selections[key]) : "(none selected)",
+                    Location = new Point(580, 26),
+                    Width = 95,
+                    ForeColor = Color.DimGray,
+                    AutoSize = false
+                };
+                row.Controls.Add(btnSelect);
+                row.Controls.Add(label);
+                _selectionLabels[key] = label;
+
+                rbCustom.CheckedChanged += (s, e) => btnSelect.Enabled = rbCustom.Checked;
+                btnSelect.Click += (s, e) => SelectNestedAttributes(key, target);
+
+                return row;
+            }
+
+            private void SelectNestedAttributes(string key, string target)
+            {
+                if (string.IsNullOrWhiteSpace(target)) return;
+
+                List<AttributeMetadata> attrs;
+                try
+                {
+                    Cursor = Cursors.WaitCursor;
+                    attrs = _repo.GetTableMetadata(target)
+                        .Attributes
+                        .Where(a => a.IsValidForRead == true
+                                 && a.AttributeType != AttributeTypeCode.Lookup
+                                 && a.AttributeType != AttributeTypeCode.Customer
+                                 && a.AttributeType != AttributeTypeCode.Owner
+                                 && a.AttributeType != AttributeTypeCode.Virtual
+                                 && a.AttributeType != AttributeTypeCode.ManagedProperty)
+                        .OrderBy(a => a.LogicalName)
+                        .ToList();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Could not load attributes for '{target}': {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+                finally
+                {
+                    Cursor = Cursors.Default;
+                }
+
+                using (var dlg = new PropertySelectorDialog(target, attrs, _selections[key]))
+                {
+                    if (dlg.ShowDialog(this) != DialogResult.OK) return;
+                    _selections[key] = dlg.SelectedProperties;
+                    _selectionLabels[key].Text = _selections[key].Any() ? string.Join(", ", _selections[key]) : "(none selected)";
+                }
+            }
+
+            private void BuildConfigs()
+            {
+                foreach (var field in _lookupFields)
+                {
+                    var key = $"{_ownerLogicalName}.{field.LogicalName}";
+                    var useCustom = _customRadios.TryGetValue(key, out var rb) && rb.Checked;
+                    Configs[key] = new NestedLookupConfig
+                    {
+                        Resolution = useCustom ? "Custom" : "Guid",
+                        Fields = useCustom ? _selections[key] : new List<string>()
+                    };
+                }
+            }
         }
 
         #endregion

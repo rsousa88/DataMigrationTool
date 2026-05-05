@@ -218,12 +218,14 @@ namespace Dataverse.XrmTools.DataMigrationTool.Repositories
             return response.EntityMetadata.Keys ?? Enumerable.Empty<EntityKeyMetadata>();
         }
 
-        public Guid? ResolveByAlternateKey(string logicalName, Dictionary<string, string> keyValues)
+        public Guid? ResolveByAlternateKey(string logicalName, Dictionary<string, object> keyValues)
         {
             var filter = new FilterExpression(LogicalOperator.And);
             foreach (var kv in keyValues)
             {
-                filter.Conditions.Add(new ConditionExpression(kv.Key, ConditionOperator.Equal, kv.Value));
+                filter.Conditions.Add(kv.Value == null
+                    ? new ConditionExpression(kv.Key, ConditionOperator.Null)
+                    : new ConditionExpression(kv.Key, ConditionOperator.Equal, kv.Value));
             }
 
             var query = new QueryExpression(logicalName)

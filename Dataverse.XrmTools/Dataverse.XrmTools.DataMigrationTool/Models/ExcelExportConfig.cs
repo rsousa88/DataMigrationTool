@@ -32,6 +32,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
 
         // LookupKeyField only
         public string OwnerAttribute { get; set; }
+        public string KeyFieldType { get; set; }
 
         // OptionSet / MultiOptionSet only
         public string ExportMode { get; set; }        // "Value" | "Label"

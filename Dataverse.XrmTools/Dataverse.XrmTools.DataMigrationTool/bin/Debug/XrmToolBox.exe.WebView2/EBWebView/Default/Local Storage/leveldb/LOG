@@ -1,2 +1,3 @@
-2026/04/30-15:37:00.123 3368 Creating DB C:\repos\github\DataMigrationTool\Dataverse.XrmTools\Dataverse.XrmTools.DataMigrationTool\bin\Debug\XrmToolBox.exe.WebView2\EBWebView\Default\Local Storage\leveldb since it was missing.
-2026/04/30-15:37:00.186 3368 Reusing MANIFEST C:\repos\github\DataMigrationTool\Dataverse.XrmTools\Dataverse.XrmTools.DataMigrationTool\bin\Debug\XrmToolBox.exe.WebView2\EBWebView\Default\Local Storage\leveldb/MANIFEST-000001
+2026/05/05-01:10:11.728 430c Reusing MANIFEST C:\repos\github\DataMigrationTool\Dataverse.XrmTools\Dataverse.XrmTools.DataMigrationTool\bin\Debug\XrmToolBox.exe.WebView2\EBWebView\Default\Local Storage\leveldb/MANIFEST-000001
+2026/05/05-01:10:11.742 430c Recovering log #3
+2026/05/05-01:10:11.745 430c Reusing old log C:\repos\github\DataMigrationTool\Dataverse.XrmTools\Dataverse.XrmTools.DataMigrationTool\bin\Debug\XrmToolBox.exe.WebView2\EBWebView\Default\Local Storage\leveldb/000003.log 

@@ -8,6 +8,7 @@ using System.Globalization;
 // Microsoft
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Metadata;
+using Microsoft.Xrm.Sdk.Query;
 
 // ClosedXML
 using ClosedXML.Excel;
@@ -29,7 +30,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
         #region Export
 
-        public void Export(ExcelExportConfig config, IEnumerable<Entity> records, string filePath)
+        public void Export(ExcelExportConfig config, IEnumerable<Entity> records, string filePath, IOrganizationService sourceService = null)
         {
             using (var wb = new XLWorkbook())
             {
@@ -40,13 +41,14 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 WriteMetadata(metaSheet, config);
                 WriteHeaders(dataSheet, config);
                 WriteHints(dataSheet, config);
-                WriteData(dataSheet, config, records);
+                WriteData(dataSheet, config, records, sourceService);
 
                 // Hide the GUID column for lookups resolved via alt-key or custom — users only need the key field columns
                 for (var i = 0; i < config.Columns.Count; i++)
                 {
                     var col = config.Columns[i];
-                    if (col.Type == "Lookup" && col.Resolution != "Guid")
+                    if ((col.Type == "Lookup" && col.Resolution != "Guid")
+                        || (col.Type == "LookupKeyField" && col.KeyFieldType == "Lookup" && col.Resolution != "Guid"))
                         dataSheet.Column(i + 1).Hide();
                 }
 
@@ -98,9 +100,13 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                         ? "Lookup (GUID)"
                         : $"Lookup → {column.RelatedTable} (GUID)";
                 case "LookupKeyField":
-                    return string.IsNullOrEmpty(column.RelatedTable)
-                        ? $"Key for {column.OwnerAttribute}"
-                        : $"Lookup → {column.RelatedTable}";
+                    if (column.KeyFieldType == "OptionSet")
+                        return column.ExportMode == "Label" ? "Key choice label" : "Key choice value";
+                    if (column.KeyFieldType == "Lookup")
+                        return string.IsNullOrEmpty(column.RelatedTable)
+                            ? $"Lookup key for {column.OwnerAttribute}"
+                            : $"Lookup key -> {column.RelatedTable}";
+                    return $"Key for {column.OwnerAttribute}";
                 case "OptionSet":
                     return column.ExportMode == "Label" ? "Option Label" : "Option Value (Integer)";
                 case "MultiOptionSet":
@@ -116,9 +122,18 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             }
         }
 
-        private void WriteData(IXLWorksheet sheet, ExcelExportConfig config, IEnumerable<Entity> records)
+        private void WriteData(IXLWorksheet sheet, ExcelExportConfig config, IEnumerable<Entity> records, IOrganizationService sourceService)
         {
             if (records == null) return;
+
+            var childColumns = config.Columns
+                .Where(c => c.Type == "LookupKeyField")
+                .GroupBy(c => c.OwnerAttribute)
+                .ToDictionary(g => g.Key, g => g.ToList());
+            var columnIndexes = config.Columns
+                .Select((column, index) => new { column, index })
+                .ToDictionary(x => x.column.LogicalName, x => x.index + 1);
+            var relatedRecordCache = new Dictionary<string, Entity>();
 
             var row = 3;
             foreach (var entity in records)
@@ -130,8 +145,145 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     WriteCell(cell, column, entity);
                     col++;
                 }
+
+                foreach (var lookupColumn in config.Columns.Where(c => c.Type == "Lookup" && c.Resolution != "Guid"))
+                    WriteRelatedLookupColumns(sheet, row, lookupColumn, entity, childColumns, columnIndexes, relatedRecordCache, sourceService);
                 row++;
             }
+        }
+
+        private void WriteRelatedLookupColumns(
+            IXLWorksheet sheet,
+            int row,
+            ExcelColumnConfig lookupColumn,
+            Entity ownerRecord,
+            Dictionary<string, List<ExcelColumnConfig>> childColumns,
+            Dictionary<string, int> columnIndexes,
+            Dictionary<string, Entity> relatedRecordCache,
+            IOrganizationService sourceService)
+        {
+            var ownerFieldName = lookupColumn.Type == "LookupKeyField"
+                ? GetOwnedFieldName(lookupColumn)
+                : lookupColumn.LogicalName;
+
+            if (!ownerRecord.Attributes.Contains(ownerFieldName)
+                || !(ownerRecord[ownerFieldName] is EntityReference reference)
+                || string.IsNullOrWhiteSpace(lookupColumn.RelatedTable))
+            {
+                return;
+            }
+
+            if (columnIndexes.TryGetValue(lookupColumn.LogicalName, out var lookupColumnIndex))
+                WriteRelatedLookupCell(sheet.Cell(row, lookupColumnIndex), reference.Id, lookupColumn);
+
+            var relatedRecord = GetRelatedRecord(reference, lookupColumn, relatedRecordCache, sourceService);
+            if (relatedRecord == null || !childColumns.TryGetValue(lookupColumn.LogicalName, out var keys)) return;
+
+            foreach (var keyColumn in keys)
+            {
+                if (!columnIndexes.TryGetValue(keyColumn.LogicalName, out var keyColumnIndex)) continue;
+
+                var keyField = GetOwnedFieldName(keyColumn);
+                var value = relatedRecord.Attributes.Contains(keyField)
+                    ? relatedRecord[keyField]
+                    : null;
+                WriteRelatedLookupCell(sheet.Cell(row, keyColumnIndex), value, keyColumn);
+
+                if (keyColumn.KeyFieldType == "Lookup" && keyColumn.Resolution != "Guid")
+                {
+                    WriteRelatedLookupColumns(sheet, row, keyColumn, relatedRecord, childColumns, columnIndexes, relatedRecordCache, sourceService);
+                }
+            }
+        }
+
+        private Entity GetRelatedRecord(
+            EntityReference reference,
+            ExcelColumnConfig lookupColumn,
+            Dictionary<string, Entity> relatedRecordCache,
+            IOrganizationService sourceService)
+        {
+            var relatedTable = !string.IsNullOrWhiteSpace(reference.LogicalName)
+                ? reference.LogicalName
+                : lookupColumn.RelatedTable;
+            var cacheKey = $"{relatedTable}:{reference.Id:D}:{string.Join(",", lookupColumn.AlternateKeyFields)}";
+            if (relatedRecordCache.TryGetValue(cacheKey, out var cached)) return cached;
+
+            Entity relatedRecord = null;
+            try
+            {
+                relatedRecord = sourceService?.Retrieve(
+                    relatedTable,
+                    reference.Id,
+                    new ColumnSet(lookupColumn.AlternateKeyFields.ToArray()));
+            }
+            catch
+            {
+                // Leave related columns blank if the referenced row cannot be loaded.
+            }
+
+            relatedRecordCache[cacheKey] = relatedRecord;
+            return relatedRecord;
+        }
+
+        private void WriteRelatedLookupCell(IXLCell cell, object value, ExcelColumnConfig column)
+        {
+            if (value == null)
+            {
+                cell.SetValue(string.Empty);
+                return;
+            }
+
+            if (value is AliasedValue aliased)
+            {
+                WriteRelatedLookupCell(cell, aliased.Value, column);
+                return;
+            }
+
+            switch (value)
+            {
+                case EntityReference reference:
+                    cell.SetValue(reference.Id.ToString("D"));
+                    cell.Style.NumberFormat.NumberFormatId = 49;
+                    break;
+                case OptionSetValue option:
+                    if (column.ExportMode == "Label")
+                    {
+                        var label = column.Options?.FirstOrDefault(o => o.Value == option.Value)?.Label ?? option.Value.ToString();
+                        cell.SetValue(label);
+                    }
+                    else
+                    {
+                        cell.SetValue(option.Value);
+                    }
+                    break;
+                case Money money:
+                    cell.SetValue(money.Value);
+                    break;
+                case DateTime date:
+                    cell.SetValue(date.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture));
+                    cell.Style.NumberFormat.NumberFormatId = 49;
+                    break;
+                case bool boolean:
+                    cell.SetValue(boolean.ToString().ToLowerInvariant());
+                    cell.Style.NumberFormat.NumberFormatId = 49;
+                    break;
+                case Guid guid:
+                    cell.SetValue(guid.ToString("D"));
+                    cell.Style.NumberFormat.NumberFormatId = 49;
+                    break;
+                default:
+                    cell.SetValue(Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty);
+                    cell.Style.NumberFormat.NumberFormatId = 49;
+                    break;
+            }
+        }
+
+        private string GetOwnedFieldName(ExcelColumnConfig column)
+        {
+            return !string.IsNullOrWhiteSpace(column.OwnerAttribute)
+                && column.LogicalName.StartsWith(column.OwnerAttribute + ".", StringComparison.Ordinal)
+                ? column.LogicalName.Substring(column.OwnerAttribute.Length + 1)
+                : column.LogicalName;
         }
 
         private void WriteCell(IXLCell cell, ExcelColumnConfig column, Entity entity)
@@ -431,8 +583,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 case "OptionSet":
                     if (column.ExportMode == "Label")
                     {
-                        var match = column.Options?.FirstOrDefault(o => o.Label.Equals(cellValue, StringComparison.OrdinalIgnoreCase));
-                        if (match == null) throw new Exception($"Option label '{cellValue}' not found.");
+                        var match = MatchOptionLabel(column, cellValue);
                         value = new OptionSetValue(match.Value);
                     }
                     else
@@ -448,8 +599,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     {
                         if (column.ExportMode == "Label")
                         {
-                            var match = column.Options?.FirstOrDefault(o => o.Label.Equals(part, StringComparison.OrdinalIgnoreCase));
-                            if (match == null) throw new Exception($"Option label '{part}' not found.");
+                            var match = MatchOptionLabel(column, part);
                             optionValues.Add(new OptionSetValue(match.Value));
                         }
                         else
@@ -461,23 +611,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     break;
 
                 case "Lookup":
-                    if (column.Resolution == "AlternateKey" && altKeyGroups.ContainsKey(column.LogicalName))
+                    if (column.Resolution != "Guid" && altKeyGroups.ContainsKey(column.LogicalName))
                     {
-                        // Collect key field values from their dedicated columns
-                        var keyValues = new Dictionary<string, string>();
-                        foreach (var keyCol in altKeyGroups[column.LogicalName])
-                        {
-                            if (headerMap.TryGetValue(keyCol.LogicalName, out var keyColNum))
-                            {
-                                var keyVal = sheet.Cell(row, keyColNum).GetString();
-                                var fieldName = keyCol.LogicalName.Substring(column.LogicalName.Length + 1);
-                                keyValues[fieldName] = keyVal;
-                            }
-                        }
-
                         if (targetRepo == null) throw new Exception("Target connection required for alternate key resolution.");
+                        var keyValues = BuildLookupKeyValues(column, row, sheet, headerMap, altKeyGroups, targetRepo);
                         var resolvedId = targetRepo.ResolveByAlternateKey(column.RelatedTable, keyValues);
-                        if (!resolvedId.HasValue) throw new Exception($"No match found in '{column.RelatedTable}' for keys: {string.Join(", ", keyValues.Select(kv => $"{kv.Key}='{kv.Value}'"))}");
+                        if (!resolvedId.HasValue) throw new Exception($"No match found in '{column.RelatedTable}' for keys: {FormatKeyValues(keyValues)}");
 
                         value = new EntityReference(column.RelatedTable, resolvedId.Value);
                     }
@@ -498,6 +637,105 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 Type = MapToAttributeType(type),
                 Value = value
             };
+        }
+
+        private Dictionary<string, object> BuildLookupKeyValues(
+            ExcelColumnConfig lookupColumn,
+            int row,
+            IXLWorksheet sheet,
+            Dictionary<string, int> headerMap,
+            Dictionary<string, List<ExcelColumnConfig>> altKeyGroups,
+            CrmRepo targetRepo)
+        {
+            var keyValues = new Dictionary<string, object>();
+            if (!altKeyGroups.TryGetValue(lookupColumn.LogicalName, out var keyColumns)) return keyValues;
+
+            foreach (var keyColumn in keyColumns)
+            {
+                if (!headerMap.TryGetValue(keyColumn.LogicalName, out var keyColNum)) continue;
+
+                var cellValue = sheet.Cell(row, keyColNum).GetString();
+                var fieldName = GetOwnedFieldName(keyColumn);
+                keyValues[fieldName] = string.IsNullOrWhiteSpace(cellValue)
+                    ? null
+                    : ParseLookupKeyFieldValue(keyColumn, cellValue, row, sheet, headerMap, altKeyGroups, targetRepo);
+            }
+
+            return keyValues;
+        }
+
+        private object ParseLookupKeyFieldValue(
+            ExcelColumnConfig keyColumn,
+            string cellValue,
+            int row,
+            IXLWorksheet sheet,
+            Dictionary<string, int> headerMap,
+            Dictionary<string, List<ExcelColumnConfig>> altKeyGroups,
+            CrmRepo targetRepo)
+        {
+            switch (keyColumn.KeyFieldType ?? "String")
+            {
+                case "Integer":
+                    return int.Parse(cellValue, CultureInfo.InvariantCulture);
+                case "BigInt":
+                    return long.Parse(cellValue, CultureInfo.InvariantCulture);
+                case "Decimal":
+                    return decimal.Parse(cellValue, CultureInfo.InvariantCulture);
+                case "Double":
+                    return double.Parse(cellValue, CultureInfo.InvariantCulture);
+                case "Money":
+                    return decimal.Parse(cellValue, CultureInfo.InvariantCulture);
+                case "Boolean":
+                    return bool.Parse(cellValue);
+                case "DateTime":
+                    return DateTime.Parse(cellValue, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
+                case "Guid":
+                    return Guid.Parse(cellValue);
+                case "OptionSet":
+                    return keyColumn.ExportMode == "Label"
+                        ? MatchOptionLabel(keyColumn, cellValue).Value
+                        : int.Parse(cellValue, CultureInfo.InvariantCulture);
+                case "Lookup":
+                    return ResolveNestedLookupKey(keyColumn, cellValue, row, sheet, headerMap, altKeyGroups, targetRepo);
+                default:
+                    return cellValue;
+            }
+        }
+
+        private Guid ResolveNestedLookupKey(
+            ExcelColumnConfig keyColumn,
+            string cellValue,
+            int row,
+            IXLWorksheet sheet,
+            Dictionary<string, int> headerMap,
+            Dictionary<string, List<ExcelColumnConfig>> altKeyGroups,
+            CrmRepo targetRepo)
+        {
+            if (keyColumn.Resolution != "Guid" && altKeyGroups.ContainsKey(keyColumn.LogicalName))
+            {
+                var nestedKeyValues = BuildLookupKeyValues(keyColumn, row, sheet, headerMap, altKeyGroups, targetRepo);
+                var resolvedId = targetRepo.ResolveByAlternateKey(keyColumn.RelatedTable, nestedKeyValues);
+                if (!resolvedId.HasValue) throw new Exception($"No match found in '{keyColumn.RelatedTable}' for keys: {FormatKeyValues(nestedKeyValues)}");
+                return resolvedId.Value;
+            }
+
+            return Guid.Parse(cellValue);
+        }
+
+        private OptionConfig MatchOptionLabel(ExcelColumnConfig column, string label)
+        {
+            var matches = column.Options?
+                .Where(o => o.Label.Equals(label, StringComparison.OrdinalIgnoreCase))
+                .ToList() ?? new List<OptionConfig>();
+
+            if (matches.Count == 0) throw new Exception($"Option label '{label}' not found.");
+            if (matches.Count > 1) throw new Exception($"Option label '{label}' is ambiguous. Export/import this column using option values.");
+            return matches[0];
+        }
+
+        private string FormatKeyValues(Dictionary<string, object> keyValues)
+        {
+            return string.Join(", ", keyValues.Select(kv => $"{kv.Key}='{kv.Value}'"));
         }
 
         private Enums.AttributeType MapToAttributeType(string type)
