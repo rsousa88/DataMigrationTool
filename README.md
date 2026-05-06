@@ -65,6 +65,9 @@ Manual mappings can also be defined for any lookup field.
 - [FIX] Preview now validates missing FetchXML link-entity aliases and shows a friendly error instead of crashing
 - [FIX] Result and import preview tables now sort row numbers numerically and support cleaner copy/sort behavior
 - [FIX] Import wizard layout was polished and user/team auto-map options were removed in favor of explicit mappings
+- [FIX] Import wizard now uses safer default batch sizes for Dataverse timeout-sensitive tables
+- [FIX] Import progress now shows processed record counts and percentage during execution
+- [FIX] Organization mapping option in the import wizard now has clearer wording
 
 ### 2026.5.5.x
 - [NEW] Excel lookup key fields can now populate related columns during export

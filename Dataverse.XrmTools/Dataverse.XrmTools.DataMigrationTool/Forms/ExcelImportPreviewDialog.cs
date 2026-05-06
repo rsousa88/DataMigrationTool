@@ -207,10 +207,10 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             panel.Controls.Add(custom, 1, 3);
 
             panel.Controls.Add(new Label { Text = "Batch size:", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 4);
-            panel.Controls.Add(new NumericUpDown { Name = "nudBatchSize", Dock = DockStyle.Left, Width = 86, Minimum = 1, Maximum = 5000, Value = Math.Max(1, Math.Min(5000, Settings.BatchSize)) }, 1, 4);
+            panel.Controls.Add(new NumericUpDown { Name = "nudBatchSize", Dock = DockStyle.Left, Width = 86, Minimum = 1, Maximum = 100, Value = Math.Max(1, Math.Min(100, Settings.BatchSize)) }, 1, 4);
 
             panel.Controls.Add(new Label { Text = "Mappings:", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 5);
-            panel.Controls.Add(new CheckBox { Name = "cbApplyMappings", Text = "Apply mappings during import", AutoSize = true, Checked = Settings.ApplyMappingsOn == Operation.Import }, 1, 5);
+            panel.Controls.Add(new CheckBox { Name = "cbApplyMappings", Text = "Use organization mappings", AutoSize = true, Checked = Settings.ApplyMappingsOn == Operation.Import }, 1, 5);
 
             var note = new Label
             {
@@ -460,7 +460,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             return new UiSettings
             {
                 Action = settings.Action,
-                BatchSize = settings.BatchSize <= 0 ? 250 : settings.BatchSize,
+                BatchSize = settings.BatchSize <= 0 ? 25 : Math.Min(settings.BatchSize, 25),
                 MapUsers = false,
                 MapTeams = false,
                 MapBu = settings.MapBu,

@@ -197,7 +197,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
             // execute
             var diffCount = itemList.Count;
-            ReportStatus($"Executing {diffCount} record operation(s) in batches of {uiSettings.BatchSize}...");
+            ReportStatus($"Import: 0/{diffCount} records processed\r\n0%", 0);
+            ReportStatus($"Executing {diffCount} record operation(s) in batches of {uiSettings.BatchSize}...", 0);
 
             var done = 0;
             var lvItems = new List<ListViewItem>();
@@ -209,9 +210,11 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 var batchNum = i + 1;
 
                 var batchRows = itemList.Skip(done).Take(uiSettings.BatchSize).ToList();
-                ReportStatus($"Executing batch {batchNum} of {maxBatch} ({batchRows.Count} records)...");
+                var batchStart = done + 1;
+                var batchEnd = done + batchRows.Count;
+                ReportStatus($"Import: processing records {batchStart}-{batchEnd} of {diffCount}\r\n{GetProgressPercentage(done, diffCount)}%", GetProgressPercentage(done, diffCount));
 
-                var responses = ExecuteOperation(uiSettings.Action, batchRows);
+                var responses = ExecuteOperation(uiSettings.Action, batchRows, done, diffCount);
 
                 var join = batchRows.Join(responses, mig => mig.Record.Id, res => res.Id, (mig, res) => new
                 {
@@ -230,7 +233,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
                 // increment done counter
                 done += batchRows.Count();
-                ReportStatus($"Completed batch {batchNum} of {maxBatch}. {done} of {diffCount} record operations processed.");
+                ReportStatus($"Import: {done}/{diffCount} records processed\r\n{GetProgressPercentage(done, diffCount)}%", GetProgressPercentage(done, diffCount));
             }
 
             // set results
@@ -241,6 +244,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
         private void ReportStatus(string message, int progress = 0)
         {
             _worker?.ReportProgress(progress, message);
+        }
+
+        private int GetProgressPercentage(int processed, int total)
+        {
+            if (total <= 0) return 0;
+            return Math.Max(0, Math.Min(100, (int)Math.Round((processed * 100m) / total)));
         }
 
         private IEnumerable<MigrationItem> GetDiffRecords(Enums.Action action, bool targetReady)
@@ -283,28 +292,35 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             return diffs;
         }
 
-        private IEnumerable<CrmBulkResponse> ExecuteOperation(Enums.Action mode, IEnumerable<MigrationItem> migrationItems)
+        private IEnumerable<CrmBulkResponse> ExecuteOperation(Enums.Action mode, IEnumerable<MigrationItem> migrationItems, int processedBeforeBatch, int total)
         {
             var repo = new CrmRepo(_targetSvc, _worker);
 
             var responses = new List<CrmBulkResponse>();
+            var processedInBatch = 0;
             if ((mode & Enums.Action.Create) == Enums.Action.Create)
             {
                 var records = migrationItems.Where(mig => (mig.Action & Enums.Action.Create) == Enums.Action.Create).Select(mig => mig.Record).ToList();
-                if (records.Any()) ReportStatus($"Creating {records.Count} record(s) in Dataverse...");
+                if (records.Any())
+                    ReportStatus($"Import: creating {records.Count} record(s) ({processedBeforeBatch + processedInBatch + records.Count}/{total})\r\n{GetProgressPercentage(processedBeforeBatch + processedInBatch, total)}%", GetProgressPercentage(processedBeforeBatch + processedInBatch, total));
                 responses.AddRange(repo.CreateRecords(records));
+                processedInBatch += records.Count;
             }
             if ((mode & Enums.Action.Update) == Enums.Action.Update)
             {
                 var records = migrationItems.Where(mig => (mig.Action & Enums.Action.Update) == Enums.Action.Update).Select(mig => mig.Record).ToList();
-                if (records.Any()) ReportStatus($"Updating {records.Count} record(s) in Dataverse...");
+                if (records.Any())
+                    ReportStatus($"Import: updating {records.Count} record(s) ({processedBeforeBatch + processedInBatch + records.Count}/{total})\r\n{GetProgressPercentage(processedBeforeBatch + processedInBatch, total)}%", GetProgressPercentage(processedBeforeBatch + processedInBatch, total));
                 responses.AddRange(repo.UpdateRecords(records));
+                processedInBatch += records.Count;
             }
             if ((mode & Enums.Action.Delete) == Enums.Action.Delete)
             {
                 var records = migrationItems.Where(mig => (mig.Action & Enums.Action.Delete) == Enums.Action.Delete).Select(mig => mig.Record).ToList();
-                if (records.Any()) ReportStatus($"Deleting {records.Count} record(s) in Dataverse...");
+                if (records.Any())
+                    ReportStatus($"Import: deleting {records.Count} record(s) ({processedBeforeBatch + processedInBatch + records.Count}/{total})\r\n{GetProgressPercentage(processedBeforeBatch + processedInBatch, total)}%", GetProgressPercentage(processedBeforeBatch + processedInBatch, total));
                 responses.AddRange(repo.DeleteRecords(records));
+                processedInBatch += records.Count;
             }
 
             return responses;

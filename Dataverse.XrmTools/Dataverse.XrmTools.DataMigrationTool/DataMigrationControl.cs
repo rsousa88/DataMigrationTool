@@ -75,6 +75,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
             LogInfo("Initializing components...");
             InitializeComponent();
+            tsmiEnvironments.Image = CreateEnvironmentsIcon();
             MoveImportSettingsIntoDialogs();
 
             _logger = new Logger();
@@ -855,10 +856,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         ThrowIfCancelled(worker);
                         var excelLogic = new Logic.ExcelLogic();
 
-                        var config = excelLogic.ReadMetadata(filePath);
-                        ThrowIfCancelled(worker);
-                        worker.ReportProgress(0, $"Excel import: reading rows for {config?.Table?.LogicalName ?? "table"}...");
-                        var collection = excelLogic.ImportFromExcel(filePath, config, _targetClient, worker);
+                        var collection = excelLogic.ImportFromExcel(filePath, out ExcelExportConfig config, _targetClient, worker);
                         ThrowIfCancelled(worker);
                         worker.ReportProgress(0, $"Excel import: read {collection?.Count ?? 0} records with {collection?.ImportErrors?.Count ?? 0} warning(s).");
 
@@ -992,19 +990,28 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     try
                     {
                         dynamic args = evt.Argument;
+                        string reloadFilePath = args.filePath;
+                        var reloadOperationId = (int)args.operationId;
+                        var reloadMatchKey = args.matchKey as ExcelImportMatchKeySelection;
                         worker.ReportProgress(0, "Excel import: re-reading workbook metadata...");
                         ThrowIfCancelled(worker);
                         var excelLogic = new Logic.ExcelLogic();
-                        var config = excelLogic.ReadMetadata(args.filePath);
-                        ThrowIfCancelled(worker);
-                        worker.ReportProgress(0, "Excel import: applying selected match key...");
-                        ApplyImportMatchKeySelection(config, args.matchKey as ExcelImportMatchKeySelection);
-                        ThrowIfCancelled(worker);
-                        worker.ReportProgress(0, $"Excel import: resolving rows using {config.MatchKeyMode} match key...");
-                        var collection = excelLogic.ImportFromExcel(args.filePath, config, _targetClient, worker);
+                        var collection = excelLogic.ImportFromExcel(
+                            reloadFilePath,
+                            out ExcelExportConfig config,
+                            _targetClient,
+                            worker,
+                            importConfig =>
+                            {
+                                ThrowIfCancelled(worker);
+                                worker.ReportProgress(0, "Excel import: applying selected match key...");
+                                ApplyImportMatchKeySelection(importConfig, reloadMatchKey);
+                                ThrowIfCancelled(worker);
+                                worker.ReportProgress(0, $"Excel import: resolving rows using {importConfig.MatchKeyMode} match key...");
+                            });
                         ThrowIfCancelled(worker);
                         worker.ReportProgress(0, $"Excel import: read {collection?.Count ?? 0} records with {collection?.ImportErrors?.Count ?? 0} warning(s).");
-                        evt.Result = new ExcelImportSession { FilePath = args.filePath, Config = config, Collection = collection, OperationId = args.operationId };
+                        evt.Result = new ExcelImportSession { FilePath = reloadFilePath, Config = config, Collection = collection, OperationId = reloadOperationId };
                     }
                     catch (OperationCanceledException)
                     {
@@ -1637,9 +1644,40 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void RenderConnectionLabel(ConnectionType serviceType, string name)
         {
-            var label = serviceType.Equals(ConnectionType.Source) ? lblSourceValue : lblTargetValue;
-            label.Text = name;
-            label.ForeColor = Color.MediumSeaGreen;
+            var label = serviceType.Equals(ConnectionType.Source) ? lblSourceConn : lblTargetConn;
+            var prefix = serviceType.Equals(ConnectionType.Source) ? "Source" : "Target";
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                label.Text = $"{prefix}: Disconnected";
+                label.ForeColor = Color.DarkRed;
+            }
+            else
+            {
+                label.Text = $"{prefix}: {name}";
+                label.ForeColor = Color.MediumSeaGreen;
+            }
+        }
+
+        private static Image CreateEnvironmentsIcon(int size = 20)
+        {
+            var bmp = new Bitmap(size, size);
+            using (var g = Graphics.FromImage(bmp))
+            {
+                g.Clear(Color.Transparent);
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                using (var pen = new Pen(Color.FromArgb(80, 80, 80), 1.5f))
+                {
+                    // Right-pointing arrow (top)
+                    g.DrawLine(pen, 2, 7, 15, 7);
+                    g.DrawLine(pen, 12, 4, 15, 7);
+                    g.DrawLine(pen, 12, 10, 15, 7);
+                    // Left-pointing arrow (bottom)
+                    g.DrawLine(pen, 5, 13, 18, 13);
+                    g.DrawLine(pen, 5, 13, 8, 10);
+                    g.DrawLine(pen, 5, 13, 8, 16);
+                }
+            }
+            return bmp;
         }
 
         private void RenderMappingsButton()
@@ -1670,8 +1708,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
             if (sourceReady) // source connection is available
             {
-                btnSelectTarget.Enabled = enable;
-                btnSwitch.Enabled = enable && targetReady;
+                tsmiConnectTarget.Enabled = enable;
+                tsmiSwitchConnections.Enabled = enable && targetReady;
                 gbTables.Enabled = enable;
 
                 if (targetReady) // source and target connection is available
@@ -1739,7 +1777,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             return new UiSettings
             {
                 Action = action,
-                BatchSize = saved.BatchSize > 0 ? saved.BatchSize : 250,
+                BatchSize = saved.BatchSize > 0 ? Math.Min(saved.BatchSize, 25) : 25,
                 MapUsers = saved.MapUsers,
                 MapTeams = saved.MapTeams,
                 MapBu = saved.MapBu,
@@ -1831,34 +1869,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             pnlMain.ColumnStyles[0].SizeType = SizeType.Percent;
             pnlMain.ColumnStyles[0].Width = 100;
 
-            // Keep the environment section compact, left-aligned, and readable on one line.
-            var gap = 10;
-            var margin = 8;
-            var yLabel = 25;
-            var yValue = 23;
-            var yButton = 20;
-            var sourceLabelWidth = 50;
-            var targetLabelWidth = 48;
-            var valueWidth = Math.Max(160, Math.Min(260, (gbEnvironments.ClientSize.Width - 390) / 2));
-            var connectWidth = 132;
-            var switchWidth = 46;
-
-            btnSelectTarget.Anchor = AnchorStyles.Top | AnchorStyles.Left;
-            btnSwitch.Anchor = AnchorStyles.Top | AnchorStyles.Left;
-
-            var x = margin;
-            lblSource.SetBounds(x, yLabel, sourceLabelWidth, lblSource.Height);
-            x = lblSource.Right + 4;
-            lblSourceValue.SetBounds(x, yValue, valueWidth, 17);
-            x = lblSourceValue.Right + gap;
-            lblTarget.SetBounds(x, yLabel, targetLabelWidth, lblTarget.Height);
-            x = lblTarget.Right + 4;
-            lblTargetValue.SetBounds(x, yValue, valueWidth, 17);
-            x = lblTargetValue.Right + gap;
-            btnSelectTarget.SetBounds(x, yButton, connectWidth, btnSelectTarget.Height);
-            x = btnSelectTarget.Right + 6;
-            btnSwitch.SetBounds(x, yButton, switchWidth, btnSwitch.Height);
-
             btnMappings.Left = (btnMappings.Parent.Width - btnMappings.Width) / 2;
         }
 
@@ -1945,7 +1955,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
         }
 
-        private void btnSelectTarget_Click(object sender, EventArgs e)
+        private void tsmiConnectTarget_Click(object sender, EventArgs e)
         {
             try
             {
@@ -1959,7 +1969,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
         }
 
-        private void btnSwitch_Click(object sender, EventArgs e)
+        private void tsmiSwitchConnections_Click(object sender, EventArgs e)
         {
             try
             {

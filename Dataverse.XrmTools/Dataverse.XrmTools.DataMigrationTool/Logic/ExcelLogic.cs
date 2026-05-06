@@ -28,6 +28,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
     {
         private const string DataSheetName = "Data";
         private const string MetaSheetName = "_dmt";
+        private Dictionary<string, Guid?> _lookupResolutionCache;
+        private Dictionary<string, Guid?> _matchKeyResolutionCache;
 
         #region Export
 
@@ -484,15 +486,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
         {
             using (var wb = new XLWorkbook(filePath))
             {
-                if (!wb.Worksheets.Contains(MetaSheetName))
-                    throw new Exception("This file was not exported from Data Migration Tool — metadata sheet '_dmt' is missing.");
-
-                var metaSheet = wb.Worksheet(MetaSheetName);
-                var json = metaSheet.Cell("A1").GetString();
-                if (string.IsNullOrWhiteSpace(json))
-                    throw new Exception("Metadata sheet '_dmt' is empty.");
-
-                return JsonConvert.DeserializeObject<ExcelExportConfig>(json);
+                return ReadMetadata(wb);
             }
         }
 
@@ -500,96 +494,133 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
         {
             using (var wb = new XLWorkbook(filePath))
             {
+                return ImportFromWorkbook(wb, config, targetService, worker);
+            }
+        }
+
+        public RecordCollection ImportFromExcel(string filePath, out ExcelExportConfig config, IOrganizationService targetService, BackgroundWorker worker = null)
+        {
+            return ImportFromExcel(filePath, out config, targetService, worker, null);
+        }
+
+        public RecordCollection ImportFromExcel(string filePath, out ExcelExportConfig config, IOrganizationService targetService, BackgroundWorker worker, Action<ExcelExportConfig> configure)
+        {
+            using (var wb = new XLWorkbook(filePath))
+            {
+                config = ReadMetadata(wb);
+                configure?.Invoke(config);
+                return ImportFromWorkbook(wb, config, targetService, worker);
+            }
+        }
+
+        private ExcelExportConfig ReadMetadata(XLWorkbook wb)
+        {
+            if (!wb.Worksheets.Contains(MetaSheetName))
+                throw new Exception("This file was not exported from Data Migration Tool — metadata sheet '_dmt' is missing.");
+
+            var metaSheet = wb.Worksheet(MetaSheetName);
+            var json = metaSheet.Cell("A1").GetString();
+            if (string.IsNullOrWhiteSpace(json))
+                throw new Exception("Metadata sheet '_dmt' is empty.");
+
+            return JsonConvert.DeserializeObject<ExcelExportConfig>(json);
+        }
+
+        private RecordCollection ImportFromWorkbook(XLWorkbook wb, ExcelExportConfig config, IOrganizationService targetService, BackgroundWorker worker = null)
+        {
+            _lookupResolutionCache = new Dictionary<string, Guid?>(StringComparer.OrdinalIgnoreCase);
+            _matchKeyResolutionCache = new Dictionary<string, Guid?>(StringComparer.OrdinalIgnoreCase);
+
+            ThrowIfCancelled(worker);
+            if (!wb.Worksheets.Contains(DataSheetName))
+                throw new Exception("Data sheet 'Data' not found in the file.");
+
+            var dataSheet = wb.Worksheet(DataSheetName);
+            var records = new List<Record>();
+            var importErrors = new List<string>();
+            var lastRow = dataSheet.LastRowUsed()?.RowNumber() ?? 2;
+
+            var headerMap = BuildHeaderMap(dataSheet, config);
+            var firstDataRow = GetFirstDataRow(dataSheet, config, headerMap);
+            var totalRows = Math.Max(0, lastRow - firstDataRow + 1);
+
+            var altKeyGroups = config.Columns
+                .Where(c => c.Type == "LookupKeyField")
+                .GroupBy(c => c.OwnerAttribute)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            var targetRepo = targetService != null ? new CrmRepo(targetService, worker) : null;
+
+            for (var row = firstDataRow; row <= lastRow; row++)
+            {
                 ThrowIfCancelled(worker);
-                if (!wb.Worksheets.Contains(DataSheetName))
-                    throw new Exception("Data sheet 'Data' not found in the file.");
+                if ((row - firstDataRow) % 25 == 0)
+                    worker?.ReportProgress(0, $"Excel import: reading row {row - firstDataRow + 1} of {totalRows}...");
 
-                var dataSheet = wb.Worksheet(DataSheetName);
+                var attributes = new List<RecordAttribute>();
+                var rowErrors = new List<string>();
 
-                var records = new List<Record>();
-                var importErrors = new List<string>();
-                var lastRow = dataSheet.LastRowUsed()?.RowNumber() ?? 2;
-
-                // Build column map: header name → column config
-                var headerMap = BuildHeaderMap(dataSheet, config);
-                var firstDataRow = GetFirstDataRow(dataSheet, config, headerMap);
-
-                // Group LookupKeyField columns by their owner attribute for resolution
-                var altKeyGroups = config.Columns
-                    .Where(c => c.Type == "LookupKeyField")
-                    .GroupBy(c => c.OwnerAttribute)
-                    .ToDictionary(g => g.Key, g => g.ToList());
-
-                var targetRepo = targetService != null ? new CrmRepo(targetService, worker) : null;
-
-                for (var row = firstDataRow; row <= lastRow; row++)
+                foreach (var column in config.Columns)
                 {
-                    ThrowIfCancelled(worker);
-                    var attributes = new List<RecordAttribute>();
-                    var rowErrors = new List<string>();
+                    if (column.Type == "LookupKeyField") continue;
+                    if (!headerMap.TryGetValue(column.LogicalName, out var colNum)) continue;
 
-                    foreach (var column in config.Columns)
+                    var cellValue = dataSheet.Cell(row, colNum).GetString();
+
+                    try
                     {
-                        if (column.Type == "LookupKeyField") continue;
-                        if (!headerMap.TryGetValue(column.LogicalName, out var colNum)) continue;
-
-                        var cellValue = dataSheet.Cell(row, colNum).GetString();
-
-                        try
-                        {
-                            var attr = ParseCell(cellValue, column, row, colNum, dataSheet, headerMap, altKeyGroups, config, targetRepo);
-                            if (attr != null) attributes.Add(attr);
-                        }
-                        catch (OperationCanceledException)
-                        {
-                            throw;
-                        }
-                        catch (Exception ex)
-                        {
-                            rowErrors.Add($"Row {row}, column '{column.LogicalName}': {ex.Message}");
-                        }
+                        var attr = ParseCell(cellValue, column, row, colNum, dataSheet, headerMap, altKeyGroups, config, targetRepo);
+                        if (attr != null) attributes.Add(attr);
                     }
-
-                    if (rowErrors.Any())
+                    catch (OperationCanceledException)
                     {
-                        importErrors.AddRange(rowErrors);
-                        continue;
+                        throw;
                     }
-
-                    if (GetMatchKeys(config).Any())
+                    catch (Exception ex)
                     {
-                        try
-                        {
-                            ApplyMatchKey(config, attributes, targetRepo);
-                        }
-                        catch (OperationCanceledException)
-                        {
-                            throw;
-                        }
-                        catch (Exception ex)
-                        {
-                            importErrors.Add($"Row {row}: {ex.Message}");
-                            continue;
-                        }
+                        rowErrors.Add($"Row {row}, column '{column.LogicalName}': {ex.Message}");
                     }
-
-                    records.Add(new Record { SourceRowNumber = row, Attributes = attributes });
                 }
 
-                return new RecordCollection
+                if (rowErrors.Any())
                 {
-                    LogicalName = config.Table.LogicalName,
-                    PrimaryIdAttribute = config.Table.PrimaryIdAttribute,
-                    Records = records,
-                    Count = records.Count,
-                    ImportErrors = importErrors,
-                    ImportMatchKey = GetMatchKeyDisplay(config),
-                    ImportMatchKeys = GetMatchKeys(config),
-                    ImportMatchKeyMode = GetMatchKeys(config).Any()
-                        ? (string.IsNullOrWhiteSpace(config.MatchKeyMode) ? "Custom" : config.MatchKeyMode)
-                        : "Guid"
-                };
+                    importErrors.AddRange(rowErrors);
+                    continue;
+                }
+
+                if (GetMatchKeys(config).Any())
+                {
+                    try
+                    {
+                        ApplyMatchKey(config, attributes, targetRepo);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        importErrors.Add($"Row {row}: {ex.Message}");
+                        continue;
+                    }
+                }
+
+                records.Add(new Record { SourceRowNumber = row, Attributes = attributes });
             }
+
+            return new RecordCollection
+            {
+                LogicalName = config.Table.LogicalName,
+                PrimaryIdAttribute = config.Table.PrimaryIdAttribute,
+                Records = records,
+                Count = records.Count,
+                ImportErrors = importErrors,
+                ImportMatchKey = GetMatchKeyDisplay(config),
+                ImportMatchKeys = GetMatchKeys(config),
+                ImportMatchKeyMode = GetMatchKeys(config).Any()
+                    ? (string.IsNullOrWhiteSpace(config.MatchKeyMode) ? "Custom" : config.MatchKeyMode)
+                    : "Guid"
+            };
         }
 
         private void ThrowIfCancelled(BackgroundWorker worker)
@@ -650,9 +681,9 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 keyValues[key] = ToQueryValue(matchAttr.Value);
             }
 
-            var target = targetRepo.FindByFieldValues(config.Table.LogicalName, keyValues);
-            if (target != null)
-                SetPrimaryIdAttribute(config.Table.PrimaryIdAttribute, target.Id, attributes);
+            var targetId = FindByFieldValuesCached(targetRepo, config.Table.LogicalName, keyValues);
+            if (targetId.HasValue)
+                SetPrimaryIdAttribute(config.Table.PrimaryIdAttribute, targetId.Value, attributes);
             else
                 EnsurePrimaryIdAttribute(config.Table.PrimaryIdAttribute, attributes);
         }
@@ -801,7 +832,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                         if (targetRepo == null) throw new Exception("Target connection required for alternate key resolution.");
                         var keyValues = BuildLookupKeyValues(column, row, sheet, headerMap, altKeyGroups, targetRepo);
                         if (AllKeyValuesBlank(keyValues)) return null;
-                        var resolvedId = targetRepo.ResolveByAlternateKey(column.RelatedTable, keyValues);
+                        var resolvedId = ResolveByAlternateKeyCached(targetRepo, column.RelatedTable, keyValues);
                         if (!resolvedId.HasValue) throw new Exception($"No match found in '{column.RelatedTable}' for keys: {FormatKeyValues(keyValues)}");
 
                         value = new EntityReference(column.RelatedTable, resolvedId.Value);
@@ -901,12 +932,54 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             {
                 var nestedKeyValues = BuildLookupKeyValues(keyColumn, row, sheet, headerMap, altKeyGroups, targetRepo);
                 if (AllKeyValuesBlank(nestedKeyValues)) return Guid.Empty;
-                var resolvedId = targetRepo.ResolveByAlternateKey(keyColumn.RelatedTable, nestedKeyValues);
+                var resolvedId = ResolveByAlternateKeyCached(targetRepo, keyColumn.RelatedTable, nestedKeyValues);
                 if (!resolvedId.HasValue) throw new Exception($"No match found in '{keyColumn.RelatedTable}' for keys: {FormatKeyValues(nestedKeyValues)}");
                 return resolvedId.Value;
             }
 
             return Guid.Parse(cellValue);
+        }
+
+        private Guid? ResolveByAlternateKeyCached(CrmRepo targetRepo, string logicalName, Dictionary<string, object> keyValues)
+        {
+            var cacheKey = BuildResolutionCacheKey(logicalName, keyValues);
+            if (_lookupResolutionCache != null && _lookupResolutionCache.TryGetValue(cacheKey, out var cached))
+                return cached;
+
+            var resolvedId = targetRepo.ResolveByAlternateKey(logicalName, keyValues);
+            if (_lookupResolutionCache != null)
+                _lookupResolutionCache[cacheKey] = resolvedId;
+
+            return resolvedId;
+        }
+
+        private Guid? FindByFieldValuesCached(CrmRepo targetRepo, string logicalName, Dictionary<string, object> keyValues)
+        {
+            var cacheKey = BuildResolutionCacheKey(logicalName, keyValues);
+            if (_matchKeyResolutionCache != null && _matchKeyResolutionCache.TryGetValue(cacheKey, out var cached))
+                return cached;
+
+            var target = targetRepo.FindByFieldValues(logicalName, keyValues);
+            var resolvedId = target?.Id;
+            if (_matchKeyResolutionCache != null)
+                _matchKeyResolutionCache[cacheKey] = resolvedId;
+
+            return resolvedId;
+        }
+
+        private string BuildResolutionCacheKey(string logicalName, Dictionary<string, object> keyValues)
+        {
+            return $"{logicalName}|{string.Join("|", keyValues.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase).Select(kv => $"{kv.Key}={FormatCacheValue(kv.Value)}"))}";
+        }
+
+        private string FormatCacheValue(object value)
+        {
+            if (value == null) return "<null>";
+            if (value is EntityReference reference) return reference.Id.ToString("D");
+            if (value is OptionSetValue option) return option.Value.ToString(CultureInfo.InvariantCulture);
+            if (value is Money money) return money.Value.ToString(CultureInfo.InvariantCulture);
+            if (value is IFormattable formattable) return formattable.ToString(null, CultureInfo.InvariantCulture);
+            return value.ToString();
         }
 
         private bool AllKeyValuesBlank(Dictionary<string, object> keyValues)

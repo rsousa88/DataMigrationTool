@@ -39,16 +39,16 @@
             this.tsmiImportSettings = new System.Windows.Forms.ToolStripMenuItem();
             this.tsmiImportLastFile = new System.Windows.Forms.ToolStripMenuItem();
             this.tsmiImportFromExcel = new System.Windows.Forms.ToolStripMenuItem();
+            this.tsSeparator2 = new System.Windows.Forms.ToolStripSeparator();
+            this.tsmiEnvironments = new System.Windows.Forms.ToolStripMenuItem();
+            this.tsmiConnectTarget = new System.Windows.Forms.ToolStripMenuItem();
+            this.tsmiSwitchConnections = new System.Windows.Forms.ToolStripMenuItem();
             this.tsbAbort = new System.Windows.Forms.ToolStripButton();
             this.pnlMain = new System.Windows.Forms.TableLayoutPanel();
             this.pnlSettings = new System.Windows.Forms.TableLayoutPanel();
-            this.gbEnvironments = new System.Windows.Forms.GroupBox();
-            this.lblSource = new System.Windows.Forms.Label();
-            this.lblSourceValue = new System.Windows.Forms.Label();
-            this.lblTarget = new System.Windows.Forms.Label();
-            this.lblTargetValue = new System.Windows.Forms.Label();
-            this.btnSwitch = new System.Windows.Forms.Button();
-            this.btnSelectTarget = new System.Windows.Forms.Button();
+            this.pnlConnections = new System.Windows.Forms.Panel();
+            this.lblSourceConn = new System.Windows.Forms.Label();
+            this.lblTargetConn = new System.Windows.Forms.Label();
             this.gbMappingSettings = new System.Windows.Forms.GroupBox();
             this.rbMapOnImport = new System.Windows.Forms.RadioButton();
             this.rbMapOnExport = new System.Windows.Forms.RadioButton();
@@ -88,7 +88,7 @@
             this.tsMain.SuspendLayout();
             this.pnlMain.SuspendLayout();
             this.pnlSettings.SuspendLayout();
-            this.gbEnvironments.SuspendLayout();
+            this.pnlConnections.SuspendLayout();
             this.gbMappingSettings.SuspendLayout();
             this.gbOpSettings.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.nudBatchCount)).BeginInit();
@@ -109,6 +109,8 @@
             this.tsbPreview,
             this.tsmiExport,
             this.tsmiImport,
+            this.tsSeparator2,
+            this.tsmiEnvironments,
             this.tsbAbort});
             this.tsMain.Location = new System.Drawing.Point(0, 0);
             this.tsMain.Name = "tsMain";
@@ -226,6 +228,36 @@
             this.tsmiImportFromExcel.Text = "From Excel";
             this.tsmiImportFromExcel.Click += new System.EventHandler(this.tsmiImportFromExcel_Click);
             //
+            // tsSeparator2
+            //
+            this.tsSeparator2.Name = "tsSeparator2";
+            this.tsSeparator2.Size = new System.Drawing.Size(6, 25);
+            //
+            // tsmiEnvironments
+            //
+            this.tsmiEnvironments.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.tsmiConnectTarget,
+            this.tsmiSwitchConnections});
+            this.tsmiEnvironments.Name = "tsmiEnvironments";
+            this.tsmiEnvironments.Size = new System.Drawing.Size(107, 25);
+            this.tsmiEnvironments.Text = "Environments";
+            //
+            // tsmiConnectTarget
+            //
+            this.tsmiConnectTarget.Image = global::Dataverse.XrmTools.DataMigrationTool.Properties.Resources.connect16_colorful;
+            this.tsmiConnectTarget.Name = "tsmiConnectTarget";
+            this.tsmiConnectTarget.Size = new System.Drawing.Size(210, 22);
+            this.tsmiConnectTarget.Text = "Connect Target";
+            this.tsmiConnectTarget.Click += new System.EventHandler(this.tsmiConnectTarget_Click);
+            //
+            // tsmiSwitchConnections
+            //
+            this.tsmiSwitchConnections.Enabled = false;
+            this.tsmiSwitchConnections.Name = "tsmiSwitchConnections";
+            this.tsmiSwitchConnections.Size = new System.Drawing.Size(210, 22);
+            this.tsmiSwitchConnections.Text = "Switch Source / Target";
+            this.tsmiSwitchConnections.Click += new System.EventHandler(this.tsmiSwitchConnections_Click);
+            //
             // tsbAbort
             // 
             this.tsbAbort.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
@@ -255,7 +287,6 @@
             // 
             this.pnlSettings.ColumnCount = 1;
             this.pnlSettings.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 100F));
-            this.pnlSettings.Controls.Add(this.gbEnvironments, 0, 0);
             this.pnlSettings.Controls.Add(this.gbMappingSettings, 0, 1);
             this.pnlSettings.Controls.Add(this.gbOpSettings, 0, 2);
             this.pnlSettings.Controls.Add(this.gbViewSettings, 0, 3);
@@ -270,104 +301,43 @@
             this.pnlSettings.RowStyles.Add(new System.Windows.Forms.RowStyle());
             this.pnlSettings.Size = new System.Drawing.Size(237, 759);
             this.pnlSettings.TabIndex = 0;
-            // 
-            // gbEnvironments
-            // 
-            this.gbEnvironments.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
-            | System.Windows.Forms.AnchorStyles.Right)));
-            this.gbEnvironments.Controls.Add(this.lblSource);
-            this.gbEnvironments.Controls.Add(this.lblSourceValue);
-            this.gbEnvironments.Controls.Add(this.lblTarget);
-            this.gbEnvironments.Controls.Add(this.lblTargetValue);
-            this.gbEnvironments.Controls.Add(this.btnSwitch);
-            this.gbEnvironments.Controls.Add(this.btnSelectTarget);
-            this.gbEnvironments.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.gbEnvironments.Location = new System.Drawing.Point(2, 2);
-            this.gbEnvironments.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
-            this.gbEnvironments.Name = "gbEnvironments";
-            this.gbEnvironments.Padding = new System.Windows.Forms.Padding(2, 2, 2, 2);
-            this.gbEnvironments.Size = new System.Drawing.Size(1602, 60);
-            this.gbEnvironments.TabIndex = 0;
-            this.gbEnvironments.TabStop = false;
-            this.gbEnvironments.Text = "Environments";
-            // 
-            // lblSource
-            // 
-            this.lblSource.AutoSize = true;
-            this.lblSource.Location = new System.Drawing.Point(8, 25);
-            this.lblSource.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
-            this.lblSource.Name = "lblSource";
-            this.lblSource.Size = new System.Drawing.Size(41, 13);
-            this.lblSource.TabIndex = 0;
-            this.lblSource.Text = "Source";
-            // 
-            // lblSourceValue
-            // 
-            this.lblSourceValue.AutoEllipsis = true;
-            this.lblSourceValue.AutoSize = false;
-            this.lblSourceValue.Font = new System.Drawing.Font("Segoe UI", 8.25F);
-            this.lblSourceValue.ForeColor = System.Drawing.Color.DarkRed;
-            this.lblSourceValue.Location = new System.Drawing.Point(61, 23);
-            this.lblSourceValue.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
-            this.lblSourceValue.Name = "lblSourceValue";
-            this.lblSourceValue.Size = new System.Drawing.Size(500, 17);
-            this.lblSourceValue.TabIndex = 1;
-            this.lblSourceValue.Text = "Disconnected";
-            // 
-            // lblTarget
-            // 
-            this.lblTarget.AutoSize = true;
-            this.lblTarget.Location = new System.Drawing.Point(580, 25);
-            this.lblTarget.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
-            this.lblTarget.Name = "lblTarget";
-            this.lblTarget.Size = new System.Drawing.Size(38, 13);
-            this.lblTarget.TabIndex = 2;
-            this.lblTarget.Text = "Target";
-            // 
-            // lblTargetValue
-            // 
-            this.lblTargetValue.AutoEllipsis = true;
-            this.lblTargetValue.AutoSize = false;
-            this.lblTargetValue.Font = new System.Drawing.Font("Segoe UI", 8.25F);
-            this.lblTargetValue.ForeColor = System.Drawing.Color.DarkRed;
-            this.lblTargetValue.Location = new System.Drawing.Point(632, 23);
-            this.lblTargetValue.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
-            this.lblTargetValue.Name = "lblTargetValue";
-            this.lblTargetValue.Size = new System.Drawing.Size(500, 17);
-            this.lblTargetValue.TabIndex = 3;
-            this.lblTargetValue.Text = "Disconnected";
-            // 
-            // btnSwitch
-            // 
-            this.btnSwitch.Enabled = false;
-            this.btnSwitch.FlatAppearance.BorderSize = 0;
-            this.btnSwitch.FlatStyle = System.Windows.Forms.FlatStyle.Popup;
-            this.btnSwitch.Font = new System.Drawing.Font("Segoe UI", 12F);
-            this.btnSwitch.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.btnSwitch.Location = new System.Drawing.Point(1547, 20);
-            this.btnSwitch.Name = "btnSwitch";
-            this.btnSwitch.Size = new System.Drawing.Size(50, 28);
-            this.btnSwitch.TabIndex = 5;
-            this.btnSwitch.Text = "⇄";
-            this.toolTip.SetToolTip(this.btnSwitch, "Switch Source / Target");
-            this.btnSwitch.UseVisualStyleBackColor = true;
-            this.btnSwitch.Click += new System.EventHandler(this.btnSwitch_Click);
-            // 
-            // btnSelectTarget
-            // 
-            this.btnSelectTarget.FlatAppearance.BorderSize = 0;
-            this.btnSelectTarget.FlatStyle = System.Windows.Forms.FlatStyle.Popup;
-            this.btnSelectTarget.ForeColor = System.Drawing.SystemColors.ControlText;
-            this.btnSelectTarget.Image = global::Dataverse.XrmTools.DataMigrationTool.Properties.Resources.connect16_colorful;
-            this.btnSelectTarget.ImageAlign = System.Drawing.ContentAlignment.MiddleLeft;
-            this.btnSelectTarget.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.btnSelectTarget.Location = new System.Drawing.Point(1406, 20);
-            this.btnSelectTarget.Name = "btnSelectTarget";
-            this.btnSelectTarget.Size = new System.Drawing.Size(110, 28);
-            this.btnSelectTarget.TabIndex = 4;
-            this.btnSelectTarget.Text = "Connect Target";
-            this.btnSelectTarget.UseVisualStyleBackColor = true;
-            this.btnSelectTarget.Click += new System.EventHandler(this.btnSelectTarget_Click);
+            //
+            // pnlConnections
+            //
+            this.pnlConnections.Controls.Add(this.lblSourceConn);
+            this.pnlConnections.Controls.Add(this.lblTargetConn);
+            this.pnlConnections.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.pnlConnections.Location = new System.Drawing.Point(2, 2);
+            this.pnlConnections.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
+            this.pnlConnections.Name = "pnlConnections";
+            this.pnlConnections.Size = new System.Drawing.Size(1602, 20);
+            this.pnlConnections.TabIndex = 0;
+            //
+            // lblSourceConn
+            //
+            this.lblSourceConn.AutoEllipsis = true;
+            this.lblSourceConn.AutoSize = false;
+            this.lblSourceConn.Font = new System.Drawing.Font("Segoe UI", 8.25F);
+            this.lblSourceConn.ForeColor = System.Drawing.Color.DarkRed;
+            this.lblSourceConn.Location = new System.Drawing.Point(5, 3);
+            this.lblSourceConn.Name = "lblSourceConn";
+            this.lblSourceConn.Size = new System.Drawing.Size(450, 15);
+            this.lblSourceConn.TabIndex = 0;
+            this.lblSourceConn.Text = "Source: Disconnected";
+            //
+            // lblTargetConn
+            //
+            this.lblTargetConn.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
+            this.lblTargetConn.AutoEllipsis = true;
+            this.lblTargetConn.AutoSize = false;
+            this.lblTargetConn.Font = new System.Drawing.Font("Segoe UI", 8.25F);
+            this.lblTargetConn.ForeColor = System.Drawing.Color.DarkRed;
+            this.lblTargetConn.Location = new System.Drawing.Point(1147, 3);
+            this.lblTargetConn.Name = "lblTargetConn";
+            this.lblTargetConn.Size = new System.Drawing.Size(450, 15);
+            this.lblTargetConn.TabIndex = 1;
+            this.lblTargetConn.Text = "Target: Disconnected";
+            this.lblTargetConn.TextAlign = System.Drawing.ContentAlignment.TopRight;
             // 
             // gbMappingSettings
             // 
@@ -597,7 +567,7 @@
             // 
             this.pnlBody.ColumnCount = 1;
             this.pnlBody.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 100F));
-            this.pnlBody.Controls.Add(this.gbEnvironments, 0, 0);
+            this.pnlBody.Controls.Add(this.pnlConnections, 0, 0);
             this.pnlBody.Controls.Add(this.gbTables, 0, 1);
             this.pnlBody.Controls.Add(this.gbAttributes, 0, 2);
             this.pnlBody.Controls.Add(this.gbFilters, 0, 3);
@@ -606,7 +576,7 @@
             this.pnlBody.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
             this.pnlBody.Name = "pnlBody";
             this.pnlBody.RowCount = 4;
-            this.pnlBody.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 64F));
+            this.pnlBody.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 24F));
             this.pnlBody.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 38F));
             this.pnlBody.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 40F));
             this.pnlBody.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 22F));
@@ -835,8 +805,7 @@
             this.tsMain.PerformLayout();
             this.pnlMain.ResumeLayout(false);
             this.pnlSettings.ResumeLayout(false);
-            this.gbEnvironments.ResumeLayout(false);
-            this.gbEnvironments.PerformLayout();
+            this.pnlConnections.ResumeLayout(false);
             this.gbMappingSettings.ResumeLayout(false);
             this.gbMappingSettings.PerformLayout();
             this.gbOpSettings.ResumeLayout(false);
@@ -866,6 +835,10 @@
         private System.Windows.Forms.ToolStripMenuItem tsmiExportWithSettings;
         private System.Windows.Forms.ToolStripMenuItem tsmiExportToExcel;
         private System.Windows.Forms.ToolStripMenuItem tsmiImportFromExcel;
+        private System.Windows.Forms.ToolStripSeparator tsSeparator2;
+        private System.Windows.Forms.ToolStripMenuItem tsmiEnvironments;
+        private System.Windows.Forms.ToolStripMenuItem tsmiConnectTarget;
+        private System.Windows.Forms.ToolStripMenuItem tsmiSwitchConnections;
         private System.Windows.Forms.ToolStripButton tsbAbort;
 
         // Main panel
@@ -874,14 +847,10 @@
         // Settings
         private System.Windows.Forms.TableLayoutPanel pnlSettings;
 
-        // Environment settings group
-        private System.Windows.Forms.GroupBox gbEnvironments;
-        private System.Windows.Forms.Label lblSource;
-        private System.Windows.Forms.Label lblSourceValue;
-        private System.Windows.Forms.Label lblTarget;
-        private System.Windows.Forms.Label lblTargetValue;
-        private System.Windows.Forms.Button btnSelectTarget;
-        private System.Windows.Forms.Button btnSwitch;
+        // Connection status strip
+        private System.Windows.Forms.Panel pnlConnections;
+        private System.Windows.Forms.Label lblSourceConn;
+        private System.Windows.Forms.Label lblTargetConn;
         private System.Windows.Forms.ToolTip toolTip;
 
         // View settings group
