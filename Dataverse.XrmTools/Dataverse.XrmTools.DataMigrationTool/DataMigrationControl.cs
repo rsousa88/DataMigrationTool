@@ -53,12 +53,20 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private IEnumerable<Table> _tables;
         private List<Mapping> _mappings;
         private IEnumerable<Sort> _sorts;
+        private DmtSettings _dmtSettings;
+        private string _dmtFilePath;
+        private TableSettings _currentTableSettings;
+        private string _currentTableLogicalName;
+        private string _previousTableLogicalName;
+        private Timer _dmtAutoSaveTimer;
 
         // flags
         private bool _ready = false;
         private bool _working;
         private int _activeExcelImportOperationId;
         private bool _importPreviewDialogOpen;
+        private bool _suppressTableSelectionChanged;
+        private bool _suppressSettingsEvents;
         #endregion Variables
 
         #region Handlers
@@ -76,7 +84,10 @@ namespace Dataverse.XrmTools.DataMigrationTool
             LogInfo("Initializing components...");
             InitializeComponent();
             tsmiEnvironments.Image = CreateEnvironmentsIcon();
+            tsmiDmtFile.Image = CreateSettingsFileIcon();
             MoveImportSettingsIntoDialogs();
+            InitializeDmtAutoSave();
+            RenderDmtFileMenu();
 
             _logger = new Logger();
             _logger.OnLog += Log;
@@ -156,7 +167,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
                     // render UI components
                     _logger.Log(LogLevel.INFO, $"Rendering UI components...");
-                    RenderConnectionLabel(ConnectionType.Source, instance.FriendlyName);
                     ReRenderComponents(true);
 
                     // load tables when source connection changes
@@ -232,8 +242,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     SettingsHelper.SetSettings(_settings);
 
                     ReRenderComponents(true);
-                    RenderConnectionLabel(ConnectionType.Target, instance.FriendlyName);
-
                     _ready = true;
                     SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Target Connection ready"));
                 }
@@ -462,6 +470,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         // load attributes
                         tableData.Table.AllAttributes = args.Result as List<Models.Attribute>;
                         LoadAttributesList(tableData);
+                        LoadFilters(tableData);
+                        AutoSaveDmtSettings(false);
 
                         SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Attributes load complete"));
                     }
@@ -482,6 +492,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 // save settings
                 tableData.Settings.DeselectedAttributes = deselected;
                 SettingsHelper.SetSettings(_settings);
+                ScheduleDmtAutoSave();
             }
             else
             {
@@ -499,7 +510,11 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         }
                     }
                 }
-                if (migrated) { SettingsHelper.SetSettings(_settings); }
+                if (migrated)
+                {
+                    SettingsHelper.SetSettings(_settings);
+                    ScheduleDmtAutoSave();
+                }
             }
 
             foreach (var att in tableData.Table.AllAttributes)
@@ -547,8 +562,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             _logger.Log(LogLevel.INFO, $"Loading table filters...");
 
-            rtbFilter.Text = string.Empty;
-
             tableData = tableData != null ? tableData : GetSelectedTableItemData(false);
             if (tableData == null || tableData.Settings == null)
             {
@@ -556,7 +569,15 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 return;
             }
 
-            rtbFilter.Text = tableData.Settings.Filter;
+            _suppressSettingsEvents = true;
+            try
+            {
+                rtbFilter.Text = tableData.Settings.Filter ?? string.Empty;
+            }
+            finally
+            {
+                _suppressSettingsEvents = false;
+            }
 
             gbFilters.Enabled = true;
         }
@@ -564,6 +585,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private void PreviewData()
         {
             _logger.Log(LogLevel.INFO, $"Previewing operation...");
+            AutoSaveDmtSettings();
 
             var tableData = GetSelectedTableItemData(targetRequired: false, attributeRequired: true);
             if(tableData == null) {
@@ -631,6 +653,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private void ExportSettings()
         {
             _logger.Log(LogLevel.INFO, $"Exporting table settings...");
+            AutoSaveDmtSettings();
 
             var tableData = GetSelectedTableItemData(false);
             if (tableData == null)
@@ -650,6 +673,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private void Export()
         {
             _logger.Log(LogLevel.INFO, $"Export data operation...");
+            AutoSaveDmtSettings();
 
             var tableData = GetSelectedTableItemData(false, true);
             if (tableData == null)
@@ -701,17 +725,28 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void LoadSettings()
         {
-            _logger.Log(LogLevel.INFO, $"Loading table settings...");
+            _logger.Log(LogLevel.INFO, "Importing legacy table settings...");
 
-            var path = this.SelectFile("Json files (*.json)|*.settings.json");
+            var path = this.SelectFile("Legacy table settings (*.settings.json)|*.settings.json|Json files (*.json)|*.json");
             if (string.IsNullOrEmpty(path)) { return; }
-
-            ManageWorkingState(true);
 
             var json = File.ReadAllText(path);
             var loadedSettings = json.DeserializeObject<TableSettings>();
+            if (loadedSettings == null || string.IsNullOrWhiteSpace(loadedSettings.LogicalName))
+            {
+                throw new Exception("Invalid legacy settings file: missing table logical name.");
+            }
 
-            // get table data by logical name
+            var selectedTable = GetSelectedTableOrDefault();
+            if (selectedTable != null && !loadedSettings.LogicalName.Equals(selectedTable.LogicalName, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new Exception($"This settings file is for table '{loadedSettings.LogicalName}', but the selected table is '{selectedTable.LogicalName}'.");
+            }
+            if (_dmtSettings?.Table != null && !loadedSettings.LogicalName.Equals(_dmtSettings.Table.LogicalName, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new Exception($"This settings file is for table '{loadedSettings.LogicalName}', but the active settings file is for '{_dmtSettings.Table.LogicalName}'.");
+            }
+
             var tableData = GetTableDataByLogicalName(loadedSettings.LogicalName, false);
             if (tableData == null)
             {
@@ -719,21 +754,71 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 return;
             }
 
-            // re-set settings from json file
-            tableData.Settings.Filter = loadedSettings.Filter;
-            tableData.Settings.DeselectedAttributes = loadedSettings.DeselectedAttributes;
+            if (selectedTable == null)
+            {
+                _suppressTableSelectionChanged = true;
+                try
+                {
+                    SetSelectedTableItem(tableData);
+                }
+                finally
+                {
+                    _suppressTableSelectionChanged = false;
+                }
+            }
 
-            ManageWorkingState(false);
-            SetSelectedTableItem(tableData);
-            LoadAttributes();
+            tableData.Settings.Filter = loadedSettings.Filter;
+            tableData.Settings.DeselectedAttributes = loadedSettings.DeselectedAttributes ?? new List<string>();
+            tableData.Settings.ExcelConfig = loadedSettings.ExcelConfig;
+            _currentTableLogicalName = tableData.Table.LogicalName;
+            _currentTableSettings = tableData.Settings;
+
+            _suppressSettingsEvents = true;
+            try
+            {
+                rtbFilter.Text = loadedSettings.Filter ?? string.Empty;
+            }
+            finally
+            {
+                _suppressSettingsEvents = false;
+            }
+
             SettingsHelper.SetSettings(_settings);
 
-            SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Successfully imported settings for table '{tableData.Table.LogicalName}'"));
+            if (_dmtSettings == null || string.IsNullOrWhiteSpace(_dmtFilePath))
+            {
+                var filePath = this.SelectFile("DMT Settings (*.dmt.json)|*.dmt.json", save: true, defaultFileName: $"{tableData.Table.LogicalName}.dmt.json");
+                if (string.IsNullOrWhiteSpace(filePath))
+                {
+                    SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Legacy settings imported into the current session only"));
+                    return;
+                }
+
+                _dmtFilePath = filePath;
+                _dmtSettings = DmtFileService.CreateNew(
+                    tableData.Table.LogicalName,
+                    tableData.Table.DisplayName,
+                    tableData.Table.IdAttribute,
+                    tableData.Table.NameAttribute,
+                    _sourceClient?.ConnectedOrgUniqueName,
+                    _sourceClient?.ConnectedOrgFriendlyName);
+            }
+
+            CaptureDmtSettingsFromUi();
+            AutoSaveDmtSettings();
+            LoadAttributes();
+            LoadFilters(tableData);
+
+            var message = string.IsNullOrWhiteSpace(_dmtFilePath)
+                ? $"Imported legacy table settings for '{tableData.Table.LogicalName}' into the current session"
+                : $"Merged legacy table settings into '{Path.GetFileName(_dmtFilePath)}'";
+            SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs(message));
         }
 
         private void ExportToExcel()
         {
             _logger.Log(LogLevel.INFO, "Export to Excel operation...");
+            AutoSaveDmtSettings();
 
             var tableData = GetSelectedTableItemData(false, true);
             if (tableData == null)
@@ -763,6 +848,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 // persist the config so next open pre-populates automatically
                 tableData.Settings.ExcelConfig = config;
                 SettingsHelper.SetSettings(_settings);
+                AutoSaveDmtSettings();
 
                 var filePath = this.SelectFile("Excel files (*.xlsx)|*.xlsx", save: true,
                     defaultFileName: $"{tableData.Table.LogicalName}.xlsx");
@@ -822,6 +908,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private void ImportFromExcel()
         {
             _logger.Log(LogLevel.INFO, "Import from Excel operation...");
+            AutoSaveDmtSettings();
 
             if (_working)
             {
@@ -856,7 +943,16 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         ThrowIfCancelled(worker);
                         var excelLogic = new Logic.ExcelLogic();
 
-                        var collection = excelLogic.ImportFromExcel(filePath, out ExcelExportConfig config, _targetClient, worker);
+                        var collection = excelLogic.ImportFromExcel(
+                            filePath,
+                            out ExcelExportConfig config,
+                            _targetClient,
+                            worker,
+                            importConfig =>
+                            {
+                                ThrowIfCancelled(worker);
+                                ValidateActiveSettingsTable(importConfig?.Table?.LogicalName, "Excel file");
+                            });
                         ThrowIfCancelled(worker);
                         worker.ReportProgress(0, $"Excel import: read {collection?.Count ?? 0} records with {collection?.ImportErrors?.Count ?? 0} warning(s).");
 
@@ -961,6 +1057,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         }
                         if (result == DialogResult.Retry)
                         {
+                            SaveDmtImportSettings(dlg.Settings, dlg.SelectedMatchKey);
                             if (session.Config == null)
                                 StartExcelImportPreview(session, tableData, dlg.Settings);
                             else
@@ -969,6 +1066,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         }
                         if (result != DialogResult.OK) return;
 
+                        SaveDmtImportSettings(dlg.Settings, dlg.SelectedMatchKey);
                         StartExcelImport(session.Collection, tableData, dlg.Settings);
                     }
                 },
@@ -1004,6 +1102,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                             importConfig =>
                             {
                                 ThrowIfCancelled(worker);
+                                ValidateActiveSettingsTable(importConfig?.Table?.LogicalName, "Excel file");
                                 worker.ReportProgress(0, "Excel import: applying selected match key...");
                                 ApplyImportMatchKeySelection(importConfig, reloadMatchKey);
                                 ThrowIfCancelled(worker);
@@ -1321,6 +1420,21 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 : null;
         }
 
+        private void SaveDmtImportSettings(UiSettings uiSettings, ExcelImportMatchKeySelection selection)
+        {
+            if (_dmtSettings == null) return;
+
+            _dmtSettings.ImportSettings = new DmtImportSettings
+            {
+                BatchSize = uiSettings != null && uiSettings.BatchSize > 0 ? Math.Min(uiSettings.BatchSize, 25) : 25,
+                MatchKeyMode = selection?.Mode ?? "Guid",
+                MatchKeyFields = selection?.Fields?.ToList() ?? new List<string>(),
+                MatchAlternateKeyName = selection?.AlternateKeyName
+            };
+
+            AutoSaveDmtSettings();
+        }
+
         private List<ExcelImportAlternateKeyOption> GetAvailableImportAlternateKeys(TableData tableData, ExcelExportConfig config)
         {
             var availableColumns = config?.Columns == null
@@ -1377,6 +1491,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private void Import(string path = null)
         {
             _logger.Log(LogLevel.INFO, $"Import operation...");
+            AutoSaveDmtSettings();
 
             // get file path
             path = path is null ? this.SelectFile("Json files (*.json)|*.json") : path;
@@ -1385,6 +1500,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             var json = File.ReadAllText(path);
             var importData = json.DeserializeObject<RecordCollection>();
             ImportFileDataChecks(importData);
+            ValidateActiveSettingsTable(importData.LogicalName, "JSON file");
 
             var tableData = GetTableDataByLogicalName(importData.LogicalName);
             if (tableData == null)
@@ -1480,6 +1596,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     ManageWorkingState(false);
 
                     SettingsHelper.SetSettings(_settings);
+                    AutoSaveDmtSettings();
                     SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Automatic Mappings generated successfully"));
                 }
             });
@@ -1517,7 +1634,10 @@ namespace Dataverse.XrmTools.DataMigrationTool
             var repo = new CrmRepo(_sourceClient);
             var metadata = repo.GetTableMetadata(table.LogicalName);
 
-            var tableSettings = _settings.GetTableSettings(_tables, table.LogicalName);
+            var tableSettings = _currentTableSettings != null
+                && string.Equals(_currentTableLogicalName, table.LogicalName, StringComparison.OrdinalIgnoreCase)
+                ? _currentTableSettings
+                : _settings.GetTableSettings(_tables, table.LogicalName);
             if (tableSettings == null)
             {
                 throw new Exception("Invalid Table: Please reload tables and try again");
@@ -1544,7 +1664,10 @@ namespace Dataverse.XrmTools.DataMigrationTool
             var repo = new CrmRepo(_sourceClient);
             var metadata = repo.GetTableMetadata(table.LogicalName);
 
-            var tableSettings = _settings.GetTableSettings(_tables, table.LogicalName);
+            var tableSettings = _currentTableSettings != null
+                && string.Equals(_currentTableLogicalName, table.LogicalName, StringComparison.OrdinalIgnoreCase)
+                ? _currentTableSettings
+                : _settings.GetTableSettings(_tables, table.LogicalName);
             if (tableSettings == null)
             {
                 throw new Exception("Invalid Table: Please reload tables and try again");
@@ -1570,6 +1693,187 @@ namespace Dataverse.XrmTools.DataMigrationTool
             lvTables.Select();
         }
 
+        private bool PrepareSelectedTableSettings()
+        {
+            if (_suppressTableSelectionChanged) return false;
+
+            var table = GetSelectedTableOrDefault();
+            if (table == null) return false;
+
+            if (string.Equals(_currentTableLogicalName, table.LogicalName, StringComparison.OrdinalIgnoreCase)
+                && _currentTableSettings != null)
+            {
+                return true;
+            }
+
+            AutoSaveDmtSettings();
+
+            var previous = _previousTableLogicalName;
+            var existingSettings = _settings.GetTableSettings(_tables, table.LogicalName);
+            using (var dlg = new DmtSettingsFileDialog(
+                table,
+                _sourceClient?.ConnectedOrgUniqueName,
+                _sourceClient?.ConnectedOrgFriendlyName,
+                existingSettings))
+            {
+                var result = dlg.ShowDialog(ParentForm);
+                if (result != DialogResult.OK || dlg.Choice == DmtFileChoice.Cancel)
+                {
+                    RestorePreviousTableSelection(previous);
+                    return false;
+                }
+
+                _dmtFilePath = null;
+                _dmtSettings = null;
+                _currentTableLogicalName = table.LogicalName;
+
+                if (dlg.Choice == DmtFileChoice.WithoutFile)
+                {
+                    _currentTableSettings = CreateSoftTableSettings(table);
+                }
+                else
+                {
+                    _dmtFilePath = dlg.FilePath;
+                    ApplyDmtSettingsToCurrentTable(dlg.LoadedSettings);
+                }
+
+                _previousTableLogicalName = table.LogicalName;
+                RenderDmtFileMenu();
+                return true;
+            }
+        }
+
+        private void RestorePreviousTableSelection(string logicalName)
+        {
+            _suppressTableSelectionChanged = true;
+            try
+            {
+                foreach (ListViewItem item in lvTables.SelectedItems)
+                    item.Selected = false;
+
+                if (!string.IsNullOrWhiteSpace(logicalName))
+                {
+                    var previous = lvTables.Items
+                        .Cast<ListViewItem>()
+                        .FirstOrDefault(item => item.SubItems[0].Text.Equals(logicalName, StringComparison.OrdinalIgnoreCase));
+                    if (previous != null)
+                    {
+                        previous.Selected = true;
+                        previous.Focused = true;
+                        previous.EnsureVisible();
+                    }
+                }
+            }
+            finally
+            {
+                _suppressTableSelectionChanged = false;
+            }
+        }
+
+        private Table EnsureSelectedTableForDmtFile()
+        {
+            var table = !string.IsNullOrWhiteSpace(_currentTableLogicalName) && _tables != null
+                ? _tables.FirstOrDefault(tbl => tbl.LogicalName.Equals(_currentTableLogicalName, StringComparison.OrdinalIgnoreCase))
+                : GetSelectedTableOrDefault();
+            if (table == null)
+                throw new Exception("You must select a table first");
+
+            if (_currentTableSettings == null || !string.Equals(_currentTableLogicalName, table.LogicalName, StringComparison.OrdinalIgnoreCase))
+            {
+                _currentTableLogicalName = table.LogicalName;
+                _currentTableSettings = CreateSoftTableSettings(table);
+            }
+
+            return table;
+        }
+
+        private void CreateDmtFileForSelectedTable()
+        {
+            var table = EnsureSelectedTableForDmtFile();
+            var filePath = this.SelectFile("DMT Settings (*.dmt.json)|*.dmt.json", save: true, defaultFileName: $"{table.LogicalName}.dmt.json");
+            if (string.IsNullOrWhiteSpace(filePath)) return;
+
+            var existingSettings = _settings.GetTableSettings(_tables, table.LogicalName);
+            _dmtSettings = DmtFileService.CreateNew(
+                table.LogicalName,
+                table.DisplayName,
+                table.IdAttribute,
+                table.NameAttribute,
+                _sourceClient?.ConnectedOrgUniqueName,
+                _sourceClient?.ConnectedOrgFriendlyName,
+                existingSettings);
+            _dmtFilePath = filePath;
+            _currentTableLogicalName = table.LogicalName;
+            _currentTableSettings = CreateTableSettingsFromDmt(_dmtSettings);
+            CaptureDmtSettingsFromUi();
+            DmtFileService.Save(_dmtFilePath, _dmtSettings);
+            RenderDmtFileMenu();
+            SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Settings file saved: {Path.GetFileName(_dmtFilePath)}"));
+        }
+
+        private void LoadDmtFileForSelectedTable()
+        {
+            var table = EnsureSelectedTableForDmtFile();
+            var existingSettings = _settings.GetTableSettings(_tables, table.LogicalName);
+            using (var dlg = new DmtSettingsFileDialog(
+                table,
+                _sourceClient?.ConnectedOrgUniqueName,
+                _sourceClient?.ConnectedOrgFriendlyName,
+                existingSettings))
+            {
+                if (dlg.ShowDialog(ParentForm) != DialogResult.OK || dlg.Choice == DmtFileChoice.Cancel) return;
+
+                if (dlg.Choice == DmtFileChoice.WithoutFile)
+                {
+                    CloseDmtFileSession(false);
+                    return;
+                }
+
+                _dmtFilePath = dlg.FilePath;
+                ApplyDmtSettingsToCurrentTable(dlg.LoadedSettings);
+                LoadAttributes();
+                LoadFilters(null);
+                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Settings file loaded: {Path.GetFileName(_dmtFilePath)}"));
+            }
+        }
+
+        private void SaveDmtFileAs()
+        {
+            var table = EnsureSelectedTableForDmtFile();
+            var filePath = this.SelectFile("DMT Settings (*.dmt.json)|*.dmt.json", save: true, defaultFileName: $"{table.LogicalName}.dmt.json");
+            if (string.IsNullOrWhiteSpace(filePath)) return;
+
+            if (_dmtSettings == null)
+            {
+                _dmtSettings = DmtFileService.CreateNew(
+                    table.LogicalName,
+                    table.DisplayName,
+                    table.IdAttribute,
+                    table.NameAttribute,
+                    _sourceClient?.ConnectedOrgUniqueName,
+                    _sourceClient?.ConnectedOrgFriendlyName);
+            }
+
+            _dmtFilePath = filePath;
+            CaptureDmtSettingsFromUi();
+            DmtFileService.Save(_dmtFilePath, _dmtSettings);
+            RenderDmtFileMenu();
+            SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Settings file saved: {Path.GetFileName(_dmtFilePath)}"));
+        }
+
+        private void CloseDmtFileSession(bool saveFirst = true)
+        {
+            if (saveFirst) AutoSaveDmtSettings();
+
+            var table = GetSelectedTableOrDefault();
+            _dmtSettings = null;
+            _dmtFilePath = null;
+            _currentTableLogicalName = table?.LogicalName;
+            _currentTableSettings = table != null ? CreateSoftTableSettingsFromUi(table) : null;
+            RenderDmtFileMenu();
+            SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Settings file closed"));
+        }
+
         private void ImportFileDataChecks(RecordCollection collection)
         {
             if (collection == null)
@@ -1583,6 +1887,20 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (collection.Count == 0 || !collection.Records.Any())
             {
                 throw new Exception($"Invalid import file: No records");
+            }
+        }
+
+        private void ValidateActiveSettingsTable(string sourceTableLogicalName, string sourceDescription)
+        {
+            if (_dmtSettings?.Table == null || string.IsNullOrWhiteSpace(_dmtSettings.Table.LogicalName)) return;
+            if (string.IsNullOrWhiteSpace(sourceTableLogicalName)) return;
+
+            if (!sourceTableLogicalName.Equals(_dmtSettings.Table.LogicalName, StringComparison.OrdinalIgnoreCase))
+            {
+                var settingsName = string.IsNullOrWhiteSpace(_dmtFilePath)
+                    ? "active settings"
+                    : Path.GetFileName(_dmtFilePath);
+                throw new Exception($"The selected {sourceDescription} is for table '{sourceTableLogicalName}', but {settingsName} is for '{_dmtSettings.Table.LogicalName}'. Load the correct settings file before importing.");
             }
         }
         #endregion Private Main Methods
@@ -1642,20 +1960,173 @@ namespace Dataverse.XrmTools.DataMigrationTool
             tsbAbort.Visible = working;
         }
 
-        private void RenderConnectionLabel(ConnectionType serviceType, string name)
+        private void InitializeDmtAutoSave()
         {
-            var label = serviceType.Equals(ConnectionType.Source) ? lblSourceConn : lblTargetConn;
-            var prefix = serviceType.Equals(ConnectionType.Source) ? "Source" : "Target";
-            if (string.IsNullOrWhiteSpace(name))
+            _dmtAutoSaveTimer = new Timer { Interval = 1500 };
+            _dmtAutoSaveTimer.Tick += (sender, args) =>
             {
-                label.Text = $"{prefix}: Disconnected";
-                label.ForeColor = Color.DarkRed;
-            }
-            else
+                _dmtAutoSaveTimer.Stop();
+                AutoSaveDmtSettings();
+            };
+        }
+
+        private void ScheduleDmtAutoSave()
+        {
+            if (_dmtSettings == null || string.IsNullOrWhiteSpace(_dmtFilePath)) return;
+
+            _dmtAutoSaveTimer.Stop();
+            _dmtAutoSaveTimer.Start();
+        }
+
+        private void AutoSaveDmtSettings(bool showStatus = true)
+        {
+            if (_dmtSettings == null || string.IsNullOrWhiteSpace(_dmtFilePath)) return;
+
+            CaptureDmtSettingsFromUi();
+            DmtFileService.Save(_dmtFilePath, _dmtSettings);
+            RenderDmtFileMenu();
+
+            var fileName = Path.GetFileName(_dmtFilePath);
+            _logger?.Log(LogLevel.INFO, $"Auto-saved settings file: {fileName}");
+            if (showStatus)
+                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Auto-saved: {fileName}"));
+        }
+
+        private void CaptureDmtSettingsFromUi()
+        {
+            if (_dmtSettings == null) return;
+
+            var table = !string.IsNullOrWhiteSpace(_currentTableLogicalName) && _tables != null
+                ? _tables.FirstOrDefault(tbl => tbl.LogicalName.Equals(_currentTableLogicalName, StringComparison.OrdinalIgnoreCase))
+                : GetSelectedTableOrDefault();
+            if (table != null)
             {
-                label.Text = $"{prefix}: {name}";
-                label.ForeColor = Color.MediumSeaGreen;
+                _dmtSettings.Table = new DmtTableInfo
+                {
+                    LogicalName = table.LogicalName,
+                    DisplayName = table.DisplayName,
+                    PrimaryIdAttribute = table.IdAttribute,
+                    PrimaryNameAttribute = table.NameAttribute
+                };
             }
+
+            if (_sourceClient != null)
+            {
+                _dmtSettings.Environment = new DmtEnvironmentInfo
+                {
+                    UniqueName = _sourceClient.ConnectedOrgUniqueName,
+                    FriendlyName = _sourceClient.ConnectedOrgFriendlyName
+                };
+            }
+
+            if (lvAttributes.Items.Count > 0)
+            {
+                _dmtSettings.DeselectedAttributes = lvAttributes.Items
+                    .Cast<ListViewItem>()
+                    .Where(item => !item.Checked)
+                    .Select(item => item.SubItems[0].Text)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+            }
+            else if (_currentTableSettings?.DeselectedAttributes != null)
+            {
+                _dmtSettings.DeselectedAttributes = new List<string>(_currentTableSettings.DeselectedAttributes);
+            }
+
+            _dmtSettings.Filter = rtbFilter.Text;
+            _dmtSettings.Mappings = new List<Mapping>(_mappings ?? new List<Mapping>());
+            if (_currentTableSettings?.ExcelConfig != null)
+                _dmtSettings.ExcelConfig = _currentTableSettings.ExcelConfig;
+
+            _dmtSettings.ImportSettings = BuildDmtImportSettingsFromUi(_dmtSettings.ImportSettings);
+        }
+
+        private DmtImportSettings BuildDmtImportSettingsFromUi(DmtImportSettings existing)
+        {
+            existing = existing ?? new DmtImportSettings();
+            var saved = _settings?.UiSettings;
+            existing.BatchSize = saved?.BatchSize > 0 ? Math.Min(saved.BatchSize, 25) : Math.Max(1, existing.BatchSize);
+            return existing;
+        }
+
+        private void ApplyDmtSettingsToCurrentTable(DmtSettings settings)
+        {
+            _dmtSettings = settings;
+            _currentTableLogicalName = settings?.Table?.LogicalName;
+            _currentTableSettings = CreateTableSettingsFromDmt(settings);
+            _mappings = settings?.Mappings != null ? new List<Mapping>(settings.Mappings) : new List<Mapping>();
+            if (_sourceInstance != null)
+                _sourceInstance.Mappings = new List<Mapping>(_mappings);
+            RenderMappingsButton();
+            RenderDmtFileMenu();
+        }
+
+        private TableSettings CreateTableSettingsFromDmt(DmtSettings settings)
+        {
+            return new TableSettings
+            {
+                LogicalName = settings?.Table?.LogicalName,
+                DisplayName = settings?.Table?.DisplayName,
+                DeselectedAttributes = settings?.DeselectedAttributes != null ? new List<string>(settings.DeselectedAttributes) : null,
+                Filter = settings?.Filter,
+                ExcelConfig = settings?.ExcelConfig
+            };
+        }
+
+        private TableSettings CreateSoftTableSettings(Table table)
+        {
+            return new TableSettings
+            {
+                LogicalName = table.LogicalName,
+                DisplayName = table.DisplayName,
+                IsCustomizable = table.IsCustomizable
+            };
+        }
+
+        private TableSettings CreateSoftTableSettingsFromUi(Table table)
+        {
+            var settings = CreateSoftTableSettings(table);
+            settings.Filter = rtbFilter.Text;
+            settings.ExcelConfig = _currentTableSettings?.ExcelConfig;
+
+            if (lvAttributes.Items.Count > 0)
+            {
+                settings.DeselectedAttributes = lvAttributes.Items
+                    .Cast<ListViewItem>()
+                    .Where(item => !item.Checked)
+                    .Select(item => item.SubItems[0].Text)
+                    .ToList();
+            }
+
+            return settings;
+        }
+
+        private Table GetSelectedTableOrDefault()
+        {
+            if (lvTables.SelectedItems.Count == 0 || _tables == null) return null;
+
+            var tableItem = lvTables.SelectedItems[0].ToObject(new Table()) as Table;
+            if (tableItem == null || string.IsNullOrWhiteSpace(tableItem.LogicalName)) return null;
+
+            return _tables.FirstOrDefault(tbl => tbl.LogicalName.Equals(tableItem.LogicalName));
+        }
+
+        private void RenderDmtFileMenu()
+        {
+            if (tsmiDmtFile == null) return;
+
+            var hasFile = !string.IsNullOrWhiteSpace(_dmtFilePath);
+            tsmiDmtFile.Text = hasFile ? GetDmtFileDisplayName(_dmtFilePath) : "Settings File";
+            tsmiDmtSaveAs.Enabled = lvTables.SelectedItems.Count > 0;
+            tsmiDmtClose.Enabled = hasFile || _currentTableSettings != null;
+        }
+
+        private string GetDmtFileDisplayName(string filePath)
+        {
+            var fileName = Path.GetFileName(filePath);
+            return fileName != null && fileName.EndsWith(".dmt.json", StringComparison.OrdinalIgnoreCase)
+                ? fileName.Substring(0, fileName.Length - ".dmt.json".Length)
+                : Path.GetFileNameWithoutExtension(filePath);
         }
 
         private static Image CreateEnvironmentsIcon(int size = 20)
@@ -1680,16 +2151,43 @@ namespace Dataverse.XrmTools.DataMigrationTool
             return bmp;
         }
 
+        private static Image CreateSettingsFileIcon(int size = 20)
+        {
+            var bmp = new Bitmap(size, size);
+            using (var g = Graphics.FromImage(bmp))
+            {
+                g.Clear(Color.Transparent);
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                using (var pen = new Pen(Color.FromArgb(80, 80, 80), 1.4f))
+                using (var brush = new SolidBrush(Color.FromArgb(245, 245, 245)))
+                {
+                    var rect = new RectangleF(4, 2, 12, 16);
+                    g.FillRectangle(brush, rect);
+                    g.DrawRectangle(pen, 4, 2, 12, 16);
+                    g.DrawLine(pen, 7, 7, 13, 7);
+                    g.DrawLine(pen, 7, 10, 13, 10);
+                    g.DrawLine(pen, 7, 13, 11, 13);
+                }
+            }
+            return bmp;
+        }
+
         private void RenderMappingsButton()
         {
-            btnMappings.Font = _sourceInstance.Mappings.Any() ? new Font(btnMappings.Font.Name, btnMappings.Font.Size, FontStyle.Bold) : new Font(btnMappings.Font.Name, btnMappings.Font.Size, FontStyle.Regular);
+            btnMappings.Font = (_mappings?.Any() == true) ? new Font(btnMappings.Font.Name, btnMappings.Font.Size, FontStyle.Bold) : new Font(btnMappings.Font.Name, btnMappings.Font.Size, FontStyle.Regular);
         }
 
         private void MoveImportSettingsIntoDialogs()
         {
+            tsmiExportData.Text = "To JSON";
             tsmiImportData.Text = "From JSON";
+            tsmiImportSettings.Text = "Import legacy table settings...";
+            tsmiExportSettings.Visible = false;
+            tsmiExportSettings.Enabled = false;
             tsmiExportWithSettings.Visible = false;
             tsmiExportWithSettings.Enabled = false;
+            tsmiDmtFile.Enabled = false;
+            tsmiReloadTables.Enabled = false;
             gbViewSettings.Controls.Remove(cbHideInvalid);
             cbHideInvalid.Location = new Point(cbSelectAll.Right + 18, cbSelectAll.Top);
             gbAttributes.Controls.Add(cbHideInvalid);
@@ -1710,6 +2208,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
             {
                 tsmiConnectTarget.Enabled = enable;
                 tsmiSwitchConnections.Enabled = enable && targetReady;
+                tsmiReloadTables.Enabled = enable;
+                tsmiDmtFile.Enabled = enable;
                 gbTables.Enabled = enable;
 
                 if (targetReady) // source and target connection is available
@@ -1733,12 +2233,16 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     tsbPreview.Enabled = enable;
                     tsmiExport.Enabled = enable;
                     tsmiExportData.Enabled = enable;
-                    tsmiExportSettings.Enabled = enable;
+                    tsmiExportSettings.Enabled = false;
+                    tsmiExportSettings.Visible = false;
                     tsmiExportWithSettings.Enabled = false;
                     tsmiExportWithSettings.Visible = false;
                     tsmiExportToExcel.Enabled = enable;
+                    gbFilters.Enabled = enable;
                 }
             }
+
+            RenderDmtFileMenu();
         }
 
         public UiSettings ReadSettings(Enums.Action initial)
@@ -1761,6 +2265,10 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
             _settings.UiSettings = uiSettings;
             SettingsHelper.SetSettings(_settings);
+            if (_dmtSettings?.ImportSettings != null)
+            {
+                _dmtSettings.ImportSettings.BatchSize = Math.Min(uiSettings.BatchSize, 25);
+            }
 
             return uiSettings;
         }
@@ -1774,10 +2282,15 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if ((saved.Action & Enums.Action.Update) == Enums.Action.Update || saved.Action == Enums.Action.None)
                 action |= Enums.Action.Update;
 
+            var dmtImport = _dmtSettings?.ImportSettings;
+            var batchSize = dmtImport?.BatchSize > 0
+                ? Math.Min(dmtImport.BatchSize, 25)
+                : (saved.BatchSize > 0 ? Math.Min(saved.BatchSize, 25) : 25);
+
             return new UiSettings
             {
                 Action = action,
-                BatchSize = saved.BatchSize > 0 ? Math.Min(saved.BatchSize, 25) : 25,
+                BatchSize = batchSize,
                 MapUsers = saved.MapUsers,
                 MapTeams = saved.MapTeams,
                 MapBu = saved.MapBu,
@@ -1927,8 +2440,10 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             try
             {
+                if (_suppressTableSelectionChanged) return;
                 if (lvTables.SelectedItems.Count > 0)
                 {
+                    if (!PrepareSelectedTableSettings()) return;
                     LoadAttributes();
                     LoadFilters(null);
                 }
@@ -1996,14 +2511,15 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     AdditionalConnectionDetails[0] = sourceDetail; // Replace (not Add) — won't trigger ConnectionDetailsUpdated
                 }
 
-                // re-render our own connection labels inside the group box
-                RenderConnectionLabel(ConnectionType.Source, _sourceInstance.FriendlyName);
-                RenderConnectionLabel(ConnectionType.Target, _targetInstance.FriendlyName);
-
                 // clear stale data and reload from new source
                 lvTables.Items.Clear();
                 lvAttributes.Items.Clear();
                 rtbFilter.Text = string.Empty;
+                _dmtSettings = null;
+                _dmtFilePath = null;
+                _currentTableSettings = null;
+                _currentTableLogicalName = null;
+                _previousTableLogicalName = null;
                 ReRenderComponents(true);
 
                 LoadTables();
@@ -2021,6 +2537,62 @@ namespace Dataverse.XrmTools.DataMigrationTool
             try
             {
                 LoadTables();
+            }
+            catch (Exception ex)
+            {
+                ManageWorkingState(false);
+                _logger.Log(LogLevel.ERROR, ex.Message);
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void tsmiDmtNew_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                CreateDmtFileForSelectedTable();
+            }
+            catch (Exception ex)
+            {
+                ManageWorkingState(false);
+                _logger.Log(LogLevel.ERROR, ex.Message);
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void tsmiDmtLoad_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                LoadDmtFileForSelectedTable();
+            }
+            catch (Exception ex)
+            {
+                ManageWorkingState(false);
+                _logger.Log(LogLevel.ERROR, ex.Message);
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void tsmiDmtSaveAs_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                SaveDmtFileAs();
+            }
+            catch (Exception ex)
+            {
+                ManageWorkingState(false);
+                _logger.Log(LogLevel.ERROR, ex.Message);
+                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void tsmiDmtClose_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                CloseDmtFileSession();
             }
             catch (Exception ex)
             {
@@ -2186,8 +2758,11 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 lvAttributes.Items.Cast<ListViewItem>().ToList().ForEach(item => item.Checked = allAttributes);
 
                 // save settings
+                if (tableData.Settings.DeselectedAttributes == null)
+                    tableData.Settings.DeselectedAttributes = new List<string>();
                 if (allAttributes) { tableData.Settings.DeselectedAttributes.Clear(); }
                 else { tableData.Settings.DeselectedAttributes = tableData.Table.AllAttributes.Select(attr => attr.LogicalName).ToList(); }
+                ScheduleDmtAutoSave();
             }
             catch (Exception ex)
             {
@@ -2214,8 +2789,11 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     // save deselected attributes to settings
                     var deselected = lvAttributes.Items.Cast<ListViewItem>().ToList().Where(lvi => !lvi.Checked).Select(lvi => lvi.SubItems[0].Text);
 
+                    if (tableData.Settings.DeselectedAttributes == null)
+                        tableData.Settings.DeselectedAttributes = new List<string>();
                     tableData.Settings.DeselectedAttributes.Clear();
                     tableData.Settings.DeselectedAttributes.AddRange(deselected);
+                    ScheduleDmtAutoSave();
                 }
             }
             catch (Exception ex)
@@ -2237,9 +2815,13 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
                 if (mappingsDlg.Updated)
                 {
+                    _mappings = _sourceInstance.Mappings?
+                        .Where(map => _targetInstance == null || string.Equals(map.TargetInstanceName, _targetInstance.FriendlyName))
+                        .ToList() ?? new List<Mapping>();
                     RenderMappingsButton();
 
                     SettingsHelper.SetSettings(_settings);
+                    AutoSaveDmtSettings();
                     SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Succesfully updated Organization Mappings"));
                 }
             }
@@ -2308,6 +2890,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             try
             {
+                if (_suppressSettingsEvents) return;
+
                 var filters = rtbFilter.Text;
 
                 var tableData = GetSelectedTableItemData(false);
@@ -2320,6 +2904,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 // save settings
                 tableData.Settings.Filter = filters;
                 SettingsHelper.SetSettings(_settings);
+                ScheduleDmtAutoSave();
             }
             catch (Exception ex)
             {

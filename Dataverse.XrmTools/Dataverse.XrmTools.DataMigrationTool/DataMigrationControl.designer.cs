@@ -26,7 +26,6 @@
             this.components = new System.ComponentModel.Container();
             System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(DataMigrationControl));
             this.tsMain = new System.Windows.Forms.ToolStrip();
-            this.tsbRefreshTables = new System.Windows.Forms.ToolStripButton();
             this.tsSeparator1 = new System.Windows.Forms.ToolStripSeparator();
             this.tsbPreview = new System.Windows.Forms.ToolStripButton();
             this.tsmiExport = new System.Windows.Forms.ToolStripMenuItem();
@@ -41,14 +40,19 @@
             this.tsmiImportFromExcel = new System.Windows.Forms.ToolStripMenuItem();
             this.tsSeparator2 = new System.Windows.Forms.ToolStripSeparator();
             this.tsmiEnvironments = new System.Windows.Forms.ToolStripMenuItem();
+            this.tsmiReloadTables = new System.Windows.Forms.ToolStripMenuItem();
+            this.tsSeparatorEnv = new System.Windows.Forms.ToolStripSeparator();
             this.tsmiConnectTarget = new System.Windows.Forms.ToolStripMenuItem();
             this.tsmiSwitchConnections = new System.Windows.Forms.ToolStripMenuItem();
+            this.tsmiDmtFile = new System.Windows.Forms.ToolStripMenuItem();
+            this.tsmiDmtNew = new System.Windows.Forms.ToolStripMenuItem();
+            this.tsmiDmtLoad = new System.Windows.Forms.ToolStripMenuItem();
+            this.tsmiDmtSaveAs = new System.Windows.Forms.ToolStripMenuItem();
+            this.tsSeparatorDmt = new System.Windows.Forms.ToolStripSeparator();
+            this.tsmiDmtClose = new System.Windows.Forms.ToolStripMenuItem();
             this.tsbAbort = new System.Windows.Forms.ToolStripButton();
             this.pnlMain = new System.Windows.Forms.TableLayoutPanel();
             this.pnlSettings = new System.Windows.Forms.TableLayoutPanel();
-            this.pnlConnections = new System.Windows.Forms.Panel();
-            this.lblSourceConn = new System.Windows.Forms.Label();
-            this.lblTargetConn = new System.Windows.Forms.Label();
             this.gbMappingSettings = new System.Windows.Forms.GroupBox();
             this.rbMapOnImport = new System.Windows.Forms.RadioButton();
             this.rbMapOnExport = new System.Windows.Forms.RadioButton();
@@ -88,7 +92,6 @@
             this.tsMain.SuspendLayout();
             this.pnlMain.SuspendLayout();
             this.pnlSettings.SuspendLayout();
-            this.pnlConnections.SuspendLayout();
             this.gbMappingSettings.SuspendLayout();
             this.gbOpSettings.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.nudBatchCount)).BeginInit();
@@ -104,30 +107,19 @@
             this.tsMain.AutoSize = false;
             this.tsMain.ImageScalingSize = new System.Drawing.Size(20, 20);
             this.tsMain.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
-            this.tsbRefreshTables,
+            this.tsmiEnvironments,
             this.tsSeparator1,
             this.tsbPreview,
             this.tsmiExport,
             this.tsmiImport,
             this.tsSeparator2,
-            this.tsmiEnvironments,
+            this.tsmiDmtFile,
             this.tsbAbort});
             this.tsMain.Location = new System.Drawing.Point(0, 0);
             this.tsMain.Name = "tsMain";
             this.tsMain.Size = new System.Drawing.Size(1610, 25);
             this.tsMain.TabIndex = 90;
             this.tsMain.Text = "toolStrip1";
-            // 
-            // tsbRefreshTables
-            // 
-            this.tsbRefreshTables.Font = new System.Drawing.Font("Segoe UI", 8.25F);
-            this.tsbRefreshTables.Image = global::Dataverse.XrmTools.DataMigrationTool.Properties.Resources.database;
-            this.tsbRefreshTables.ImageTransparentColor = System.Drawing.Color.Magenta;
-            this.tsbRefreshTables.Name = "tsbRefreshTables";
-            this.tsbRefreshTables.Size = new System.Drawing.Size(90, 22);
-            this.tsbRefreshTables.Text = "Load Tables";
-            this.tsbRefreshTables.Click += new System.EventHandler(this.tsbRefreshTables_Click);
-            // 
             // tsSeparator1
             // 
             this.tsSeparator1.Name = "tsSeparator1";
@@ -147,7 +139,6 @@
             // 
             this.tsmiExport.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.tsmiExportData,
-            this.tsmiExportSettings,
             this.tsmiExportWithSettings,
             this.tsmiExportToExcel});
             this.tsmiExport.Enabled = false;
@@ -236,15 +227,28 @@
             // tsmiEnvironments
             //
             this.tsmiEnvironments.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.tsmiReloadTables,
+            this.tsSeparatorEnv,
             this.tsmiConnectTarget,
             this.tsmiSwitchConnections});
             this.tsmiEnvironments.Name = "tsmiEnvironments";
             this.tsmiEnvironments.Size = new System.Drawing.Size(107, 25);
             this.tsmiEnvironments.Text = "Environments";
             //
+            // tsmiReloadTables
+            //
+            this.tsmiReloadTables.Name = "tsmiReloadTables";
+            this.tsmiReloadTables.Size = new System.Drawing.Size(210, 22);
+            this.tsmiReloadTables.Text = "Reload Tables";
+            this.tsmiReloadTables.Click += new System.EventHandler(this.tsbRefreshTables_Click);
+            //
+            // tsSeparatorEnv
+            //
+            this.tsSeparatorEnv.Name = "tsSeparatorEnv";
+            this.tsSeparatorEnv.Size = new System.Drawing.Size(207, 6);
+            //
             // tsmiConnectTarget
             //
-            this.tsmiConnectTarget.Image = global::Dataverse.XrmTools.DataMigrationTool.Properties.Resources.connect16_colorful;
             this.tsmiConnectTarget.Name = "tsmiConnectTarget";
             this.tsmiConnectTarget.Size = new System.Drawing.Size(210, 22);
             this.tsmiConnectTarget.Text = "Connect Target";
@@ -257,6 +261,51 @@
             this.tsmiSwitchConnections.Size = new System.Drawing.Size(210, 22);
             this.tsmiSwitchConnections.Text = "Switch Source / Target";
             this.tsmiSwitchConnections.Click += new System.EventHandler(this.tsmiSwitchConnections_Click);
+            //
+            // tsmiDmtFile
+            //
+            this.tsmiDmtFile.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.tsmiDmtNew,
+            this.tsmiDmtLoad,
+            this.tsmiDmtSaveAs,
+            this.tsSeparatorDmt,
+            this.tsmiDmtClose});
+            this.tsmiDmtFile.Name = "tsmiDmtFile";
+            this.tsmiDmtFile.Size = new System.Drawing.Size(93, 25);
+            this.tsmiDmtFile.Text = "Settings File";
+            //
+            // tsmiDmtNew
+            //
+            this.tsmiDmtNew.Name = "tsmiDmtNew";
+            this.tsmiDmtNew.Size = new System.Drawing.Size(136, 22);
+            this.tsmiDmtNew.Text = "New...";
+            this.tsmiDmtNew.Click += new System.EventHandler(this.tsmiDmtNew_Click);
+            //
+            // tsmiDmtLoad
+            //
+            this.tsmiDmtLoad.Name = "tsmiDmtLoad";
+            this.tsmiDmtLoad.Size = new System.Drawing.Size(136, 22);
+            this.tsmiDmtLoad.Text = "Load...";
+            this.tsmiDmtLoad.Click += new System.EventHandler(this.tsmiDmtLoad_Click);
+            //
+            // tsmiDmtSaveAs
+            //
+            this.tsmiDmtSaveAs.Name = "tsmiDmtSaveAs";
+            this.tsmiDmtSaveAs.Size = new System.Drawing.Size(136, 22);
+            this.tsmiDmtSaveAs.Text = "Save As...";
+            this.tsmiDmtSaveAs.Click += new System.EventHandler(this.tsmiDmtSaveAs_Click);
+            //
+            // tsSeparatorDmt
+            //
+            this.tsSeparatorDmt.Name = "tsSeparatorDmt";
+            this.tsSeparatorDmt.Size = new System.Drawing.Size(133, 6);
+            //
+            // tsmiDmtClose
+            //
+            this.tsmiDmtClose.Name = "tsmiDmtClose";
+            this.tsmiDmtClose.Size = new System.Drawing.Size(136, 22);
+            this.tsmiDmtClose.Text = "Close file";
+            this.tsmiDmtClose.Click += new System.EventHandler(this.tsmiDmtClose_Click);
             //
             // tsbAbort
             // 
@@ -302,43 +351,6 @@
             this.pnlSettings.Size = new System.Drawing.Size(237, 759);
             this.pnlSettings.TabIndex = 0;
             //
-            // pnlConnections
-            //
-            this.pnlConnections.Controls.Add(this.lblSourceConn);
-            this.pnlConnections.Controls.Add(this.lblTargetConn);
-            this.pnlConnections.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.pnlConnections.Location = new System.Drawing.Point(2, 2);
-            this.pnlConnections.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
-            this.pnlConnections.Name = "pnlConnections";
-            this.pnlConnections.Size = new System.Drawing.Size(1602, 20);
-            this.pnlConnections.TabIndex = 0;
-            //
-            // lblSourceConn
-            //
-            this.lblSourceConn.AutoEllipsis = true;
-            this.lblSourceConn.AutoSize = false;
-            this.lblSourceConn.Font = new System.Drawing.Font("Segoe UI", 8.25F);
-            this.lblSourceConn.ForeColor = System.Drawing.Color.DarkRed;
-            this.lblSourceConn.Location = new System.Drawing.Point(5, 3);
-            this.lblSourceConn.Name = "lblSourceConn";
-            this.lblSourceConn.Size = new System.Drawing.Size(450, 15);
-            this.lblSourceConn.TabIndex = 0;
-            this.lblSourceConn.Text = "Source: Disconnected";
-            //
-            // lblTargetConn
-            //
-            this.lblTargetConn.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.lblTargetConn.AutoEllipsis = true;
-            this.lblTargetConn.AutoSize = false;
-            this.lblTargetConn.Font = new System.Drawing.Font("Segoe UI", 8.25F);
-            this.lblTargetConn.ForeColor = System.Drawing.Color.DarkRed;
-            this.lblTargetConn.Location = new System.Drawing.Point(1147, 3);
-            this.lblTargetConn.Name = "lblTargetConn";
-            this.lblTargetConn.Size = new System.Drawing.Size(450, 15);
-            this.lblTargetConn.TabIndex = 1;
-            this.lblTargetConn.Text = "Target: Disconnected";
-            this.lblTargetConn.TextAlign = System.Drawing.ContentAlignment.TopRight;
-            // 
             // gbMappingSettings
             // 
             this.gbMappingSettings.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
@@ -567,16 +579,14 @@
             // 
             this.pnlBody.ColumnCount = 1;
             this.pnlBody.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 100F));
-            this.pnlBody.Controls.Add(this.pnlConnections, 0, 0);
-            this.pnlBody.Controls.Add(this.gbTables, 0, 1);
-            this.pnlBody.Controls.Add(this.gbAttributes, 0, 2);
-            this.pnlBody.Controls.Add(this.gbFilters, 0, 3);
+            this.pnlBody.Controls.Add(this.gbTables, 0, 0);
+            this.pnlBody.Controls.Add(this.gbAttributes, 0, 1);
+            this.pnlBody.Controls.Add(this.gbFilters, 0, 2);
             this.pnlBody.Dock = System.Windows.Forms.DockStyle.Fill;
             this.pnlBody.Location = new System.Drawing.Point(2, 2);
             this.pnlBody.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
             this.pnlBody.Name = "pnlBody";
-            this.pnlBody.RowCount = 4;
-            this.pnlBody.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 24F));
+            this.pnlBody.RowCount = 3;
             this.pnlBody.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 38F));
             this.pnlBody.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 40F));
             this.pnlBody.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 22F));
@@ -805,7 +815,6 @@
             this.tsMain.PerformLayout();
             this.pnlMain.ResumeLayout(false);
             this.pnlSettings.ResumeLayout(false);
-            this.pnlConnections.ResumeLayout(false);
             this.gbMappingSettings.ResumeLayout(false);
             this.gbMappingSettings.PerformLayout();
             this.gbOpSettings.ResumeLayout(false);
@@ -827,7 +836,6 @@
 
         // Main Tool Strip
         private System.Windows.Forms.ToolStrip tsMain;
-        private System.Windows.Forms.ToolStripButton tsbRefreshTables;
         private System.Windows.Forms.ToolStripSeparator tsSeparator1;
         private System.Windows.Forms.ToolStripButton tsbPreview;
         private System.Windows.Forms.ToolStripMenuItem tsmiExport;
@@ -837,8 +845,16 @@
         private System.Windows.Forms.ToolStripMenuItem tsmiImportFromExcel;
         private System.Windows.Forms.ToolStripSeparator tsSeparator2;
         private System.Windows.Forms.ToolStripMenuItem tsmiEnvironments;
+        private System.Windows.Forms.ToolStripMenuItem tsmiReloadTables;
+        private System.Windows.Forms.ToolStripSeparator tsSeparatorEnv;
         private System.Windows.Forms.ToolStripMenuItem tsmiConnectTarget;
         private System.Windows.Forms.ToolStripMenuItem tsmiSwitchConnections;
+        private System.Windows.Forms.ToolStripMenuItem tsmiDmtFile;
+        private System.Windows.Forms.ToolStripMenuItem tsmiDmtNew;
+        private System.Windows.Forms.ToolStripMenuItem tsmiDmtLoad;
+        private System.Windows.Forms.ToolStripMenuItem tsmiDmtSaveAs;
+        private System.Windows.Forms.ToolStripSeparator tsSeparatorDmt;
+        private System.Windows.Forms.ToolStripMenuItem tsmiDmtClose;
         private System.Windows.Forms.ToolStripButton tsbAbort;
 
         // Main panel
@@ -848,9 +864,6 @@
         private System.Windows.Forms.TableLayoutPanel pnlSettings;
 
         // Connection status strip
-        private System.Windows.Forms.Panel pnlConnections;
-        private System.Windows.Forms.Label lblSourceConn;
-        private System.Windows.Forms.Label lblTargetConn;
         private System.Windows.Forms.ToolTip toolTip;
 
         // View settings group

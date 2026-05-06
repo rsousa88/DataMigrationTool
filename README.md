@@ -59,14 +59,18 @@ Manual mappings can also be defined for any lookup field.
 ## Release Notes
 
 ### 2026.5.6.x
+- [NEW] Settings files now save and load table configuration in the new `.dmt.json` format
+- [NEW] Legacy table settings can now be imported into a settings file with table validation
 - [NEW] Import result dialogs now show row numbers, success/failed summaries, failed-row filtering, and retry for failed rows
 - [NEW] Excel and JSON import previews now show source row numbers and row-level warnings
 - [NEW] Long-running preview, export, and import operations now report clearer progress and log detailed errors
+- [FIX] Legacy settings migration now preserves filters and selected table attributes
+- [FIX] Excel and JSON imports now validate the loaded settings file table before reading source rows
 - [FIX] Preview now validates missing FetchXML link-entity aliases and shows a friendly error instead of crashing
 - [FIX] Result and import preview tables now sort row numbers numerically and support cleaner copy/sort behavior
 - [FIX] Import wizard layout was polished and user/team auto-map options were removed in favor of explicit mappings
 - [FIX] Import wizard now uses safer default batch sizes for Dataverse timeout-sensitive tables
-- [FIX] Import progress now shows processed record counts and percentage during execution
+- [FIX] Import progress now shows processed record counts, percentage, and error counts during execution
 - [FIX] Organization mapping option in the import wizard now has clearer wording
 
 ### 2026.5.5.x
