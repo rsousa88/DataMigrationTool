@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
   <metadata>
     <id>Dataverse.XrmTools.DataMigrationTool</id>
-    <version>2026.5.6.1</version>
+    <version>2026.5.6.2</version>
     <title>Data Migration Tool</title>
     <authors>Rui Sousa</authors>
     <owners>Rui Sousa</owners>
@@ -10,6 +10,7 @@
     <license type="expression">MIT</license>
     <projectUrl>https://github.com/rsousa88/DataMigrationTool</projectUrl>
     <icon>images\icon.png</icon>
+    <readme>README.md</readme>
     <description>
       Tool used to migrate data between Dataverse instances.
 
@@ -71,6 +72,7 @@
     </dependencies>
   </metadata>
   <files>
+    <file src="..\..\..\README.md" target="\" />
     <file src="..\Resources\icon.png" target="images\" />
 	<file src="..\bin\Release\Dataverse.XrmTools.DataMigrationTool.dll" target="lib\net48\Plugins\Dataverse.XrmTools.DataMigrationTool.dll" />
 	<file src="..\bin\Release\ClosedXML.dll" target="lib\net48\Plugins\ClosedXML.dll" />
