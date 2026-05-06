@@ -5,6 +5,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
 {
     public class Record
     {
+        public int SourceRowNumber { get; set; }
         public IEnumerable<RecordAttribute> Attributes { get; set; }
     }
 }

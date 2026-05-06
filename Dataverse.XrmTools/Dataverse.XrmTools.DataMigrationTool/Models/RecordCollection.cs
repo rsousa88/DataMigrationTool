@@ -32,8 +32,9 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
 
         public RecordCollection(EntityCollection entityCollection, EntityMetadata metadata)
         {
-            var records = entityCollection.Entities.Select(ent => new Record
+            var records = entityCollection.Entities.Select((ent, index) => new Record
             {
+                SourceRowNumber = index + 1,
                 Attributes = ent.Attributes.MapAttributes(metadata)
             });
 

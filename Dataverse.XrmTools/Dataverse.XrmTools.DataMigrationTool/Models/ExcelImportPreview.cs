@@ -38,10 +38,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
 
     public class ExcelImportPreviewItem
     {
+        public int RowNumber { get; set; }
         public string Action { get; set; }
         public string RecordId { get; set; }
         public string MatchValue { get; set; }
         public string Name { get; set; }
         public string Description { get; set; }
+        public string Warnings { get; set; }
     }
 }

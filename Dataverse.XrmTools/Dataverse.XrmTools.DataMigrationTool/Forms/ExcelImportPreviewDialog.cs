@@ -16,8 +16,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         private readonly ListView _list;
         private readonly CheckBox _cbCreate;
         private readonly CheckBox _cbUpdate;
-        private readonly CheckBox _cbMapUsers;
-        private readonly CheckBox _cbMapTeams;
         private readonly ComboBox _cboMatchMode;
         private readonly ComboBox _cboAlternateKey;
         private readonly Button _btnConfigureMatchKey;
@@ -93,8 +91,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
 
             _cbCreate = FindControl<CheckBox>("cbCreate");
             _cbUpdate = FindControl<CheckBox>("cbUpdate");
-            _cbMapUsers = FindControl<CheckBox>("cbMapUsers");
-            _cbMapTeams = FindControl<CheckBox>("cbMapTeams");
             _cboMatchMode = FindControl<ComboBox>("cboMatchMode");
             _cboAlternateKey = FindControl<ComboBox>("cboAlternateKey");
             _btnConfigureMatchKey = FindControl<Button>("btnConfigureMatchKey");
@@ -174,10 +170,10 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
 
         private Control BuildSettingsContent()
         {
-            var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 9, Padding = new Padding(10, 6, 10, 6) };
+            var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 8, Padding = new Padding(10, 6, 10, 6) };
             panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 92F));
             panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            for (var i = 0; i < 8; i++) panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 31F));
+            for (var i = 0; i < 7; i++) panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 31F));
             panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
             panel.Controls.Add(new Label { Text = "Operations:", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 0);
@@ -213,14 +209,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             panel.Controls.Add(new Label { Text = "Batch size:", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 4);
             panel.Controls.Add(new NumericUpDown { Name = "nudBatchSize", Dock = DockStyle.Left, Width = 86, Minimum = 1, Maximum = 5000, Value = Math.Max(1, Math.Min(5000, Settings.BatchSize)) }, 1, 4);
 
-            panel.Controls.Add(new Label { Text = "Auto map:", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 5);
-            var autoMap = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, Margin = Padding.Empty, WrapContents = false };
-            autoMap.Controls.Add(new CheckBox { Name = "cbMapUsers", Text = "Users", AutoSize = true, Checked = Settings.MapUsers });
-            autoMap.Controls.Add(new CheckBox { Name = "cbMapTeams", Text = "Teams", AutoSize = true, Checked = Settings.MapTeams });
-            panel.Controls.Add(autoMap, 1, 5);
-
-            panel.Controls.Add(new Label { Text = "Mappings:", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 6);
-            panel.Controls.Add(new CheckBox { Name = "cbApplyMappings", Text = "Apply mappings during import", AutoSize = true, Checked = Settings.ApplyMappingsOn == Operation.Import }, 1, 6);
+            panel.Controls.Add(new Label { Text = "Mappings:", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 5);
+            panel.Controls.Add(new CheckBox { Name = "cbApplyMappings", Text = "Apply mappings during import", AutoSize = true, Checked = Settings.ApplyMappingsOn == Operation.Import }, 1, 5);
 
             var note = new Label
             {
@@ -228,7 +218,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                 Dock = DockStyle.Fill,
                 ForeColor = SystemColors.GrayText
             };
-            panel.Controls.Add(note, 0, 7);
+            panel.Controls.Add(note, 0, 6);
             panel.SetColumnSpan(note, 2);
             return panel;
         }
@@ -261,11 +251,13 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             };
             list.ColumnClick += List_ColumnClick;
             list.KeyUp += List_KeyUp;
+            list.Columns.Add("Row");
             list.Columns.Add("Action");
             list.Columns.Add("Record ID");
             list.Columns.Add("Match Value");
             list.Columns.Add("Record Name");
             list.Columns.Add("Description");
+            list.Columns.Add("Warnings");
             return list;
         }
 
@@ -273,7 +265,24 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         {
             _list.Items.Clear();
             foreach (var item in _preview.Items)
-                _list.Items.Add(new ListViewItem(new[] { item.Action, item.RecordId, item.MatchValue, item.Name, item.Description }));
+            {
+                var listItem = new ListViewItem(new[]
+                {
+                    item.RowNumber > 0 ? item.RowNumber.ToString() : string.Empty,
+                    item.Action,
+                    item.RecordId,
+                    item.MatchValue,
+                    item.Name,
+                    item.Description,
+                    item.Warnings
+                });
+                if (!string.IsNullOrWhiteSpace(item.Warnings))
+                {
+                    listItem.BackColor = Color.FromArgb(255, 250, 230);
+                    listItem.ForeColor = Color.DarkGoldenrod;
+                }
+                _list.Items.Add(listItem);
+            }
             ResizeColumns();
         }
 
@@ -281,11 +290,13 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         {
             if (_list == null) return;
             var width = Math.Max(_list.ClientSize.Width, 700);
-            _list.Columns[0].Width = (int)(width * 0.10);
-            _list.Columns[1].Width = (int)(width * 0.24);
-            _list.Columns[2].Width = (int)(width * 0.18);
-            _list.Columns[3].Width = (int)(width * 0.20);
-            _list.Columns[4].Width = (int)(width * 0.26);
+            _list.Columns[0].Width = (int)(width * 0.06);
+            _list.Columns[1].Width = (int)(width * 0.09);
+            _list.Columns[2].Width = (int)(width * 0.20);
+            _list.Columns[3].Width = (int)(width * 0.16);
+            _list.Columns[4].Width = (int)(width * 0.17);
+            _list.Columns[5].Width = (int)(width * 0.18);
+            _list.Columns[6].Width = (int)(width * 0.13);
         }
 
         private void CloseWith(DialogResult result)
@@ -435,8 +446,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             {
                 Action = action,
                 BatchSize = (int)_nudBatchSize.Value,
-                MapUsers = _cbMapUsers.Checked,
-                MapTeams = _cbMapTeams.Checked,
+                MapUsers = false,
+                MapTeams = false,
                 MapBu = Settings.MapBu,
                 ApplyMappingsOn = _cbApplyMappings.Checked ? Operation.Import : Operation.Export,
                 HideInvalidAttributes = Settings.HideInvalidAttributes
@@ -450,8 +461,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             {
                 Action = settings.Action,
                 BatchSize = settings.BatchSize <= 0 ? 250 : settings.BatchSize,
-                MapUsers = settings.MapUsers,
-                MapTeams = settings.MapTeams,
+                MapUsers = false,
+                MapTeams = false,
                 MapBu = settings.MapBu,
                 ApplyMappingsOn = settings.ApplyMappingsOn,
                 HideInvalidAttributes = settings.HideInvalidAttributes

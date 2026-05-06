@@ -58,6 +58,14 @@ Manual mappings can also be defined for any lookup field.
 
 ## Release Notes
 
+### 2026.5.6.x
+- [NEW] Import result dialogs now show row numbers, success/failed summaries, failed-row filtering, and retry for failed rows
+- [NEW] Excel and JSON import previews now show source row numbers and row-level warnings
+- [NEW] Long-running preview, export, and import operations now report clearer progress and log detailed errors
+- [FIX] Preview now validates missing FetchXML link-entity aliases and shows a friendly error instead of crashing
+- [FIX] Result and import preview tables now sort row numbers numerically and support cleaner copy/sort behavior
+- [FIX] Import wizard layout was polished and user/team auto-map options were removed in favor of explicit mappings
+
 ### 2026.5.5.x
 - [NEW] Excel lookup key fields can now populate related columns during export
 - [NEW] Nested lookup key fields can be resolved by GUID or selected custom attributes

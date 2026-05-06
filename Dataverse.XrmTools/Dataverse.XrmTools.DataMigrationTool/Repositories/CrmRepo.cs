@@ -92,6 +92,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Repositories
                 if (response == null || response.EntityCollection == null) { break; }
 
                 records.AddRange(response.EntityCollection.Entities);
+                _worker?.ReportProgress(0, $"Retrieved {records.Count} record(s)...");
                 query.PageInfo.PageNumber++;
                 query.PageInfo.PagingCookie = response.EntityCollection.PagingCookie;
             }
@@ -220,6 +221,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Repositories
 
         public Guid? ResolveByAlternateKey(string logicalName, Dictionary<string, object> keyValues)
         {
+            ThrowIfCancelled();
             var filter = new FilterExpression(LogicalOperator.And);
             foreach (var kv in keyValues)
             {
@@ -235,7 +237,9 @@ namespace Dataverse.XrmTools.DataMigrationTool.Repositories
                 TopCount = 1
             };
 
+            ThrowIfCancelled();
             var response = _service.Execute(new RetrieveMultipleRequest { Query = query }) as RetrieveMultipleResponse;
+            ThrowIfCancelled();
             return response?.EntityCollection?.Entities?.FirstOrDefault()?.Id;
         }
 
@@ -246,6 +250,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Repositories
 
         public Entity FindByFieldValues(string logicalName, Dictionary<string, object> fieldValues)
         {
+            ThrowIfCancelled();
             var filter = new FilterExpression(LogicalOperator.And);
             foreach (var kv in fieldValues)
             {
@@ -261,7 +266,9 @@ namespace Dataverse.XrmTools.DataMigrationTool.Repositories
                 TopCount = 2
             };
 
+            ThrowIfCancelled();
             var response = _service.Execute(new RetrieveMultipleRequest { Query = query }) as RetrieveMultipleResponse;
+            ThrowIfCancelled();
             var results = response?.EntityCollection?.Entities;
             if (results == null || results.Count == 0) return null;
             if (results.Count > 1) throw new Exception($"Multiple records found for {FormatFieldValues(fieldValues)}");
@@ -271,6 +278,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Repositories
         private string FormatFieldValues(Dictionary<string, object> fieldValues)
         {
             return string.Join(", ", fieldValues.Select(kv => $"{kv.Key} = '{kv.Value}'"));
+        }
+
+        private void ThrowIfCancelled()
+        {
+            if (_worker != null && _worker.CancellationPending)
+                throw new OperationCanceledException();
         }
         #endregion Interface Methods
 
@@ -297,15 +310,24 @@ namespace Dataverse.XrmTools.DataMigrationTool.Repositories
         {
             try
             {
+                var requestList = requests.ToList();
+                if (!requestList.Any()) return Enumerable.Empty<CrmBulkResponse>();
+
+                var requestName = requestList.Select(req => req.RequestName).Distinct().Count() == 1
+                    ? requestList.First().RequestName
+                    : "mixed";
+                _worker?.ReportProgress(0, $"Dataverse is processing {requestList.Count} {requestName} request(s)...");
+
                 var multipleReq = new ExecuteMultipleRequest
                 {
                     Requests = new OrganizationRequestCollection(),
                     Settings = new ExecuteMultipleSettings { ContinueOnError = true, ReturnResponses = true }
                 };
 
-                multipleReq.Requests.AddRange(requests);
+                multipleReq.Requests.AddRange(requestList);
 
                 var response = _service.Execute(multipleReq) as ExecuteMultipleResponse;
+                _worker?.ReportProgress(0, $"Dataverse returned {response?.Responses?.Count ?? 0} response(s) for this batch.");
 
                 return response.Responses
                     .Select(resp => new CrmBulkResponse

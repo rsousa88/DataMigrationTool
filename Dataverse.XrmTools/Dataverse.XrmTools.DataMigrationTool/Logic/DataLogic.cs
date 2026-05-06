@@ -50,15 +50,18 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
         #region Public Methods
         public OperationResult Preview(TableData tableData, UiSettings uiSettings, bool targetReady)
         {
+            ReportStatus($"Preview: retrieving source {tableData.Table.LogicalName} records...");
             RetrieveSourceData(tableData, uiSettings.BatchSize);
             if (_worker.CancellationPending) return null;
 
             if(targetReady)
             {
+                ReportStatus($"Preview: checking matching target {tableData.Table.LogicalName} records...");
                 RetrieveTargetData(tableData.Table.LogicalName, tableData.Table.IdAttribute, uiSettings.BatchSize);
                 if (_worker.CancellationPending) return null;
             }
 
+            ReportStatus("Preview: comparing source and target records...");
             ExecuteTargetOperations(uiSettings, tableData.Table, true, targetReady);
             if (_worker.CancellationPending) return null;
 
@@ -70,30 +73,37 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
         public IEnumerable<Entity> GetSourceEntities(TableData tableData, UiSettings uiSettings)
         {
+            ReportStatus($"Retrieving source {tableData.Table.LogicalName} records...");
             RetrieveSourceData(tableData, uiSettings.BatchSize);
             return _sourceCollection?.Entities ?? Enumerable.Empty<Entity>();
         }
 
         public bool Export(TableData tableData, UiSettings uiSettings, string filePath, List<Mapping> mappings)
         {
+            ReportStatus($"Export: retrieving source {tableData.Table.LogicalName} records...");
             RetrieveSourceData(tableData, uiSettings.BatchSize);
 
             if(uiSettings.ApplyMappingsOn.Equals(Operation.Export))
             {
+                ReportStatus("Export: applying mappings...");
                 var mappingsLogic = new MappingsLogic(_sourceSvc, _targetSvc);
                 _mappedCollection = mappingsLogic.ExecuteMappingsOnExport(_sourceCollection.Entities.ToList(), mappings, tableData.Table);
 
+                ReportStatus($"Export: writing {_mappedCollection.Entities.Count} records to JSON...");
                 return SaveJsonFile(_mappedCollection, tableData, filePath);
             }
             else
             {
+                ReportStatus($"Export: writing {_sourceCollection.Entities.Count} records to JSON...");
                 return SaveJsonFile(_sourceCollection, tableData, filePath);
             }
         }
 
         public OperationResult Import(TableData tableData, RecordCollection collection, UiSettings uiSettings, List<Mapping> mappings, bool confirm = true)
         {
+            ReportStatus($"Import: converting {collection.Count} {collection.LogicalName} records...");
             _sourceCollection = collection.ToEntityCollection(tableData.Metadata.Attributes);
+            ReportStatus($"Import: checking existing target {tableData.Table.LogicalName} records...");
             RetrieveTargetData(tableData.Table.LogicalName, tableData.Table.IdAttribute, uiSettings.BatchSize);
 
             var matchKey = string.IsNullOrWhiteSpace(collection.ImportMatchKey)
@@ -102,6 +112,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             var msg = $"You are about to import {_sourceCollection.Entities.Count} {tableData.Table.LogicalName} records using '{matchKey}' as the matching key. Continue?";
             if (!confirm || MessageBox.Show(msg, "Info", MessageBoxButtons.YesNo, MessageBoxIcon.Question).Equals(DialogResult.Yes))
             {
+                ReportStatus("Import: applying selected operations...");
                 ExecuteTargetOperations(uiSettings, tableData.Table, false, true, mappings);
 
                 return new OperationResult
@@ -128,6 +139,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             // retrieve source records
             var sourceRepo = new CrmRepo(_sourceSvc, _worker);
             _sourceCollection = sourceRepo.GetCollectionByFetchXml(fetch, batchSize);
+            ReportStatus($"Retrieved {_sourceCollection?.Entities.Count ?? 0} source {tableData.Table.LogicalName} records.");
         }
 
         private void RetrieveTargetData(string logicalName, string idAttribute, int batchSize)
@@ -151,13 +163,15 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             // retrieve target records
             var targetRepo = new CrmRepo(_targetSvc, _worker);
             _targetCollection = targetRepo.GetCollectionByExpression(query, batchSize);
+            ReportStatus($"Found {_targetCollection?.Entities.Count ?? 0} matching target {logicalName} records.");
         }
 
         private void ExecuteTargetOperations(UiSettings uiSettings, Table table, bool isPreview, bool targetReady, List<Mapping> mappings = null)
         {
             if (_sourceCollection == null || (targetReady && _targetCollection == null)) { return; }
 
-            var migrationItems = GetDiffRecords(uiSettings.Action, targetReady);
+            var migrationItems = GetDiffRecords(uiSettings.Action, targetReady).ToList();
+            ReportStatus($"Calculated {migrationItems.Count} record action(s).");
 
             // preview
             if (isPreview)
@@ -179,9 +193,11 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             // apply mappings
             var mappingsLogic = new MappingsLogic(_sourceSvc, _targetSvc);
             var items = uiSettings.ApplyMappingsOn.Equals(Operation.Import) ? mappingsLogic.ExecuteMappingsOnImport(migrationItems, mappings, table) : migrationItems;
+            var itemList = items.ToList();
 
             // execute
-            var diffCount = items.Count();
+            var diffCount = itemList.Count;
+            ReportStatus($"Executing {diffCount} record operation(s) in batches of {uiSettings.BatchSize}...");
 
             var done = 0;
             var lvItems = new List<ListViewItem>();
@@ -192,11 +208,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
                 var batchNum = i + 1;
 
-                var batchRows = items.Skip(done).Take(uiSettings.BatchSize);
+                var batchRows = itemList.Skip(done).Take(uiSettings.BatchSize).ToList();
+                ReportStatus($"Executing batch {batchNum} of {maxBatch} ({batchRows.Count} records)...");
 
                 var responses = ExecuteOperation(uiSettings.Action, batchRows);
 
-                var join = items.Join(responses, mig => mig.Record.Id, res => res.Id, (mig, res) => new
+                var join = batchRows.Join(responses, mig => mig.Record.Id, res => res.Id, (mig, res) => new
                 {
                     Action = mig.Action,
                     Entity = mig.Record,
@@ -213,10 +230,17 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
                 // increment done counter
                 done += batchRows.Count();
+                ReportStatus($"Completed batch {batchNum} of {maxBatch}. {done} of {diffCount} record operations processed.");
             }
 
             // set results
             _resultsData.AddRange(lvItems);
+            ReportStatus($"Completed {lvItems.Count} record operation result(s).");
+        }
+
+        private void ReportStatus(string message, int progress = 0)
+        {
+            _worker?.ReportProgress(progress, message);
         }
 
         private IEnumerable<MigrationItem> GetDiffRecords(Enums.Action action, bool targetReady)
@@ -266,17 +290,20 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             var responses = new List<CrmBulkResponse>();
             if ((mode & Enums.Action.Create) == Enums.Action.Create)
             {
-                var records = migrationItems.Where(mig => (mig.Action & Enums.Action.Create) == Enums.Action.Create).Select(mig => mig.Record);
+                var records = migrationItems.Where(mig => (mig.Action & Enums.Action.Create) == Enums.Action.Create).Select(mig => mig.Record).ToList();
+                if (records.Any()) ReportStatus($"Creating {records.Count} record(s) in Dataverse...");
                 responses.AddRange(repo.CreateRecords(records));
             }
             if ((mode & Enums.Action.Update) == Enums.Action.Update)
             {
-                var records = migrationItems.Where(mig => (mig.Action & Enums.Action.Update) == Enums.Action.Update).Select(mig => mig.Record);
+                var records = migrationItems.Where(mig => (mig.Action & Enums.Action.Update) == Enums.Action.Update).Select(mig => mig.Record).ToList();
+                if (records.Any()) ReportStatus($"Updating {records.Count} record(s) in Dataverse...");
                 responses.AddRange(repo.UpdateRecords(records));
             }
             if ((mode & Enums.Action.Delete) == Enums.Action.Delete)
             {
-                var records = migrationItems.Where(mig => (mig.Action & Enums.Action.Delete) == Enums.Action.Delete).Select(mig => mig.Record);
+                var records = migrationItems.Where(mig => (mig.Action & Enums.Action.Delete) == Enums.Action.Delete).Select(mig => mig.Record).ToList();
+                if (records.Any()) ReportStatus($"Deleting {records.Count} record(s) in Dataverse...");
                 responses.AddRange(repo.DeleteRecords(records));
             }
 
@@ -359,7 +386,39 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 entity.AppendChild(fragment);
             }
 
+            ValidateConditionEntityAliases(doc);
+
             return doc.InnerXml;
+        }
+
+        private void ValidateConditionEntityAliases(XmlDocument doc)
+        {
+            var knownEntityNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var entity = doc.SelectSingleNode("/fetch/entity") as XmlElement;
+            var entityName = entity?.GetAttribute("name");
+            if (!string.IsNullOrWhiteSpace(entityName)) { knownEntityNames.Add(entityName); }
+
+            foreach (XmlElement linkEntity in doc.GetElementsByTagName("link-entity"))
+            {
+                var alias = linkEntity.GetAttribute("alias");
+                if (!string.IsNullOrWhiteSpace(alias)) { knownEntityNames.Add(alias); }
+
+                var linkEntityName = linkEntity.GetAttribute("name");
+                if (!string.IsNullOrWhiteSpace(linkEntityName)) { knownEntityNames.Add(linkEntityName); }
+            }
+
+            var missingAliases = doc.GetElementsByTagName("condition")
+                .OfType<XmlElement>()
+                .Select(condition => condition.GetAttribute("entityname"))
+                .Where(entityNameValue => !string.IsNullOrWhiteSpace(entityNameValue) && !knownEntityNames.Contains(entityNameValue))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (missingAliases.Any())
+            {
+                var aliases = string.Join(", ", missingAliases.Select(alias => $"'{alias}'"));
+                throw new Exception($"The filter references link-entity alias {aliases}, but no matching <link-entity alias=\"...\"> node was found. Include the related <link-entity> in the filter, or remove the entityname attribute if the condition belongs to the selected table.");
+            }
         }
         #endregion Private Methods
     }

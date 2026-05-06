@@ -239,11 +239,9 @@
             // 
             // pnlMain
             // 
-            this.pnlMain.ColumnCount = 2;
-            this.pnlMain.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 15F));
-            this.pnlMain.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 85F));
-            this.pnlMain.Controls.Add(this.pnlSettings, 0, 0);
-            this.pnlMain.Controls.Add(this.pnlBody, 1, 0);
+            this.pnlMain.ColumnCount = 1;
+            this.pnlMain.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 100F));
+            this.pnlMain.Controls.Add(this.pnlBody, 0, 0);
             this.pnlMain.Dock = System.Windows.Forms.DockStyle.Fill;
             this.pnlMain.Location = new System.Drawing.Point(0, 25);
             this.pnlMain.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
@@ -283,11 +281,12 @@
             this.gbEnvironments.Controls.Add(this.lblTargetValue);
             this.gbEnvironments.Controls.Add(this.btnSwitch);
             this.gbEnvironments.Controls.Add(this.btnSelectTarget);
+            this.gbEnvironments.Dock = System.Windows.Forms.DockStyle.Fill;
             this.gbEnvironments.Location = new System.Drawing.Point(2, 2);
             this.gbEnvironments.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
             this.gbEnvironments.Name = "gbEnvironments";
             this.gbEnvironments.Padding = new System.Windows.Forms.Padding(2, 2, 2, 2);
-            this.gbEnvironments.Size = new System.Drawing.Size(233, 110);
+            this.gbEnvironments.Size = new System.Drawing.Size(1602, 60);
             this.gbEnvironments.TabIndex = 0;
             this.gbEnvironments.TabStop = false;
             this.gbEnvironments.Text = "Environments";
@@ -295,7 +294,7 @@
             // lblSource
             // 
             this.lblSource.AutoSize = true;
-            this.lblSource.Location = new System.Drawing.Point(4, 24);
+            this.lblSource.Location = new System.Drawing.Point(8, 25);
             this.lblSource.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
             this.lblSource.Name = "lblSource";
             this.lblSource.Size = new System.Drawing.Size(41, 13);
@@ -304,20 +303,21 @@
             // 
             // lblSourceValue
             // 
-            this.lblSourceValue.AutoSize = true;
+            this.lblSourceValue.AutoEllipsis = true;
+            this.lblSourceValue.AutoSize = false;
             this.lblSourceValue.Font = new System.Drawing.Font("Segoe UI", 8.25F);
             this.lblSourceValue.ForeColor = System.Drawing.Color.DarkRed;
-            this.lblSourceValue.Location = new System.Drawing.Point(61, 22);
+            this.lblSourceValue.Location = new System.Drawing.Point(61, 23);
             this.lblSourceValue.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
             this.lblSourceValue.Name = "lblSourceValue";
-            this.lblSourceValue.Size = new System.Drawing.Size(77, 13);
+            this.lblSourceValue.Size = new System.Drawing.Size(500, 17);
             this.lblSourceValue.TabIndex = 1;
             this.lblSourceValue.Text = "Disconnected";
             // 
             // lblTarget
             // 
             this.lblTarget.AutoSize = true;
-            this.lblTarget.Location = new System.Drawing.Point(4, 48);
+            this.lblTarget.Location = new System.Drawing.Point(580, 25);
             this.lblTarget.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
             this.lblTarget.Name = "lblTarget";
             this.lblTarget.Size = new System.Drawing.Size(38, 13);
@@ -326,13 +326,14 @@
             // 
             // lblTargetValue
             // 
-            this.lblTargetValue.AutoSize = true;
+            this.lblTargetValue.AutoEllipsis = true;
+            this.lblTargetValue.AutoSize = false;
             this.lblTargetValue.Font = new System.Drawing.Font("Segoe UI", 8.25F);
             this.lblTargetValue.ForeColor = System.Drawing.Color.DarkRed;
-            this.lblTargetValue.Location = new System.Drawing.Point(61, 46);
+            this.lblTargetValue.Location = new System.Drawing.Point(632, 23);
             this.lblTargetValue.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
             this.lblTargetValue.Name = "lblTargetValue";
-            this.lblTargetValue.Size = new System.Drawing.Size(77, 13);
+            this.lblTargetValue.Size = new System.Drawing.Size(500, 17);
             this.lblTargetValue.TabIndex = 3;
             this.lblTargetValue.Text = "Disconnected";
             // 
@@ -342,7 +343,8 @@
             this.btnSwitch.FlatAppearance.BorderSize = 0;
             this.btnSwitch.FlatStyle = System.Windows.Forms.FlatStyle.Popup;
             this.btnSwitch.Font = new System.Drawing.Font("Segoe UI", 12F);
-            this.btnSwitch.Location = new System.Drawing.Point(125, 75);
+            this.btnSwitch.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
+            this.btnSwitch.Location = new System.Drawing.Point(1547, 20);
             this.btnSwitch.Name = "btnSwitch";
             this.btnSwitch.Size = new System.Drawing.Size(50, 28);
             this.btnSwitch.TabIndex = 5;
@@ -358,7 +360,8 @@
             this.btnSelectTarget.ForeColor = System.Drawing.SystemColors.ControlText;
             this.btnSelectTarget.Image = global::Dataverse.XrmTools.DataMigrationTool.Properties.Resources.connect16_colorful;
             this.btnSelectTarget.ImageAlign = System.Drawing.ContentAlignment.MiddleLeft;
-            this.btnSelectTarget.Location = new System.Drawing.Point(5, 75);
+            this.btnSelectTarget.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
+            this.btnSelectTarget.Location = new System.Drawing.Point(1406, 20);
             this.btnSelectTarget.Name = "btnSelectTarget";
             this.btnSelectTarget.Size = new System.Drawing.Size(110, 28);
             this.btnSelectTarget.TabIndex = 4;
@@ -594,18 +597,20 @@
             // 
             this.pnlBody.ColumnCount = 1;
             this.pnlBody.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 100F));
-            this.pnlBody.Controls.Add(this.gbTables, 0, 0);
-            this.pnlBody.Controls.Add(this.gbAttributes, 0, 1);
-            this.pnlBody.Controls.Add(this.gbFilters, 0, 2);
+            this.pnlBody.Controls.Add(this.gbEnvironments, 0, 0);
+            this.pnlBody.Controls.Add(this.gbTables, 0, 1);
+            this.pnlBody.Controls.Add(this.gbAttributes, 0, 2);
+            this.pnlBody.Controls.Add(this.gbFilters, 0, 3);
             this.pnlBody.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.pnlBody.Location = new System.Drawing.Point(243, 2);
+            this.pnlBody.Location = new System.Drawing.Point(2, 2);
             this.pnlBody.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
             this.pnlBody.Name = "pnlBody";
-            this.pnlBody.RowCount = 3;
+            this.pnlBody.RowCount = 4;
+            this.pnlBody.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 64F));
+            this.pnlBody.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 38F));
             this.pnlBody.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 40F));
-            this.pnlBody.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 40F));
-            this.pnlBody.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 20F));
-            this.pnlBody.Size = new System.Drawing.Size(1365, 759);
+            this.pnlBody.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 22F));
+            this.pnlBody.Size = new System.Drawing.Size(1606, 759);
             this.pnlBody.TabIndex = 1;
             // 
             // gbTables
@@ -615,11 +620,11 @@
             this.gbTables.Controls.Add(this.lvTables);
             this.gbTables.Dock = System.Windows.Forms.DockStyle.Fill;
             this.gbTables.Enabled = false;
-            this.gbTables.Location = new System.Drawing.Point(2, 2);
+            this.gbTables.Location = new System.Drawing.Point(2, 66);
             this.gbTables.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
             this.gbTables.Name = "gbTables";
             this.gbTables.Padding = new System.Windows.Forms.Padding(2, 2, 2, 2);
-            this.gbTables.Size = new System.Drawing.Size(1361, 299);
+            this.gbTables.Size = new System.Drawing.Size(1602, 260);
             this.gbTables.TabIndex = 0;
             this.gbTables.TabStop = false;
             this.gbTables.Text = "Tables";
@@ -639,7 +644,7 @@
             | System.Windows.Forms.AnchorStyles.Right)));
             this.txtTableFilter.Location = new System.Drawing.Point(48, 17);
             this.txtTableFilter.Name = "txtTableFilter";
-            this.txtTableFilter.Size = new System.Drawing.Size(1309, 20);
+            this.txtTableFilter.Size = new System.Drawing.Size(1550, 20);
             this.txtTableFilter.TabIndex = 1;
             this.txtTableFilter.TextChanged += new System.EventHandler(this.txtTableFilter_TextChanged);
             // 
@@ -656,7 +661,7 @@
             this.lvTables.Location = new System.Drawing.Point(7, 44);
             this.lvTables.MultiSelect = false;
             this.lvTables.Name = "lvTables";
-            this.lvTables.Size = new System.Drawing.Size(1350, 250);
+            this.lvTables.Size = new System.Drawing.Size(1591, 211);
             this.lvTables.Sorting = System.Windows.Forms.SortOrder.Ascending;
             this.lvTables.TabIndex = 2;
             this.lvTables.UseCompatibleStateImageBehavior = false;
@@ -680,11 +685,11 @@
             this.gbAttributes.Controls.Add(this.cbSelectAll);
             this.gbAttributes.Controls.Add(this.lvAttributes);
             this.gbAttributes.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.gbAttributes.Location = new System.Drawing.Point(2, 305);
+            this.gbAttributes.Location = new System.Drawing.Point(2, 330);
             this.gbAttributes.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
             this.gbAttributes.Name = "gbAttributes";
             this.gbAttributes.Padding = new System.Windows.Forms.Padding(2, 2, 2, 2);
-            this.gbAttributes.Size = new System.Drawing.Size(1361, 299);
+            this.gbAttributes.Size = new System.Drawing.Size(1602, 276);
             this.gbAttributes.TabIndex = 1;
             this.gbAttributes.TabStop = false;
             this.gbAttributes.Text = "Attributes";
@@ -717,7 +722,7 @@
             this.lvAttributes.HideSelection = false;
             this.lvAttributes.Location = new System.Drawing.Point(6, 44);
             this.lvAttributes.Name = "lvAttributes";
-            this.lvAttributes.Size = new System.Drawing.Size(1351, 250);
+            this.lvAttributes.Size = new System.Drawing.Size(1592, 227);
             this.lvAttributes.Sorting = System.Windows.Forms.SortOrder.Ascending;
             this.lvAttributes.TabIndex = 3;
             this.lvAttributes.UseCompatibleStateImageBehavior = false;
@@ -753,11 +758,11 @@
             this.gbFilters.Controls.Add(this.btnSql4Cds);
             this.gbFilters.Controls.Add(this.rtbFilter);
             this.gbFilters.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.gbFilters.Location = new System.Drawing.Point(2, 608);
+            this.gbFilters.Location = new System.Drawing.Point(2, 610);
             this.gbFilters.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
             this.gbFilters.Name = "gbFilters";
             this.gbFilters.Padding = new System.Windows.Forms.Padding(2, 2, 2, 2);
-            this.gbFilters.Size = new System.Drawing.Size(1361, 149);
+            this.gbFilters.Size = new System.Drawing.Size(1602, 147);
             this.gbFilters.TabIndex = 2;
             this.gbFilters.TabStop = false;
             this.gbFilters.Text = "Filters";
@@ -778,7 +783,7 @@
             this.btnFetchXmlBuilder.FlatStyle = System.Windows.Forms.FlatStyle.Popup;
             this.btnFetchXmlBuilder.Image = global::Dataverse.XrmTools.DataMigrationTool.Properties.Resources.fetchXmlBuilder20;
             this.btnFetchXmlBuilder.ImageAlign = System.Drawing.ContentAlignment.MiddleLeft;
-            this.btnFetchXmlBuilder.Location = new System.Drawing.Point(1161, 11);
+            this.btnFetchXmlBuilder.Location = new System.Drawing.Point(1402, 11);
             this.btnFetchXmlBuilder.Name = "btnFetchXmlBuilder";
             this.btnFetchXmlBuilder.Size = new System.Drawing.Size(194, 28);
             this.btnFetchXmlBuilder.TabIndex = 1;
@@ -793,7 +798,7 @@
             this.btnSql4Cds.FlatStyle = System.Windows.Forms.FlatStyle.Popup;
             this.btnSql4Cds.Image = global::Dataverse.XrmTools.DataMigrationTool.Properties.Resources.sql4cds20;
             this.btnSql4Cds.ImageAlign = System.Drawing.ContentAlignment.MiddleLeft;
-            this.btnSql4Cds.Location = new System.Drawing.Point(960, 11);
+            this.btnSql4Cds.Location = new System.Drawing.Point(1201, 11);
             this.btnSql4Cds.Name = "btnSql4Cds";
             this.btnSql4Cds.Size = new System.Drawing.Size(194, 28);
             this.btnSql4Cds.TabIndex = 2;
@@ -809,7 +814,7 @@
             this.rtbFilter.Location = new System.Drawing.Point(6, 42);
             this.rtbFilter.Margin = new System.Windows.Forms.Padding(20, 20, 20, 20);
             this.rtbFilter.Name = "rtbFilter";
-            this.rtbFilter.Size = new System.Drawing.Size(1348, 98);
+            this.rtbFilter.Size = new System.Drawing.Size(1589, 96);
             this.rtbFilter.TabIndex = 2;
             this.rtbFilter.Text = "";
             this.rtbFilter.TextChanged += new System.EventHandler(this.rtbFilter_TextChanged);

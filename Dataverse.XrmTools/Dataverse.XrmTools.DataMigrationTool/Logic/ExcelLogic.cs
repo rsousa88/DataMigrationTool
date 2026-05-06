@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Collections.Generic;
 using System.Globalization;
+using System.ComponentModel;
 
 // Microsoft
 using Microsoft.Xrm.Sdk;
@@ -495,10 +496,11 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             }
         }
 
-        public RecordCollection ImportFromExcel(string filePath, ExcelExportConfig config, IOrganizationService targetService)
+        public RecordCollection ImportFromExcel(string filePath, ExcelExportConfig config, IOrganizationService targetService, BackgroundWorker worker = null)
         {
             using (var wb = new XLWorkbook(filePath))
             {
+                ThrowIfCancelled(worker);
                 if (!wb.Worksheets.Contains(DataSheetName))
                     throw new Exception("Data sheet 'Data' not found in the file.");
 
@@ -518,10 +520,11 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     .GroupBy(c => c.OwnerAttribute)
                     .ToDictionary(g => g.Key, g => g.ToList());
 
-                var targetRepo = targetService != null ? new CrmRepo(targetService) : null;
+                var targetRepo = targetService != null ? new CrmRepo(targetService, worker) : null;
 
                 for (var row = firstDataRow; row <= lastRow; row++)
                 {
+                    ThrowIfCancelled(worker);
                     var attributes = new List<RecordAttribute>();
                     var rowErrors = new List<string>();
 
@@ -536,6 +539,10 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                         {
                             var attr = ParseCell(cellValue, column, row, colNum, dataSheet, headerMap, altKeyGroups, config, targetRepo);
                             if (attr != null) attributes.Add(attr);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            throw;
                         }
                         catch (Exception ex)
                         {
@@ -555,6 +562,10 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                         {
                             ApplyMatchKey(config, attributes, targetRepo);
                         }
+                        catch (OperationCanceledException)
+                        {
+                            throw;
+                        }
                         catch (Exception ex)
                         {
                             importErrors.Add($"Row {row}: {ex.Message}");
@@ -562,7 +573,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                         }
                     }
 
-                    records.Add(new Record { Attributes = attributes });
+                    records.Add(new Record { SourceRowNumber = row, Attributes = attributes });
                 }
 
                 return new RecordCollection
@@ -579,6 +590,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                         : "Guid"
                 };
             }
+        }
+
+        private void ThrowIfCancelled(BackgroundWorker worker)
+        {
+            if (worker != null && worker.CancellationPending)
+                throw new OperationCanceledException();
         }
 
         private Dictionary<string, int> BuildHeaderMap(IXLWorksheet sheet, ExcelExportConfig config)

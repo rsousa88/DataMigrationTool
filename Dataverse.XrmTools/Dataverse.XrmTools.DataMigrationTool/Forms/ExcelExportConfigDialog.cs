@@ -1633,13 +1633,14 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
 
         private class PropertySelectorDialog : Form
         {
-            private readonly CheckedListBox _list;
+            private readonly ListView _list;
+            private int _sortColumn;
             public List<string> SelectedProperties { get; private set; } = new List<string>();
 
             public PropertySelectorDialog(string tableName, List<AttributeMetadata> attributes, List<string> preSelected)
             {
                 Text = $"Select attributes — {tableName}";
-                ClientSize = new Size(420, 520);
+                ClientSize = new Size(560, 520);
                 FormBorderStyle = FormBorderStyle.FixedDialog;
                 MaximizeBox = false;
                 MinimizeBox = false;
@@ -1652,33 +1653,46 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                     Text = "⚠  Uniqueness is not guaranteed. Ensure the selected attributes\n" +
                            "cannot produce multiple matching records on import.",
                     Location = new Point(10, 10),
-                    Size = new Size(400, 40),
+                    Size = new Size(540, 40),
                     ForeColor = Color.DarkOrange
                 };
 
-                _list = new CheckedListBox
+                _list = new ListView
                 {
                     Location = new Point(10, 58),
-                    Size = new Size(400, 390),
-                    CheckOnClick = true
+                    Size = new Size(540, 390),
+                    CheckBoxes = true,
+                    FullRowSelect = true,
+                    HideSelection = false,
+                    MultiSelect = false,
+                    View = View.Details,
+                    Sorting = SortOrder.Ascending
                 };
+                _list.Columns.Add("Logical", 240);
+                _list.Columns.Add("Display", 275);
+                _list.ColumnClick += List_ColumnClick;
 
+                var selected = new HashSet<string>(preSelected ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
                 foreach (var attr in attributes)
                 {
-                    var display = attr.DisplayName.UserLocalizedLabel?.Label ?? attr.LogicalName;
-                    var idx = _list.Items.Add($"{display} ({attr.LogicalName})");
-                    if (preSelected.Contains(attr.LogicalName))
-                        _list.SetItemChecked(idx, true);
-                    _list.Items[idx] = new AttrItem(attr.LogicalName, display);
-                    if (preSelected.Contains(attr.LogicalName))
-                        _list.SetItemChecked(_list.Items.Count - 1, true);
+                    var display = attr.DisplayName?.UserLocalizedLabel?.Label ?? attr.LogicalName;
+                    _list.Items.Add(new ListViewItem(new[] { attr.LogicalName, display })
+                    {
+                        Checked = selected.Contains(attr.LogicalName),
+                        Tag = attr.LogicalName
+                    });
                 }
+                SortByColumn(0, SortOrder.Ascending);
 
-                var btnOk = new Button { Text = "OK", Location = new Point(230, 460), Width = 80, Height = 28, DialogResult = DialogResult.OK };
-                var btnCancel = new Button { Text = "Cancel", Location = new Point(320, 460), Width = 80, Height = 28, DialogResult = DialogResult.Cancel };
+                var btnOk = new Button { Text = "OK", Location = new Point(370, 460), Width = 80, Height = 28, DialogResult = DialogResult.OK };
+                var btnCancel = new Button { Text = "Cancel", Location = new Point(460, 460), Width = 80, Height = 28, DialogResult = DialogResult.Cancel };
                 btnOk.Click += (s, e) =>
                 {
-                    SelectedProperties = _list.CheckedItems.Cast<AttrItem>().Select(i => i.LogicalName).ToList();
+                    SelectedProperties = _list.CheckedItems
+                        .Cast<ListViewItem>()
+                        .Select(i => i.Tag as string)
+                        .Where(name => !string.IsNullOrWhiteSpace(name))
+                        .ToList();
                 };
 
                 Controls.Add(warning);
@@ -1689,20 +1703,20 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                 CancelButton = btnCancel;
             }
 
-            protected override void OnLoad(EventArgs e)
+            private void List_ColumnClick(object sender, ColumnClickEventArgs e)
             {
-                base.OnLoad(e);
-                // Re-apply checks after Items are rebuilt
-                for (var i = 0; i < _list.Items.Count; i++)
-                    if (_list.GetItemChecked(i)) _list.SetItemChecked(i, true);
+                var order = _sortColumn == e.Column && _list.Sorting == SortOrder.Ascending
+                    ? SortOrder.Descending
+                    : SortOrder.Ascending;
+                SortByColumn(e.Column, order);
             }
 
-            private class AttrItem
+            private void SortByColumn(int column, SortOrder order)
             {
-                public string LogicalName { get; }
-                private readonly string _display;
-                public AttrItem(string logicalName, string display) { LogicalName = logicalName; _display = display; }
-                public override string ToString() => $"{_display} ({LogicalName})";
+                _sortColumn = column;
+                _list.Sorting = order;
+                _list.ListViewItemSorter = new ListViewComparer(column, order);
+                _list.Sort();
             }
         }
 
