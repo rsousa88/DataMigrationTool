@@ -524,7 +524,15 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             using (var wb = new XLWorkbook(filePath))
             {
                 config = ReadMetadata(wb);
+                var metadataBeforeConfigure = JsonConvert.SerializeObject(config, Formatting.None);
                 configure?.Invoke(config);
+                var metadataAfterConfigure = JsonConvert.SerializeObject(config, Formatting.None);
+                if (!string.Equals(metadataBeforeConfigure, metadataAfterConfigure, StringComparison.Ordinal))
+                {
+                    WriteMetadata(wb.Worksheet(MetaSheetName), config);
+                    wb.Save();
+                }
+
                 return ImportFromWorkbook(wb, config, targetService, worker);
             }
         }

@@ -1,16 +1,31 @@
 using System.Collections.Generic;
 
+// DataMigrationTool
+using Dataverse.XrmTools.DataMigrationTool.Enums;
+
 namespace Dataverse.XrmTools.DataMigrationTool.Models
 {
     public class ExcelExportConfig
     {
-        public string Version { get; set; } = "1.0";
+        public string Version { get; set; } = "1.1";
         public string MatchKey { get; set; }
         public string MatchKeyMode { get; set; }
         public List<string> MatchKeys { get; set; } = new List<string>();
         public string MatchAlternateKeyName { get; set; }
+        public ExcelImportSettings ImportSettings { get; set; }
         public ExcelTableConfig Table { get; set; }
         public List<ExcelColumnConfig> Columns { get; set; } = new List<ExcelColumnConfig>();
+    }
+
+    public class ExcelImportSettings
+    {
+        public Action Action { get; set; }
+        public int BatchSize { get; set; } = 25;
+        public bool ApplyMappings { get; set; }
+        public bool MapBusinessUnit { get; set; }
+        public string MatchKeyMode { get; set; } = "Guid";
+        public List<string> MatchKeyFields { get; set; } = new List<string>();
+        public string MatchAlternateKeyName { get; set; }
     }
 
     public class ExcelTableConfig

@@ -220,7 +220,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
 
             var note = new Label
             {
-                Text = "Operation and mapping changes apply on import. Changing the match key refreshes the preview first.",
+                Text = GetSettingsNoteText(),
                 Dock = DockStyle.Fill,
                 ForeColor = SystemColors.GrayText
             };
@@ -311,6 +311,16 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             SelectedMatchKey = ReadMatchKeySelection();
             MatchKeyChanged = HasMatchKeyChanged();
 
+            if (result == DialogResult.OK && SettingsWereLoadedFromExcel() && HasImportSettingsChanged())
+            {
+                MessageBox.Show(
+                    this,
+                    "The import settings were loaded from the exported Excel file. You are now importing with settings that differ from the ones saved during export.",
+                    "Import Settings Changed",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
+
             if (result == DialogResult.OK && MatchKeyChanged)
             {
                 MessageBox.Show(
@@ -325,6 +335,26 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             RefreshPreviewRequested = result == DialogResult.Retry;
             DialogResult = result;
             Close();
+        }
+
+        private string GetSettingsNoteText()
+        {
+            var source = string.IsNullOrWhiteSpace(_preview.SettingsSource) ? "current settings" : _preview.SettingsSource;
+            return $"Settings source: {source}. Operation and mapping changes apply on import. Changing the match key refreshes the preview first.";
+        }
+
+        private bool SettingsWereLoadedFromExcel()
+        {
+            return string.Equals(_preview.SettingsSource, "Excel export metadata", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private bool HasImportSettingsChanged()
+        {
+            return Settings.Action != _preview.Settings.Action
+                || Settings.BatchSize != _preview.Settings.BatchSize
+                || Settings.MapBu != _preview.Settings.MapBu
+                || Settings.ApplyMappingsOn != _preview.Settings.ApplyMappingsOn
+                || !MatchKeySelectionEquals(GetPreviewSelection(_preview), SelectedMatchKey);
         }
 
         private bool HasMatchKeyChanged()

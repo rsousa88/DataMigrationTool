@@ -849,6 +849,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
             {
                 if (dlg.ShowDialog(ParentForm) != System.Windows.Forms.DialogResult.OK) return;
                 var config = dlg.Config;
+                var uiSettings = ReadSettings(Enums.Action.None);
+                config.ImportSettings = BuildExcelImportSettings(uiSettings, config);
 
                 // persist the config so next open pre-populates automatically
                 tableData.Settings.ExcelConfig = config;
@@ -861,7 +863,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
                 ManageWorkingState(true);
 
-                var uiSettings = ReadSettings(Enums.Action.None);
                 tableData.SelectedAttributes = lvAttributes.CheckedItems
                     .Cast<ListViewItem>()
                     .Select(lvi => lvi.ToObject(new Models.Attribute()) as Models.Attribute)
@@ -938,12 +939,13 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (!ConfirmLargeExcelImport(rowCount)) return;
 
             var operationId = BeginExcelImportOperation();
+            var defaultImportSettings = BuildExcelImportSettings(GetDefaultImportSettings(Enums.Action.None), preflightConfig);
             ManageWorkingState(true);
 
             WorkAsync(new WorkAsyncInfo
             {
                 Message = "Reading Excel file...",
-                AsyncArgument = new { path, operationId },
+                AsyncArgument = new { path, operationId, defaultImportSettings },
                 IsCancelable = true,
                 Work = (worker, evt) =>
                 {
@@ -951,6 +953,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     {
                         dynamic args = evt.Argument;
                         string filePath = args.path;
+                        var workbookDefaultImportSettings = args.defaultImportSettings as ExcelImportSettings;
                         worker.ReportProgress(0, "Excel import: reading workbook metadata...");
                         ThrowIfCancelled(worker);
                         var excelLogic = new Logic.ExcelLogic();
@@ -963,6 +966,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                             importConfig =>
                             {
                                 ThrowIfCancelled(worker);
+                                EnsureExcelImportSettings(importConfig, workbookDefaultImportSettings);
                                 ValidateActiveSettingsTable(importConfig?.Table?.LogicalName, "Excel file");
                             });
                         ThrowIfCancelled(worker);
@@ -1009,7 +1013,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         return;
                     }
 
-                    var previewSettings = GetDefaultImportSettings(Enums.Action.None);
+                    var previewSettings = GetDefaultImportSettings(session.Config, Enums.Action.None);
                     StartExcelImportPreview(session, tableData, previewSettings);
                 },
                 ProgressChanged = ReportWorkProgress
@@ -1137,6 +1141,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         string reloadFilePath = args.filePath;
                         var reloadOperationId = (int)args.operationId;
                         var reloadMatchKey = args.matchKey as ExcelImportMatchKeySelection;
+                        var reloadDefaultImportSettings = BuildExcelImportSettings(uiSettings, null);
                         worker.ReportProgress(0, "Excel import: re-reading workbook metadata...");
                         ThrowIfCancelled(worker);
                         var excelLogic = new Logic.ExcelLogic();
@@ -1148,6 +1153,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                             importConfig =>
                             {
                                 ThrowIfCancelled(worker);
+                                EnsureExcelImportSettings(importConfig, reloadDefaultImportSettings);
                                 ValidateActiveSettingsTable(importConfig?.Table?.LogicalName, "Excel file");
                                 worker.ReportProgress(0, "Excel import: applying selected match key...");
                                 ApplyImportMatchKeySelection(importConfig, reloadMatchKey);
@@ -1327,6 +1333,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             {
                 FilePath = filePath,
                 SourceType = config == null ? "JSON" : "Excel",
+                SettingsSource = config?.ImportSettings != null ? "Excel export metadata" : "Current settings",
                 TableLogicalName = collection.LogicalName,
                 TargetName = _targetInstance?.FriendlyName ?? string.Empty,
                 MatchKey = collection.ImportMatchKey,
@@ -1461,6 +1468,13 @@ namespace Dataverse.XrmTools.DataMigrationTool
             config.MatchAlternateKeyName = string.Equals(config.MatchKeyMode, "AlternateKey", StringComparison.OrdinalIgnoreCase)
                 ? selection.AlternateKeyName
                 : null;
+
+            if (config.ImportSettings != null)
+            {
+                config.ImportSettings.MatchKeyMode = config.MatchKeyMode;
+                config.ImportSettings.MatchKeyFields = fields;
+                config.ImportSettings.MatchAlternateKeyName = config.MatchAlternateKeyName;
+            }
         }
 
         private void ApplyJsonImportMatchKeySelection(RecordCollection collection, TableData tableData, ExcelImportMatchKeySelection selection)
@@ -2538,6 +2552,55 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 ApplyMappingsOn = saved.ApplyMappingsOn,
                 HideInvalidAttributes = saved.HideInvalidAttributes
             };
+        }
+
+        private UiSettings GetDefaultImportSettings(ExcelExportConfig config, Enums.Action initial)
+        {
+            var settings = GetDefaultImportSettings(initial);
+            var excelSettings = config?.ImportSettings;
+            if (excelSettings == null) return settings;
+
+            settings.Action = initial;
+            if ((excelSettings.Action & Enums.Action.Create) == Enums.Action.Create)
+                settings.Action |= Enums.Action.Create;
+            if ((excelSettings.Action & Enums.Action.Update) == Enums.Action.Update)
+                settings.Action |= Enums.Action.Update;
+            if ((settings.Action & (Enums.Action.Create | Enums.Action.Update)) == 0)
+                settings.Action |= Enums.Action.Create | Enums.Action.Update;
+
+            settings.BatchSize = excelSettings.BatchSize > 0 ? Math.Min(excelSettings.BatchSize, 25) : settings.BatchSize;
+            settings.MapBu = excelSettings.MapBusinessUnit;
+            settings.ApplyMappingsOn = excelSettings.ApplyMappings ? Operation.Import : Operation.Export;
+            return settings;
+        }
+
+        private ExcelImportSettings BuildExcelImportSettings(UiSettings uiSettings, ExcelExportConfig config)
+        {
+            uiSettings = uiSettings ?? GetDefaultImportSettings(Enums.Action.None);
+            var matchKeys = config?.MatchKeys?.Any() == true
+                ? config.MatchKeys.Where(k => !string.IsNullOrWhiteSpace(k)).Distinct(StringComparer.OrdinalIgnoreCase).ToList()
+                : (string.IsNullOrWhiteSpace(config?.MatchKey) ? new List<string>() : new List<string> { config.MatchKey });
+
+            return new ExcelImportSettings
+            {
+                Action = uiSettings.Action,
+                BatchSize = uiSettings.BatchSize > 0 ? Math.Min(uiSettings.BatchSize, 25) : 25,
+                ApplyMappings = uiSettings.ApplyMappingsOn == Operation.Import,
+                MapBusinessUnit = uiSettings.MapBu,
+                MatchKeyMode = matchKeys.Any()
+                    ? (string.IsNullOrWhiteSpace(config?.MatchKeyMode) ? "Custom" : config.MatchKeyMode)
+                    : "Guid",
+                MatchKeyFields = matchKeys,
+                MatchAlternateKeyName = config?.MatchAlternateKeyName
+            };
+        }
+
+        private void EnsureExcelImportSettings(ExcelExportConfig config, ExcelImportSettings defaults)
+        {
+            if (config == null || config.ImportSettings != null) return;
+
+            config.Version = string.IsNullOrWhiteSpace(config.Version) || config.Version == "1.0" ? "1.1" : config.Version;
+            config.ImportSettings = defaults ?? BuildExcelImportSettings(GetDefaultImportSettings(Enums.Action.None), config);
         }
 
         private string ExtractFilterNode(string fetchXml)
