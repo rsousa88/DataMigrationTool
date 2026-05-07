@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
   <metadata>
     <id>Dataverse.XrmTools.DataMigrationTool</id>
-    <version>2026.5.7.3</version>
+    <version>2026.5.7.4</version>
     <title>Data Migration Tool</title>
     <authors>Rui Sousa</authors>
     <owners>Rui Sousa</owners>
@@ -33,6 +33,8 @@
 		- [NEW] Excel exports now store import settings in workbook metadata
 		- [FIX] Older Excel exports are upgraded with import settings metadata when loaded
 		- [FIX] Import wizard now warns when Excel-loaded import settings are overridden
+		- [NEW] Excel imports now write successful record and lookup GUIDs back to the workbook
+		- [FIX] Workbook GUID writeback failures are reported without hiding completed import results
 		2026.5.6.x
 		- [NEW] Settings files now save and load table configuration in the new `.dmt.json` format
 		- [NEW] Legacy table settings can now be imported into a settings file with table validation

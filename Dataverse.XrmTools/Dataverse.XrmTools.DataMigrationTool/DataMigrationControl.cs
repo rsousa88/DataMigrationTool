@@ -1086,7 +1086,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         if (result != DialogResult.OK) return;
 
                         SaveDmtImportSettings(dlg.Settings, dlg.SelectedMatchKey);
-                        StartExcelImport(session.Collection, tableData, dlg.Settings);
+                        StartExcelImport(session, tableData, dlg.Settings);
                     }
                 },
                 ProgressChanged = ReportWorkProgress
@@ -1187,20 +1187,43 @@ namespace Dataverse.XrmTools.DataMigrationTool
             });
         }
 
-        private void StartExcelImport(RecordCollection collection, TableData tableData, UiSettings uiSettings)
+        private void StartExcelImport(ExcelImportSession session, TableData tableData, UiSettings uiSettings)
         {
+            var collection = session.Collection;
             ManageWorkingState(true);
             WorkAsync(new WorkAsyncInfo
             {
                 Message = "Importing records...",
-                AsyncArgument = new { collection, tableData, uiSettings },
+                AsyncArgument = new { session, collection, tableData, uiSettings },
                 IsCancelable = false,
                 Work = (worker, evt) =>
                 {
                     dynamic args = evt.Argument;
                     var logic = new DataLogic(worker, _sourceClient, _targetClient);
                     var mappings = BuildMappingsForImport(args.uiSettings);
-                    evt.Result = logic.Import(args.tableData, args.collection, args.uiSettings, mappings, false);
+                    var result = logic.Import(args.tableData, args.collection, args.uiSettings, mappings, false);
+                    var importSession = args.session as ExcelImportSession;
+                    if (result != null && importSession?.Config != null && !string.IsNullOrWhiteSpace(importSession.FilePath))
+                    {
+                        try
+                        {
+                            var importedIds = GetSuccessfulResultIds(result.Items);
+                            if (importedIds.Any())
+                            {
+                                var excelLogic = new Logic.ExcelLogic();
+                                var updatedCells = excelLogic.UpdateImportedGuids(importSession.FilePath, importSession.Config, importSession.Collection, importedIds, worker);
+                                if (updatedCells > 0)
+                                    worker.ReportProgress(0, $"Excel import: updated workbook with {updatedCells} imported GUID value(s).");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.Log(LogLevel.WARN, $"Excel import completed, but workbook GUID update failed: {ex}");
+                            worker.ReportProgress(0, $"Excel import completed, but workbook GUID update failed: {ex.Message}");
+                        }
+                    }
+
+                    evt.Result = result;
                 },
                 PostWorkCallBack = evt =>
                 {
@@ -1225,7 +1248,14 @@ namespace Dataverse.XrmTools.DataMigrationTool
                             if (retryCollection.Count > 0)
                             {
                                 SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Retrying {retryCollection.Count} failed record(s)..."));
-                                StartExcelImport(retryCollection, tableData, uiSettings);
+                                StartExcelImport(new ExcelImportSession
+                                {
+                                    FilePath = session.FilePath,
+                                    SourceType = session.SourceType,
+                                    Config = session.Config,
+                                    Collection = retryCollection,
+                                    OperationId = session.OperationId
+                                }, tableData, uiSettings);
                                 return;
                             }
                         }
@@ -1288,6 +1318,27 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 return true;
             }
             return Guid.TryParse(attr.Value.ToString(), out id);
+        }
+
+        private HashSet<Guid> GetSuccessfulResultIds(IEnumerable<ListViewItem> resultItems)
+        {
+            var ids = new HashSet<Guid>();
+            foreach (var item in resultItems ?? Enumerable.Empty<ListViewItem>())
+            {
+                if (item.SubItems.Count < 4) continue;
+
+                var action = item.SubItems[0].Text;
+                var description = item.SubItems[3].Text;
+                if (!(action.Equals("Create", StringComparison.OrdinalIgnoreCase) || action.Equals("Update", StringComparison.OrdinalIgnoreCase)))
+                    continue;
+                if (description.StartsWith("ERROR:", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (Guid.TryParse(item.SubItems[1].Text, out var id))
+                    ids.Add(id);
+            }
+
+            return ids;
         }
 
         private int BeginExcelImportOperation()

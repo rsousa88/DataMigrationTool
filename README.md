@@ -1,60 +1,107 @@
 # Data Migration Tool
 
-An [XrmToolBox](https://www.xrmtoolbox.com/) plugin for migrating reference data between Dataverse / Dynamics 365 instances.
+An [XrmToolBox](https://www.xrmtoolbox.com/) plugin for migrating reference data between Dataverse / Dynamics 365 environments.
 
 ## Features
 
-- Export records to JSON format and import them into another environment
-- Supports **Create**, **Update**, and **Delete** operations
-- Filter exported data using **FetchXML** queries
-- Native integration with the [FetchXML Builder](https://www.xrmtoolbox.com/plugins/Cinteros.Xrm.FetchXmlBuilder/) plugin
-- Select specific attributes to include in the migration
-- Map records between environments using **automatic** or **manual** mapping
-- Save and reload per-table settings (filter + attribute selection) as `.settings.json` files
+- Export and import Dataverse rows using JSON or Excel workbooks
+- Supports **Create**, **Update**, and **Delete** operations for JSON imports, and create/update workflows for Excel imports
+- Preview imports before execution, including row numbers, create/update decisions, warnings, mapping count, and matching key details
+- Match import rows by record GUID, Dataverse alternate keys, or multiple selected custom columns
+- Export Excel templates that non-technical users can review and complete
+- Resolve lookup values on Excel import by GUID, alternate key, or selected related columns, including nested lookup key columns
+- Export option set and multi-select option set values as labels for easier manual editing
+- Write successful record and lookup GUIDs back to Excel after import
+- Filter source rows with FetchXML, including link-entity filters for related tables
+- Integrate with [FetchXML Builder](https://www.xrmtoolbox.com/plugins/Cinteros.Xrm.FetchXmlBuilder/) and SQL 4 CDS
+- Select the attributes included in the migration and hide invalid attributes when configuring tables
+- Define organization mappings for users, teams, business units, and lookup values
+- Save portable migration settings in `.dmt.json` files, including selected attributes, filters, mappings, Excel export configuration, and import defaults
 
 ## Installation
 
-Install directly from the **XrmToolBox Tool Library** — search for *Data Migration Tool*.
+Install directly from the **XrmToolBox Tool Library** - search for *Data Migration Tool*.
 
-## Usage
+## Quick Workflow
 
-### 1. Connect
+### 1. Connect environments
 
-Connect to your **source** environment using the XrmToolBox connection panel. Optionally connect a second **target** environment for import operations.
+Open the plugin from the source environment. Use **Environments > Connect Target** to connect the target environment. Use **Environments > Switch Source / Target** when you need to reverse the migration direction.
 
-### 2. Load Tables
+### 2. Load and select a table
 
-Click **Load Tables** to retrieve all entities from the source environment. Use the filter box to narrow the list.
+Use **Environments > Reload Tables** to load Dataverse tables from the source environment. Select a table, then choose which attributes should be included.
 
-### 3. Select a Table
+### 3. Create or load a settings file
 
-Click a table to load its attributes. Use the checkboxes to include or exclude specific attributes from the migration.
+Use **Settings File > New...** or **Settings File > Load...** to work with a portable `.dmt.json` settings file. The file stores the selected table, source environment info, deselected attributes, FetchXML filter, mappings, Excel configuration, and import settings.
 
-### 4. Configure Filters
+Legacy `.settings.json` table settings can still be imported with **Import > Import legacy table settings...** and merged into the current `.dmt.json` file.
 
-Enter a **FetchXML** filter in the filter panel to restrict which records are exported. Use the FetchXML Builder integration for a visual query builder experience.
+### 4. Configure filters
+
+Enter FetchXML filter and link-entity nodes in the filter panel. You can send the current filter to FetchXML Builder or SQL 4 CDS from the toolbar integrations.
 
 ### 5. Export
 
-Click **Export** to save the selected records to a `.json` file.
+Use **Export > To JSON** for compact migration data files.
+
+Use **Export > To Excel** when users need a workbook/template they can review or complete manually. The Excel export wizard lets you configure:
+
+- lookup resolution by GUID, alternate key, or custom related columns
+- nested lookup key columns, with lookup selection restricted to avoid endless loops
+- option set and multi-select option set export as labels
+- match key for import by GUID, alternate key, or custom columns
+- column order, visibility, and header hints
+
+Excel workbooks include hidden metadata so the import wizard can preload the table, column mappings, match key, and import settings later.
 
 ### 6. Import
 
-Click **Import** and select a previously exported `.json` file to load records into the target environment.
+Use **Import > From JSON**, **Import > From Excel**, or **Import > From Last Exported**. Imports open a preview wizard where you can review row actions, warnings, matching key values, and import settings before writing to Dataverse.
 
-### 7. Save / Load Settings
+For Excel imports, workbook metadata is used first. If an older workbook does not contain the latest metadata shape, it is upgraded when loaded. After a successful Excel import, the workbook is updated with the record GUIDs and resolved lookup GUIDs for rows that completed successfully.
 
-Use **Save Settings** to export the current table's filter and attribute selection to a `.settings.json` file. Use **Load Settings** to restore them in a future session — useful for repeatable migrations.
+## Settings Files
 
-## Mapping
+The current settings format is `.dmt.json`. It is intended to be portable and can be committed or shared with migration templates when useful.
 
-When a target environment is connected, the tool can automatically map:
+A settings file contains:
 
-- **Users** — matches by name between source and target
-- **Teams** — matches by name between source and target
-- **Business Units** — maps the root BU
+- source environment identity
+- selected table metadata
+- deselected attributes
+- FetchXML filter
+- organization mappings
+- Excel export configuration
+- import settings such as batch size and matching key
 
-Manual mappings can also be defined for any lookup field.
+Settings are auto-saved during normal work, including before preview/export/import, after mapping changes, and after Excel export configuration changes.
+
+## Excel Imports
+
+Excel files exported by the tool are self-describing. The hidden `_dmt` metadata sheet stores the table, columns, lookup resolution, option-set mode, match key, and import defaults.
+
+Excel import supports:
+
+- creating rows when the record GUID is blank or hidden
+- updating rows when a match is found by GUID, alternate key, or custom key
+- resolving lookup GUIDs from related columns selected during export
+- using option-set labels instead of raw integer values
+- showing row-level warnings in the preview wizard
+- writing successful record and lookup GUIDs back to the workbook after import
+
+## Mappings
+
+Manual mappings can be defined for lookup fields. Organization mappings can also be used during import when configured in the import wizard.
+
+Mappings are stored in `.dmt.json` settings files and can be reviewed from the **Mappings** button in the main toolbar.
+
+## Notes
+
+- Default Excel import batch size is capped to reduce Dataverse two-minute timeout risk on tables with plugins or heavy business logic.
+- Large Excel imports show row-count warnings before the expensive workbook read starts.
+- Result dialogs show failed rows by default, with a checkbox to show all rows and an option to retry failed rows only.
 
 ## Release Notes
 
@@ -69,6 +116,8 @@ Manual mappings can also be defined for any lookup field.
 - [NEW] Excel exports now store import settings in workbook metadata
 - [FIX] Older Excel exports are upgraded with import settings metadata when loaded
 - [FIX] Import wizard now warns when Excel-loaded import settings are overridden
+- [NEW] Excel imports now write successful record and lookup GUIDs back to the workbook
+- [FIX] Workbook GUID writeback failures are reported without hiding completed import results
 
 ### 2026.5.6.x
 - [NEW] Settings files now save and load table configuration in the new `.dmt.json` format
@@ -108,10 +157,10 @@ Manual mappings can also be defined for any lookup field.
 
 ### 2026.4.30.x
 - [NEW] SQL 4 CDS button now shows instructions for manually applying query changes back to Data Migration Tool
-- [NEW] Integration with SQL 4 CDS — filter can now be opened and edited in SQL 4 CDS
+- [NEW] Integration with SQL 4 CDS - filter can now be opened and edited in SQL 4 CDS
 - [NEW] Filter now supports link-entity nodes for filtering by related tables
 - [FIX] XML parsing error when sending filters with link-entity nodes to external query builders
-- [FIX] External plugin calls now properly isolated — prevents crashes if target plugin is not open
+- [FIX] External plugin calls now properly isolated - prevents crashes if target plugin is not open
 - [FIX] Import error (InvalidDataContractException) when record contains Money attributes
 - [FIX] Import type mismatch on Decimal attributes in non-English locales
 

@@ -537,6 +537,57 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             }
         }
 
+        public int UpdateImportedGuids(string filePath, ExcelExportConfig config, RecordCollection collection, ISet<Guid> importedIds, BackgroundWorker worker = null)
+        {
+            if (string.IsNullOrWhiteSpace(filePath) || config == null || collection == null || importedIds == null || !importedIds.Any())
+                return 0;
+
+            using (var wb = new XLWorkbook(filePath))
+            {
+                ThrowIfCancelled(worker);
+                if (!wb.Worksheets.Contains(DataSheetName))
+                    throw new Exception("Data sheet 'Data' not found in the file.");
+
+                var dataSheet = wb.Worksheet(DataSheetName);
+                var headerMap = BuildHeaderMap(dataSheet, config);
+                var updatedCells = 0;
+                var rows = (collection.Records ?? Enumerable.Empty<Record>()).ToList();
+                var primaryIdAttribute = config.Table?.PrimaryIdAttribute ?? collection.PrimaryIdAttribute;
+                var lookupColumns = (config.Columns ?? new List<ExcelColumnConfig>())
+                    .Where(c => c.Type == "Lookup")
+                    .ToList();
+
+                foreach (var record in rows)
+                {
+                    ThrowIfCancelled(worker);
+                    var row = record.SourceRowNumber;
+                    if (row <= 0) continue;
+
+                    var attributes = record.Attributes?.ToList() ?? new List<RecordAttribute>();
+                    var recordId = GetRecordGuid(attributes, primaryIdAttribute);
+                    if (!recordId.HasValue || !importedIds.Contains(recordId.Value)) continue;
+
+                    updatedCells += SetCellGuid(dataSheet, headerMap, primaryIdAttribute, row, recordId.Value, hidden: true);
+
+                    foreach (var column in lookupColumns)
+                    {
+                        var lookup = attributes.FirstOrDefault(a => a.Key.Equals(column.LogicalName, StringComparison.OrdinalIgnoreCase))?.Value as EntityReference;
+                        if (lookup == null || lookup.Id == Guid.Empty) continue;
+
+                        updatedCells += SetCellGuid(dataSheet, headerMap, column.LogicalName, row, lookup.Id, hidden: false);
+                    }
+                }
+
+                if (updatedCells > 0)
+                {
+                    worker?.ReportProgress(0, $"Excel import: writing {updatedCells} resolved GUID value(s) back to workbook...");
+                    wb.Save();
+                }
+
+                return updatedCells;
+            }
+        }
+
         private ExcelExportConfig ReadMetadata(XLWorkbook wb)
         {
             if (!wb.Worksheets.Contains(MetaSheetName))
@@ -668,6 +719,38 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             }
 
             return map;
+        }
+
+        private Guid? GetRecordGuid(List<RecordAttribute> attributes, string logicalName)
+        {
+            var value = attributes.FirstOrDefault(a => a.Key.Equals(logicalName, StringComparison.OrdinalIgnoreCase))?.Value;
+            if (value == null) return null;
+            if (value is Guid guid) return guid;
+            return Guid.TryParse(value.ToString(), out var parsed) ? parsed : (Guid?)null;
+        }
+
+        private int SetCellGuid(IXLWorksheet sheet, Dictionary<string, int> headerMap, string logicalName, int row, Guid id, bool hidden)
+        {
+            if (string.IsNullOrWhiteSpace(logicalName) || id == Guid.Empty) return 0;
+
+            if (!headerMap.TryGetValue(logicalName, out var col))
+            {
+                col = (sheet.LastColumnUsed()?.ColumnNumber() ?? 0) + 1;
+                sheet.Cell(1, col).Value = logicalName;
+                sheet.Cell(1, col).Style.Font.Bold = true;
+                sheet.Cell(1, col).Style.Fill.BackgroundColor = hidden
+                    ? XLColor.FromHtml("#D9E1F2")
+                    : XLColor.FromHtml("#E2F0D9");
+                if (hidden) sheet.Column(col).Hide();
+                headerMap[logicalName] = col;
+            }
+
+            var cell = sheet.Cell(row, col);
+            var value = id.ToString("D");
+            if (string.Equals(cell.GetString(), value, StringComparison.OrdinalIgnoreCase)) return 0;
+
+            cell.Value = value;
+            return 1;
         }
 
         private int GetFirstDataRow(IXLWorksheet sheet, ExcelExportConfig config, Dictionary<string, int> headerMap)
