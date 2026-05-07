@@ -503,6 +503,22 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             return ImportFromExcel(filePath, out config, targetService, worker, null);
         }
 
+        public int GetImportRowCount(string filePath, out ExcelExportConfig config)
+        {
+            using (var wb = new XLWorkbook(filePath))
+            {
+                config = ReadMetadata(wb);
+                if (!wb.Worksheets.Contains(DataSheetName))
+                    throw new Exception("Data sheet 'Data' not found in the file.");
+
+                var dataSheet = wb.Worksheet(DataSheetName);
+                var headerMap = BuildHeaderMap(dataSheet, config);
+                var firstDataRow = GetFirstDataRow(dataSheet, config, headerMap);
+                var lastRow = dataSheet.LastRowUsed()?.RowNumber() ?? 2;
+                return Math.Max(0, lastRow - firstDataRow + 1);
+            }
+        }
+
         public RecordCollection ImportFromExcel(string filePath, out ExcelExportConfig config, IOrganizationService targetService, BackgroundWorker worker, Action<ExcelExportConfig> configure)
         {
             using (var wb = new XLWorkbook(filePath))
@@ -604,6 +620,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                         continue;
                     }
                 }
+
+                EnsurePrimaryIdAttribute(config.Table.PrimaryIdAttribute, attributes);
 
                 records.Add(new Record { SourceRowNumber = row, Attributes = attributes });
             }
@@ -753,10 +771,10 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             ExcelExportConfig config,
             CrmRepo targetRepo)
         {
-            if (string.IsNullOrWhiteSpace(cellValue)) return null;
-
             object value;
             var type = column.Type;
+            var canResolveLookupFromKeys = type == "Lookup" && CanResolveLookupFromKeyColumns(column, altKeyGroups);
+            if (string.IsNullOrWhiteSpace(cellValue) && !canResolveLookupFromKeys) return null;
 
             switch (type)
             {
@@ -827,7 +845,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     break;
 
                 case "Lookup":
-                    if (column.Resolution != "Guid" && altKeyGroups.ContainsKey(column.LogicalName))
+                    if (canResolveLookupFromKeys)
                     {
                         if (targetRepo == null) throw new Exception("Target connection required for alternate key resolution.");
                         var keyValues = BuildLookupKeyValues(column, row, sheet, headerMap, altKeyGroups, targetRepo);
@@ -873,7 +891,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
                 var cellValue = sheet.Cell(row, keyColNum).GetString();
                 var fieldName = GetOwnedFieldName(keyColumn);
-                keyValues[fieldName] = string.IsNullOrWhiteSpace(cellValue)
+                keyValues[fieldName] = string.IsNullOrWhiteSpace(cellValue) && !CanResolveLookupFromKeyColumns(keyColumn, altKeyGroups)
                     ? null
                     : ParseLookupKeyFieldValue(keyColumn, cellValue, row, sheet, headerMap, altKeyGroups, targetRepo);
             }
@@ -919,7 +937,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             }
         }
 
-        private Guid ResolveNestedLookupKey(
+        private object ResolveNestedLookupKey(
             ExcelColumnConfig keyColumn,
             string cellValue,
             int row,
@@ -928,16 +946,29 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             Dictionary<string, List<ExcelColumnConfig>> altKeyGroups,
             CrmRepo targetRepo)
         {
-            if (keyColumn.Resolution != "Guid" && altKeyGroups.ContainsKey(keyColumn.LogicalName))
+            if (CanResolveLookupFromKeyColumns(keyColumn, altKeyGroups))
             {
                 var nestedKeyValues = BuildLookupKeyValues(keyColumn, row, sheet, headerMap, altKeyGroups, targetRepo);
-                if (AllKeyValuesBlank(nestedKeyValues)) return Guid.Empty;
+                if (AllKeyValuesBlank(nestedKeyValues)) return null;
                 var resolvedId = ResolveByAlternateKeyCached(targetRepo, keyColumn.RelatedTable, nestedKeyValues);
                 if (!resolvedId.HasValue) throw new Exception($"No match found in '{keyColumn.RelatedTable}' for keys: {FormatKeyValues(nestedKeyValues)}");
                 return resolvedId.Value;
             }
 
+            if (string.IsNullOrWhiteSpace(cellValue)) return null;
             return Guid.Parse(cellValue);
+        }
+
+        private bool CanResolveLookupFromKeyColumns(ExcelColumnConfig column, Dictionary<string, List<ExcelColumnConfig>> altKeyGroups)
+        {
+            var isLookupColumn = string.Equals(column?.Type, "Lookup", StringComparison.OrdinalIgnoreCase);
+            var isLookupKeyField = string.Equals(column?.Type, "LookupKeyField", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(column?.KeyFieldType, "Lookup", StringComparison.OrdinalIgnoreCase);
+
+            return column != null
+                && (isLookupColumn || isLookupKeyField)
+                && !string.Equals(column.Resolution, "Guid", StringComparison.OrdinalIgnoreCase)
+                && altKeyGroups.ContainsKey(column.LogicalName);
         }
 
         private Guid? ResolveByAlternateKeyCached(CrmRepo targetRepo, string logicalName, Dictionary<string, object> keyValues)

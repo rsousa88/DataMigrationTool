@@ -67,6 +67,10 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private bool _importPreviewDialogOpen;
         private bool _suppressTableSelectionChanged;
         private bool _suppressSettingsEvents;
+
+        private const int ExcelImportLargeRowWarning = 1000;
+        private const int ExcelImportVeryLargeRowWarning = 5000;
+        private const int ExcelImportHugeRowWarning = 20000;
         #endregion Variables
 
         #region Handlers
@@ -925,6 +929,11 @@ namespace Dataverse.XrmTools.DataMigrationTool
             var path = this.SelectFile("Excel files (*.xlsx)|*.xlsx");
             if (string.IsNullOrEmpty(path)) return;
 
+            var preflightLogic = new Logic.ExcelLogic();
+            var rowCount = preflightLogic.GetImportRowCount(path, out ExcelExportConfig preflightConfig);
+            ValidateActiveSettingsTable(preflightConfig?.Table?.LogicalName, "Excel file");
+            if (!ConfirmLargeExcelImport(rowCount)) return;
+
             var operationId = BeginExcelImportOperation();
             ManageWorkingState(true);
 
@@ -1058,7 +1067,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         if (result == DialogResult.Retry)
                         {
                             SaveDmtImportSettings(dlg.Settings, dlg.SelectedMatchKey);
-                            if (session.Config == null)
+                            if (session.Config == null || !dlg.MatchKeyChanged)
                                 StartExcelImportPreview(session, tableData, dlg.Settings);
                             else
                                 ReloadExcelImportSession(session.FilePath, dlg.SelectedMatchKey, tableData, dlg.Settings);
@@ -1072,6 +1081,37 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 },
                 ProgressChanged = ReportWorkProgress
             });
+        }
+
+        private bool ConfirmLargeExcelImport(int rowCount)
+        {
+            if (rowCount < ExcelImportLargeRowWarning) return true;
+
+            string message;
+            MessageBoxIcon icon;
+            if (rowCount >= ExcelImportHugeRowWarning)
+            {
+                icon = MessageBoxIcon.Warning;
+                message = $"This Excel file contains {rowCount:N0} data rows.{Environment.NewLine}{Environment.NewLine}"
+                    + "This is a very large import and can take a long time to preview and import. Consider splitting the file or using JSON import for this volume."
+                    + $"{Environment.NewLine}{Environment.NewLine}Continue?";
+            }
+            else if (rowCount >= ExcelImportVeryLargeRowWarning)
+            {
+                icon = MessageBoxIcon.Warning;
+                message = $"This Excel file contains {rowCount:N0} data rows.{Environment.NewLine}{Environment.NewLine}"
+                    + "Preview and import may take a while, especially when lookup or match-key resolution is enabled. A smaller batch size is recommended for tables with plugins."
+                    + $"{Environment.NewLine}{Environment.NewLine}Continue?";
+            }
+            else
+            {
+                icon = MessageBoxIcon.Information;
+                message = $"This Excel file contains {rowCount:N0} data rows.{Environment.NewLine}{Environment.NewLine}"
+                    + "Preview and import may take some time."
+                    + $"{Environment.NewLine}{Environment.NewLine}Continue?";
+            }
+
+            return MessageBox.Show(message, "Large Excel Import", MessageBoxButtons.YesNo, icon) == DialogResult.Yes;
         }
 
         private void ReloadExcelImportSession(string filePath, ExcelImportMatchKeySelection matchKey, TableData tableData, UiSettings uiSettings)
@@ -1813,6 +1853,12 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void LoadDmtFileForSelectedTable()
         {
+            if (GetSelectedTableOrDefault() == null && string.IsNullOrWhiteSpace(_currentTableLogicalName))
+            {
+                LoadDmtFileAndSelectTable();
+                return;
+            }
+
             var table = EnsureSelectedTableForDmtFile();
             var existingSettings = _settings.GetTableSettings(_tables, table.LogicalName);
             using (var dlg = new DmtSettingsFileDialog(
@@ -1835,6 +1881,52 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 LoadFilters(null);
                 SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Settings file loaded: {Path.GetFileName(_dmtFilePath)}"));
             }
+        }
+
+        private void LoadDmtFileAndSelectTable()
+        {
+            var filePath = this.SelectFile("DMT Settings (*.dmt.json)|*.dmt.json");
+            if (string.IsNullOrWhiteSpace(filePath)) return;
+
+            var settings = DmtFileService.Load(filePath);
+            var logicalName = settings?.Table?.LogicalName;
+            if (string.IsNullOrWhiteSpace(logicalName))
+                throw new Exception("Invalid settings file: missing table logical name.");
+
+            var tableData = GetTableDataByLogicalName(logicalName, false);
+            if (tableData == null)
+                throw new Exception($"Settings file is for table '{logicalName}', but that table was not found. Reload tables and try again.");
+
+            var environmentValidation = DmtFileService.ValidateEnvironment(
+                settings,
+                _sourceClient?.ConnectedOrgUniqueName,
+                _sourceClient?.ConnectedOrgFriendlyName);
+            if (!environmentValidation.matches)
+            {
+                var result = MessageBox.Show(
+                    $"{environmentValidation.warning}\n\nContinue anyway?",
+                    "Environment Mismatch",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning);
+                if (result != DialogResult.Yes) return;
+            }
+
+            _suppressTableSelectionChanged = true;
+            try
+            {
+                SetSelectedTableItem(tableData);
+            }
+            finally
+            {
+                _suppressTableSelectionChanged = false;
+            }
+
+            _dmtFilePath = filePath;
+            ApplyDmtSettingsToCurrentTable(settings);
+            _previousTableLogicalName = logicalName;
+            LoadAttributes();
+            LoadFilters(null);
+            SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Settings file loaded: {Path.GetFileName(_dmtFilePath)}"));
         }
 
         private void SaveDmtFileAs()

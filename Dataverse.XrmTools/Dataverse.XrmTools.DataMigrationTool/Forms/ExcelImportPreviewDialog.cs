@@ -28,6 +28,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         public UiSettings Settings { get; private set; }
         public ExcelImportMatchKeySelection SelectedMatchKey { get; private set; }
         public bool RefreshPreviewRequested { get; private set; }
+        public bool MatchKeyChanged { get; private set; }
 
         public ExcelImportPreviewDialog(ExcelImportPreview preview)
         {
@@ -214,7 +215,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
 
             var note = new Label
             {
-                Text = "Change the match key or settings, then refresh the preview before importing.",
+                Text = "Operation and mapping changes apply on import. Changing the match key refreshes the preview first.",
                 Dock = DockStyle.Fill,
                 ForeColor = SystemColors.GrayText
             };
@@ -303,9 +304,39 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         {
             Settings = ReadSettings();
             SelectedMatchKey = ReadMatchKeySelection();
+            MatchKeyChanged = HasMatchKeyChanged();
+
+            if (result == DialogResult.OK && MatchKeyChanged)
+            {
+                MessageBox.Show(
+                    this,
+                    "The match key changed after this preview was generated. The preview will be refreshed before importing.",
+                    "Refresh Preview",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                result = DialogResult.Retry;
+            }
+
             RefreshPreviewRequested = result == DialogResult.Retry;
             DialogResult = result;
             Close();
+        }
+
+        private bool HasMatchKeyChanged()
+        {
+            var originalMatchKey = GetPreviewSelection(_preview);
+
+            return !MatchKeySelectionEquals(originalMatchKey, SelectedMatchKey);
+        }
+
+        private bool MatchKeySelectionEquals(ExcelImportMatchKeySelection left, ExcelImportMatchKeySelection right)
+        {
+            left = left ?? new ExcelImportMatchKeySelection { Mode = "Guid" };
+            right = right ?? new ExcelImportMatchKeySelection { Mode = "Guid" };
+
+            return string.Equals(left.Mode ?? "Guid", right.Mode ?? "Guid", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(left.AlternateKeyName ?? string.Empty, right.AlternateKeyName ?? string.Empty, StringComparison.OrdinalIgnoreCase)
+                && (left.Fields ?? new List<string>()).SequenceEqual(right.Fields ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
         }
 
         private void List_ColumnClick(object sender, ColumnClickEventArgs e)

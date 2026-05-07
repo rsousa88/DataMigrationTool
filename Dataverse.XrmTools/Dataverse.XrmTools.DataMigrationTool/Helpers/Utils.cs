@@ -351,16 +351,43 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
             var entityList = new List<Entity>();
             foreach (var rec in collection.Records)
             {
-                var idAttr = rec.Attributes.Where(attr => attr.Key.Equals(collection.PrimaryIdAttribute)).FirstOrDefault();
-                rec.Attributes.FirstOrDefault(attr => attr.Key.Equals(idAttr.Key)).Value = Guid.Parse(idAttr.Value.ToString()); // manually convert to Guid
+                var attributes = rec.Attributes.ToList();
+                var idAttr = attributes.Where(attr => attr.Key.Equals(collection.PrimaryIdAttribute)).FirstOrDefault();
+                Guid id;
+                if (idAttr == null)
+                {
+                    id = Guid.NewGuid();
+                    attributes.Add(new RecordAttribute
+                    {
+                        Key = collection.PrimaryIdAttribute,
+                        Type = AttributeType.Identifier,
+                        Value = id
+                    });
+                }
+                else if (idAttr.Value == null || string.IsNullOrWhiteSpace(idAttr.Value.ToString()))
+                {
+                    id = Guid.NewGuid();
+                    idAttr.Value = id;
+                    idAttr.Type = AttributeType.Identifier;
+                }
+                else if (!Guid.TryParse(idAttr.Value.ToString(), out id))
+                {
+                    throw new FormatException($"Record primary id '{collection.PrimaryIdAttribute}' is not a valid GUID: {idAttr.Value}");
+                }
+                else
+                {
+                    idAttr.Value = id; // manually convert to Guid
+                    idAttr.Type = AttributeType.Identifier;
+                }
 
                 var entity = new Entity
                 {
-                    Id = Guid.Parse(idAttr.Value.ToString()),
+                    Id = id,
                     LogicalName = collection.LogicalName,
-                    Attributes = rec.Attributes.MapAttributes(attributeMetadata)
+                    Attributes = attributes.MapAttributes(attributeMetadata)
                 }.ToEntity<Entity>();
 
+                rec.Attributes = attributes;
                 entityList.Add(entity);
             }
 
