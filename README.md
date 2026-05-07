@@ -64,6 +64,8 @@ Manual mappings can also be defined for any lookup field.
 - [FIX] Settings files can now be loaded before selecting a table; the matching table is selected automatically
 - [FIX] Import preview refreshes only when match-key changes require re-reading the workbook
 - [NEW] Large Excel imports now show row-count warnings before the expensive read starts
+- [FIX] JSON imports now use JSON-specific wizard labels and expose match-key configuration
+- [FIX] Import from last exported now opens the import wizard for both JSON and Excel files
 
 ### 2026.5.6.x
 - [NEW] Settings files now save and load table configuration in the new `.dmt.json` format

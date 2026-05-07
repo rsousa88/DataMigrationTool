@@ -5,6 +5,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
     public class ExcelImportPreview
     {
         public string FilePath { get; set; }
+        public string SourceType { get; set; }
         public string TableLogicalName { get; set; }
         public string TargetName { get; set; }
         public string MatchKey { get; set; }

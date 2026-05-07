@@ -24,6 +24,7 @@ using McTools.Xrm.Connection;
 using XrmToolBox.Extensibility;
 using XrmToolBox.Extensibility.Args;
 using XrmToolBox.Extensibility.Interfaces;
+using Newtonsoft.Json.Linq;
 
 // DataMigrationTool
 using Dataverse.XrmTools.DataMigrationTool.Enums;
@@ -667,7 +668,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
 
             var filePath = this.SelectFile("Settings files (*.settings.json)|*.settings.json|Json files (*.json)|*.json", save: true,
-                defaultFileName: $"{tableData.Table.LogicalName}.settings.json");
+                defaultFileName: GetDefaultSaveFileName(".settings.json", tableData.Table.LogicalName));
             if (string.IsNullOrEmpty(filePath)) { return; }
 
             var json = tableData.Settings.SerializeObject();
@@ -687,7 +688,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
 
             var filePath = this.SelectFile("Json files (*.json)|*.json", save: true,
-                defaultFileName: $"{tableData.Table.LogicalName}.json");
+                defaultFileName: GetDefaultSaveFileName(".json", tableData.Table.LogicalName));
             if (string.IsNullOrEmpty(filePath)) { return; }
 
             ManageWorkingState(true);
@@ -791,7 +792,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
             if (_dmtSettings == null || string.IsNullOrWhiteSpace(_dmtFilePath))
             {
-                var filePath = this.SelectFile("DMT Settings (*.dmt.json)|*.dmt.json", save: true, defaultFileName: $"{tableData.Table.LogicalName}.dmt.json");
+                var filePath = this.SelectFile("DMT Settings (*.dmt.json)|*.dmt.json", save: true, defaultFileName: GetDefaultSaveFileName(".dmt.json", tableData.Table.LogicalName));
                 if (string.IsNullOrWhiteSpace(filePath))
                 {
                     SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Legacy settings imported into the current session only"));
@@ -855,7 +856,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 AutoSaveDmtSettings();
 
                 var filePath = this.SelectFile("Excel files (*.xlsx)|*.xlsx", save: true,
-                    defaultFileName: $"{tableData.Table.LogicalName}.xlsx");
+                    defaultFileName: GetDefaultSaveFileName(".xlsx", tableData.Table.LogicalName));
                 if (string.IsNullOrEmpty(filePath)) return;
 
                 ManageWorkingState(true);
@@ -899,6 +900,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         }
                         else
                         {
+                            _settings.LastDataFile = filePath;
+                            SettingsHelper.SetSettings(_settings);
                             MessageBox.Show("Records successfully exported to Excel", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
                             SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Excel export complete"));
                         }
@@ -909,7 +912,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
         }
 
-        private void ImportFromExcel()
+        private void ImportFromExcel(string path = null)
         {
             _logger.Log(LogLevel.INFO, "Import from Excel operation...");
             AutoSaveDmtSettings();
@@ -926,7 +929,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 return;
             }
 
-            var path = this.SelectFile("Excel files (*.xlsx)|*.xlsx");
+            path = path ?? this.SelectFile("Excel files (*.xlsx)|*.xlsx");
             if (string.IsNullOrEmpty(path)) return;
 
             var preflightLogic = new Logic.ExcelLogic();
@@ -965,7 +968,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         ThrowIfCancelled(worker);
                         worker.ReportProgress(0, $"Excel import: read {collection?.Count ?? 0} records with {collection?.ImportErrors?.Count ?? 0} warning(s).");
 
-                        evt.Result = new ExcelImportSession { FilePath = filePath, Config = config, Collection = collection, OperationId = args.operationId };
+                        evt.Result = new ExcelImportSession { FilePath = filePath, SourceType = "Excel", Config = config, Collection = collection, OperationId = args.operationId };
                     }
                     catch (OperationCanceledException)
                     {
@@ -1068,7 +1071,10 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         {
                             SaveDmtImportSettings(dlg.Settings, dlg.SelectedMatchKey);
                             if (session.Config == null || !dlg.MatchKeyChanged)
+                            {
+                                if (session.Config == null) ApplyJsonImportMatchKeySelection(session.Collection, tableData, dlg.SelectedMatchKey);
                                 StartExcelImportPreview(session, tableData, dlg.Settings);
+                            }
                             else
                                 ReloadExcelImportSession(session.FilePath, dlg.SelectedMatchKey, tableData, dlg.Settings);
                             return;
@@ -1150,7 +1156,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                             });
                         ThrowIfCancelled(worker);
                         worker.ReportProgress(0, $"Excel import: read {collection?.Count ?? 0} records with {collection?.ImportErrors?.Count ?? 0} warning(s).");
-                        evt.Result = new ExcelImportSession { FilePath = reloadFilePath, Config = config, Collection = collection, OperationId = reloadOperationId };
+                        evt.Result = new ExcelImportSession { FilePath = reloadFilePath, SourceType = "Excel", Config = config, Collection = collection, OperationId = reloadOperationId };
                     }
                     catch (OperationCanceledException)
                     {
@@ -1315,10 +1321,12 @@ namespace Dataverse.XrmTools.DataMigrationTool
             var previewRows = new HashSet<int>();
             var targetIds = GetExistingTargetIds(tableData.Table.LogicalName, tableData.Table.IdAttribute, sourceCollection.Entities.Select(e => e.Id), uiSettings.BatchSize);
             var nameAttribute = tableData.Table.NameAttribute;
+            var availableMatchKeys = GetAvailableImportMatchKeys(collection, config);
 
             var preview = new ExcelImportPreview
             {
                 FilePath = filePath,
+                SourceType = config == null ? "JSON" : "Excel",
                 TableLogicalName = collection.LogicalName,
                 TargetName = _targetInstance?.FriendlyName ?? string.Empty,
                 MatchKey = collection.ImportMatchKey,
@@ -1329,13 +1337,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 ImportErrors = collection.ImportErrors ?? new List<string>(),
                 Settings = uiSettings,
                 MappingCount = BuildMappingsForImport(uiSettings).Count,
-                AvailableMatchKeys = config?.Columns == null
-                    ? new List<string>()
-                    : config.Columns
-                    .Where(c => c.Type != "Lookup" && c.Type != "LookupKeyField" && c.LogicalName != config.Table.PrimaryIdAttribute)
-                    .Select(c => c.LogicalName)
-                    .ToList(),
-                AvailableAlternateKeys = GetAvailableImportAlternateKeys(tableData, config)
+                AvailableMatchKeys = availableMatchKeys,
+                AvailableAlternateKeys = GetAvailableImportAlternateKeys(tableData, availableMatchKeys)
             };
 
             var entityIndex = 0;
@@ -1460,6 +1463,120 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 : null;
         }
 
+        private void ApplyJsonImportMatchKeySelection(RecordCollection collection, TableData tableData, ExcelImportMatchKeySelection selection)
+        {
+            if (collection == null || tableData == null || selection == null) return;
+
+            var fields = selection.Fields?
+                .Where(f => !string.IsNullOrWhiteSpace(f))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList() ?? new List<string>();
+            var mode = string.IsNullOrWhiteSpace(selection.Mode) || !fields.Any()
+                ? "Guid"
+                : selection.Mode;
+
+            collection.ImportMatchKeyMode = mode;
+            collection.ImportMatchKeys = string.Equals(mode, "Guid", StringComparison.OrdinalIgnoreCase)
+                ? new List<string>()
+                : fields;
+            collection.ImportMatchKey = GetImportMatchKeyDisplay(mode, fields, selection.AlternateKeyName);
+
+            if (string.Equals(mode, "Guid", StringComparison.OrdinalIgnoreCase)) return;
+
+            var targetRepo = new CrmRepo(_targetClient);
+            var records = collection.Records?.ToList() ?? new List<Record>();
+            var warnings = collection.ImportErrors ?? new List<string>();
+            var rowIndex = 1;
+
+            foreach (var record in records)
+            {
+                var attributes = record.Attributes?.ToList() ?? new List<RecordAttribute>();
+                var rowNumber = record.SourceRowNumber > 0 ? record.SourceRowNumber : rowIndex;
+                var keyValues = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+                var hasBlankKey = false;
+
+                foreach (var field in fields)
+                {
+                    var attr = attributes.FirstOrDefault(a => a.Key.Equals(field, StringComparison.OrdinalIgnoreCase));
+                    if (attr == null || IsImportValueBlank(attr.Value))
+                    {
+                        warnings.Add($"Row {rowNumber}, field '{field}': match key is blank.");
+                        hasBlankKey = true;
+                        continue;
+                    }
+
+                    keyValues[field] = ToImportQueryValue(attr.Value);
+                }
+
+                if (!hasBlankKey && keyValues.Any())
+                {
+                    var target = targetRepo.FindByFieldValues(tableData.Table.LogicalName, keyValues);
+                    if (target != null)
+                        SetRecordPrimaryId(collection.PrimaryIdAttribute, target.Id, attributes);
+                    else
+                        EnsureRecordPrimaryId(collection.PrimaryIdAttribute, attributes);
+                }
+
+                record.Attributes = attributes;
+                rowIndex++;
+            }
+
+            collection.Records = records;
+            collection.Count = records.Count;
+            collection.ImportErrors = warnings;
+        }
+
+        private string GetImportMatchKeyDisplay(string mode, List<string> fields, string alternateKeyName)
+        {
+            if (string.Equals(mode, "Guid", StringComparison.OrdinalIgnoreCase)) return null;
+            if (string.Equals(mode, "AlternateKey", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(alternateKeyName))
+                return $"{alternateKeyName} ({string.Join(", ", fields)})";
+            return fields?.Any() == true ? string.Join(", ", fields) : null;
+        }
+
+        private bool IsImportValueBlank(object value)
+        {
+            if (value == null) return true;
+            if (value is JValue jValue) return jValue.Value == null || string.IsNullOrWhiteSpace(jValue.Value.ToString());
+            return string.IsNullOrWhiteSpace(value.ToString());
+        }
+
+        private object ToImportQueryValue(object value)
+        {
+            if (value == null) return null;
+            if (value is OptionSetValue option) return option.Value;
+            if (value is Money money) return money.Value;
+            if (value is EntityReference reference) return reference.Id;
+            if (value is JValue jValue) return jValue.Value;
+            if (value is JObject obj)
+            {
+                if (obj.ContainsKey("Value")) return ToImportQueryValue(obj["Value"]);
+                if (obj.ContainsKey("Id") && Guid.TryParse(obj["Id"]?.ToString(), out var id)) return id;
+            }
+            return value;
+        }
+
+        private void EnsureRecordPrimaryId(string primaryIdAttribute, List<RecordAttribute> attributes)
+        {
+            var existing = attributes.FirstOrDefault(a => a.Key.Equals(primaryIdAttribute, StringComparison.OrdinalIgnoreCase));
+            if (existing != null && !IsImportValueBlank(existing.Value)) return;
+
+            SetRecordPrimaryId(primaryIdAttribute, Guid.NewGuid(), attributes);
+        }
+
+        private void SetRecordPrimaryId(string primaryIdAttribute, Guid id, List<RecordAttribute> attributes)
+        {
+            var existing = attributes.FirstOrDefault(a => a.Key.Equals(primaryIdAttribute, StringComparison.OrdinalIgnoreCase));
+            if (existing == null)
+            {
+                attributes.Add(new RecordAttribute { Key = primaryIdAttribute, Type = Enums.AttributeType.Identifier, Value = id });
+                return;
+            }
+
+            existing.Type = Enums.AttributeType.Identifier;
+            existing.Value = id;
+        }
+
         private void SaveDmtImportSettings(UiSettings uiSettings, ExcelImportMatchKeySelection selection)
         {
             if (_dmtSettings == null) return;
@@ -1475,13 +1592,30 @@ namespace Dataverse.XrmTools.DataMigrationTool
             AutoSaveDmtSettings();
         }
 
-        private List<ExcelImportAlternateKeyOption> GetAvailableImportAlternateKeys(TableData tableData, ExcelExportConfig config)
+        private List<string> GetAvailableImportMatchKeys(RecordCollection collection, ExcelExportConfig config)
         {
-            var availableColumns = config?.Columns == null
-                ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-                : new HashSet<string>(config.Columns
+            if (config?.Columns != null)
+            {
+                return config.Columns
                     .Where(c => c.Type != "Lookup" && c.Type != "LookupKeyField" && c.LogicalName != config.Table.PrimaryIdAttribute)
-                    .Select(c => c.LogicalName), StringComparer.OrdinalIgnoreCase);
+                    .Select(c => c.LogicalName)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(c => c)
+                    .ToList();
+            }
+
+            return (collection?.Records ?? Enumerable.Empty<Record>())
+                .SelectMany(record => record.Attributes ?? Enumerable.Empty<RecordAttribute>())
+                .Select(attr => attr.Key)
+                .Where(key => !string.IsNullOrWhiteSpace(key) && !key.Equals(collection.PrimaryIdAttribute, StringComparison.OrdinalIgnoreCase))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(key => key)
+                .ToList();
+        }
+
+        private List<ExcelImportAlternateKeyOption> GetAvailableImportAlternateKeys(TableData tableData, IEnumerable<string> availableFields)
+        {
+            var availableColumns = new HashSet<string>(availableFields ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
 
             return tableData.Metadata.Keys?
                 .Where(key => key.KeyAttributes?.Any() == true)
@@ -1523,6 +1657,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private class ExcelImportSession
         {
             public string FilePath { get; set; }
+            public string SourceType { get; set; }
             public ExcelExportConfig Config { get; set; }
             public RecordCollection Collection { get; set; }
             public int OperationId { get; set; }
@@ -1549,7 +1684,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 return;
             }
 
-            var session = new ExcelImportSession { FilePath = path, Collection = importData };
+            var session = new ExcelImportSession { FilePath = path, SourceType = "JSON", Collection = importData };
             StartExcelImportPreview(session, tableData, GetDefaultImportSettings(Enums.Action.None));
         }
 
@@ -1830,7 +1965,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private void CreateDmtFileForSelectedTable()
         {
             var table = EnsureSelectedTableForDmtFile();
-            var filePath = this.SelectFile("DMT Settings (*.dmt.json)|*.dmt.json", save: true, defaultFileName: $"{table.LogicalName}.dmt.json");
+            var filePath = this.SelectFile("DMT Settings (*.dmt.json)|*.dmt.json", save: true, defaultFileName: GetDefaultSaveFileName(".dmt.json", table.LogicalName));
             if (string.IsNullOrWhiteSpace(filePath)) return;
 
             var existingSettings = _settings.GetTableSettings(_tables, table.LogicalName);
@@ -1932,7 +2067,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private void SaveDmtFileAs()
         {
             var table = EnsureSelectedTableForDmtFile();
-            var filePath = this.SelectFile("DMT Settings (*.dmt.json)|*.dmt.json", save: true, defaultFileName: $"{table.LogicalName}.dmt.json");
+            var filePath = this.SelectFile("DMT Settings (*.dmt.json)|*.dmt.json", save: true, defaultFileName: GetDefaultSaveFileName(".dmt.json", table.LogicalName));
             if (string.IsNullOrWhiteSpace(filePath)) return;
 
             if (_dmtSettings == null)
@@ -2219,6 +2354,20 @@ namespace Dataverse.XrmTools.DataMigrationTool
             return fileName != null && fileName.EndsWith(".dmt.json", StringComparison.OrdinalIgnoreCase)
                 ? fileName.Substring(0, fileName.Length - ".dmt.json".Length)
                 : Path.GetFileNameWithoutExtension(filePath);
+        }
+
+        private string GetDefaultSaveFileName(string extension, string fallbackName)
+        {
+            var baseName = !string.IsNullOrWhiteSpace(_dmtFilePath)
+                ? GetDmtFileDisplayName(_dmtFilePath)
+                : fallbackName;
+
+            if (string.IsNullOrWhiteSpace(baseName)) baseName = "data-migration";
+            extension = extension.StartsWith(".") ? extension : $".{extension}";
+
+            var invalidChars = Path.GetInvalidFileNameChars();
+            baseName = new string(baseName.Select(ch => invalidChars.Contains(ch) ? '_' : ch).ToArray());
+            return $"{baseName}{extension}";
         }
 
         private static Image CreateEnvironmentsIcon(int size = 20)
@@ -2778,7 +2927,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             try
             {
-                Import(_settings.LastDataFile);
+                ImportLastExportedFile();
             }
             catch (Exception ex)
             {
@@ -2786,6 +2935,40 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 _logger.Log(LogLevel.ERROR, ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+
+        private void ImportLastExportedFile()
+        {
+            var path = _settings.LastDataFile;
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                MessageBox.Show("No exported file is available for import.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (!File.Exists(path))
+            {
+                MessageBox.Show($"The last exported file was not found:{Environment.NewLine}{path}", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                _settings.LastDataFile = string.Empty;
+                SettingsHelper.SetSettings(_settings);
+                ReRenderComponents(true);
+                return;
+            }
+
+            var extension = Path.GetExtension(path);
+            if (extension.Equals(".xlsx", StringComparison.OrdinalIgnoreCase))
+            {
+                ImportFromExcel(path);
+                return;
+            }
+
+            if (extension.Equals(".json", StringComparison.OrdinalIgnoreCase))
+            {
+                Import(path);
+                return;
+            }
+
+            MessageBox.Show($"Unsupported last exported file type: {extension}", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         private void tsmiExportToExcel_Click(object sender, EventArgs e)

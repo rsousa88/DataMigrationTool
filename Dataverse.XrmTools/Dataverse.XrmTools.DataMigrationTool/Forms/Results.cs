@@ -153,9 +153,10 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             {
                 _pnlShowAllRows = new Panel
                 {
-                    Dock = DockStyle.Top,
-                    Height = 30,
-                    Padding = new Padding(7, 3, 0, 0),
+                    Location = new System.Drawing.Point(7, 165),
+                    Size = new System.Drawing.Size(165, 30),
+                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+                    Padding = new Padding(0, 3, 0, 0),
                     BackColor = System.Drawing.SystemColors.Window
                 };
                 _cbShowAllRows = new CheckBox
@@ -170,8 +171,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                     SetSummary();
                 };
                 _pnlShowAllRows.Controls.Add(_cbShowAllRows);
-                gbResults.Controls.Add(_pnlShowAllRows);
-                _pnlShowAllRows.BringToFront();
+                gbSummary.Controls.Add(_pnlShowAllRows);
 
                 _lblSumSuccess = new Label { Text = "Success:", AutoSize = true, Location = new System.Drawing.Point(7, 117) };
                 _lblSumSuccessValue = new Label { Text = "0", RightToLeft = RightToLeft.Yes, Location = new System.Drawing.Point(96, 117), Size = lblSumTotalValue.Size, Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right };

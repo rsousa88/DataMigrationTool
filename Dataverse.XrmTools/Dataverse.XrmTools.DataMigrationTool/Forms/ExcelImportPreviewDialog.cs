@@ -37,7 +37,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             SelectedMatchKey = GetPreviewSelection(preview);
             _customMatchFields = SelectedMatchKey.Fields.ToList();
 
-            Text = "Import from Excel";
+            Text = $"Import from {GetSourceType()}";
             ClientSize = new Size(1540, 874);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
@@ -111,14 +111,14 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             var header = new Panel { BackColor = Color.White, Dock = DockStyle.Top, Height = 71 };
             header.Controls.Add(new Label
             {
-                Text = "Import from Excel",
+                Text = $"Import from {GetSourceType()}",
                 AutoSize = true,
                 Font = new Font("Segoe UI", 14F),
                 Location = new Point(4, 0)
             });
             header.Controls.Add(new Label
             {
-                Text = $"Preview { _preview.TableLogicalName } import into {_preview.TargetName}",
+                Text = $"Preview {_preview.TableLogicalName} import from {GetSourceType()} into {_preview.TargetName}",
                 AutoSize = true,
                 Font = new Font("Segoe UI", 8.25F),
                 Location = new Point(7, 42)
@@ -146,6 +146,11 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             panel.Controls.Add(settings, 0, 1);
             panel.Controls.Add(warnings, 0, 2);
             return panel;
+        }
+
+        private string GetSourceType()
+        {
+            return string.IsNullOrWhiteSpace(_preview.SourceType) ? "Excel" : _preview.SourceType;
         }
 
         private Control BuildSummaryContent()
