@@ -539,6 +539,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
         public int UpdateImportedGuids(string filePath, ExcelExportConfig config, RecordCollection collection, ISet<Guid> importedIds, BackgroundWorker worker = null)
         {
+            var idMap = importedIds?.ToDictionary(id => id, id => id) ?? new Dictionary<Guid, Guid>();
+            return UpdateImportedGuids(filePath, config, collection, idMap, worker);
+        }
+
+        public int UpdateImportedGuids(string filePath, ExcelExportConfig config, RecordCollection collection, IDictionary<Guid, Guid> importedIds, BackgroundWorker worker = null)
+        {
             if (string.IsNullOrWhiteSpace(filePath) || config == null || collection == null || importedIds == null || !importedIds.Any())
                 return 0;
 
@@ -564,10 +570,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     if (row <= 0) continue;
 
                     var attributes = record.Attributes?.ToList() ?? new List<RecordAttribute>();
-                    var recordId = GetRecordGuid(attributes, primaryIdAttribute);
-                    if (!recordId.HasValue || !importedIds.Contains(recordId.Value)) continue;
+                    if (!WasPrimaryGuidBlank(dataSheet, headerMap, primaryIdAttribute, row)) continue;
 
-                    updatedCells += SetCellGuid(dataSheet, headerMap, primaryIdAttribute, row, recordId.Value, hidden: true);
+                    var requestId = GetRecordGuid(attributes, primaryIdAttribute);
+                    if (!requestId.HasValue || !importedIds.TryGetValue(requestId.Value, out var importedId)) continue;
+
+                    updatedCells += SetCellGuid(dataSheet, headerMap, primaryIdAttribute, row, importedId, hidden: true);
 
                     foreach (var column in lookupColumns)
                     {
@@ -586,6 +594,14 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
                 return updatedCells;
             }
+        }
+
+        private bool WasPrimaryGuidBlank(IXLWorksheet sheet, Dictionary<string, int> headerMap, string primaryIdAttribute, int row)
+        {
+            if (string.IsNullOrWhiteSpace(primaryIdAttribute)) return false;
+            if (!headerMap.TryGetValue(primaryIdAttribute, out var col)) return true;
+
+            return string.IsNullOrWhiteSpace(sheet.Cell(row, col).GetString());
         }
 
         private ExcelExportConfig ReadMetadata(XLWorkbook wb)
@@ -618,6 +634,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             var headerMap = BuildHeaderMap(dataSheet, config);
             var firstDataRow = GetFirstDataRow(dataSheet, config, headerMap);
             var totalRows = Math.Max(0, lastRow - firstDataRow + 1);
+            var duplicatePrimaryGuidRows = GetDuplicatePrimaryGuidRows(dataSheet, headerMap, config.Table.PrimaryIdAttribute, firstDataRow, lastRow);
 
             var altKeyGroups = config.Columns
                 .Where(c => c.Type == "LookupKeyField")
@@ -634,6 +651,13 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
                 var attributes = new List<RecordAttribute>();
                 var rowErrors = new List<string>();
+                var primaryGuidWasBlank = WasPrimaryGuidBlank(dataSheet, headerMap, config.Table.PrimaryIdAttribute, row);
+
+                if (duplicatePrimaryGuidRows.Contains(row))
+                {
+                    importErrors.Add($"Row {row}, column '{config.Table.PrimaryIdAttribute}': duplicate record GUID. Clear the GUID for new rows or use a unique existing GUID.");
+                    continue;
+                }
 
                 foreach (var column in config.Columns)
                 {
@@ -682,7 +706,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
                 EnsurePrimaryIdAttribute(config.Table.PrimaryIdAttribute, attributes);
 
-                records.Add(new Record { SourceRowNumber = row, Attributes = attributes });
+                records.Add(new Record { SourceRowNumber = row, PrimaryIdWasBlank = primaryGuidWasBlank, Attributes = attributes });
             }
 
             return new RecordCollection
@@ -719,6 +743,30 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             }
 
             return map;
+        }
+
+        private HashSet<int> GetDuplicatePrimaryGuidRows(IXLWorksheet sheet, Dictionary<string, int> headerMap, string primaryIdAttribute, int firstDataRow, int lastRow)
+        {
+            var duplicateRows = new HashSet<int>();
+            if (string.IsNullOrWhiteSpace(primaryIdAttribute) || !headerMap.TryGetValue(primaryIdAttribute, out var primaryCol))
+                return duplicateRows;
+
+            var rowsByGuid = new Dictionary<Guid, List<int>>();
+            for (var row = firstDataRow; row <= lastRow; row++)
+            {
+                var value = sheet.Cell(row, primaryCol).GetString();
+                if (!Guid.TryParse(value, out var id) || id == Guid.Empty) continue;
+
+                if (!rowsByGuid.ContainsKey(id))
+                    rowsByGuid[id] = new List<int>();
+                rowsByGuid[id].Add(row);
+            }
+
+            foreach (var rows in rowsByGuid.Values.Where(rows => rows.Count > 1))
+                foreach (var row in rows)
+                    duplicateRows.Add(row);
+
+            return duplicateRows;
         }
 
         private Guid? GetRecordGuid(List<RecordAttribute> attributes, string logicalName)

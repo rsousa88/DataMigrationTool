@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
   <metadata>
     <id>Dataverse.XrmTools.DataMigrationTool</id>
-    <version>2026.5.7.4</version>
+    <version>2026.5.13.1</version>
     <title>Data Migration Tool</title>
     <authors>Rui Sousa</authors>
     <owners>Rui Sousa</owners>
@@ -22,6 +22,10 @@
     </description>
     <summary>Migrate data between Dataverse instances</summary>
     <releaseNotes>
+		2026.5.13.x
+		- [FIX] Excel imports now write generated record GUIDs and resolved lookup GUIDs back to newly-created workbook rows
+		- [FIX] Excel import preview now warns about supplied record GUIDs and skips duplicate record GUID rows
+		- [FIX] Import preview disables Import when settings changes require a preview refresh
 		2026.5.7.x
 		- [FIX] Excel imports can now create new rows when the record GUID column is blank or hidden
 		- [FIX] Excel lookup columns using custom or alternate key fields no longer require the lookup GUID cell to be populated

@@ -22,6 +22,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         private readonly Label _lblCustomMatchKey;
         private readonly NumericUpDown _nudBatchSize;
         private readonly CheckBox _cbApplyMappings;
+        private readonly Button _btnImport;
+        private readonly Button _btnRefresh;
         private List<string> _customMatchFields = new List<string>();
         private int? _sortColumn;
 
@@ -67,22 +69,22 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             body.Controls.Add(sidePanel, 1, 0);
 
             var footer = new Panel { BackColor = Color.White, Dock = DockStyle.Bottom, Height = 64 };
-            var btnImport = new Button { Text = "Import", Width = 100, Height = 28, Anchor = AnchorStyles.Right | AnchorStyles.Bottom };
-            var btnRefresh = new Button { Text = "Refresh Preview", Width = 120, Height = 28, Anchor = AnchorStyles.Right | AnchorStyles.Bottom };
+            _btnImport = new Button { Text = "Import", Width = 100, Height = 28, Anchor = AnchorStyles.Right | AnchorStyles.Bottom };
+            _btnRefresh = new Button { Text = "Refresh Preview", Width = 120, Height = 28, Anchor = AnchorStyles.Right | AnchorStyles.Bottom };
             var btnCancel = new Button { Text = "Cancel", Width = 100, Height = 28, Anchor = AnchorStyles.Right | AnchorStyles.Bottom };
-            btnImport.Location = new Point(ClientSize.Width - 116, 21);
-            btnRefresh.Location = new Point(ClientSize.Width - 244, 21);
+            _btnImport.Location = new Point(ClientSize.Width - 116, 21);
+            _btnRefresh.Location = new Point(ClientSize.Width - 244, 21);
             btnCancel.Location = new Point(ClientSize.Width - 352, 21);
-            btnImport.Click += (s, e) => CloseWith(DialogResult.OK);
-            btnRefresh.Click += (s, e) => CloseWith(DialogResult.Retry);
+            _btnImport.Click += (s, e) => CloseWith(DialogResult.OK);
+            _btnRefresh.Click += (s, e) => CloseWith(DialogResult.Retry);
             btnCancel.Click += (s, e) => CloseWith(DialogResult.Cancel);
-            footer.Controls.Add(btnImport);
-            footer.Controls.Add(btnRefresh);
+            footer.Controls.Add(_btnImport);
+            footer.Controls.Add(_btnRefresh);
             footer.Controls.Add(btnCancel);
             footer.Resize += (s, e) =>
             {
-                btnImport.Left = footer.Width - 116;
-                btnRefresh.Left = footer.Width - 244;
+                _btnImport.Left = footer.Width - 116;
+                _btnRefresh.Left = footer.Width - 244;
                 btnCancel.Left = footer.Width - 352;
             };
 
@@ -99,8 +101,17 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             _nudBatchSize = FindControl<NumericUpDown>("nudBatchSize");
             _cbApplyMappings = FindControl<CheckBox>("cbApplyMappings");
             _btnConfigureMatchKey.Click += (s, e) => ConfigureCustomMatchKey();
-            _cboMatchMode.SelectedIndexChanged += (s, e) => UpdateMatchKeyControls();
+            _cboMatchMode.SelectedIndexChanged += (s, e) =>
+            {
+                UpdateMatchKeyControls();
+                UpdatePreviewRefreshState();
+            };
+            _cboAlternateKey.SelectedIndexChanged += (s, e) => UpdatePreviewRefreshState();
+            _cbCreate.CheckedChanged += (s, e) => UpdatePreviewRefreshState();
+            _cbUpdate.CheckedChanged += (s, e) => UpdatePreviewRefreshState();
+            _cbApplyMappings.CheckedChanged += (s, e) => UpdatePreviewRefreshState();
             UpdateMatchKeyControls();
+            UpdatePreviewRefreshState();
 
             Load += (s, e) => LoadItems();
             Resize += (s, e) => ResizeColumns();
@@ -311,6 +322,11 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             SelectedMatchKey = ReadMatchKeySelection();
             MatchKeyChanged = HasMatchKeyChanged();
 
+            if (result == DialogResult.OK && IsPreviewRefreshRequired())
+            {
+                result = DialogResult.Retry;
+            }
+
             if (result == DialogResult.OK && SettingsWereLoadedFromExcel() && HasImportSettingsChanged())
             {
                 MessageBox.Show(
@@ -359,9 +375,14 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
 
         private bool HasMatchKeyChanged()
         {
+            return HasMatchKeyChanged(SelectedMatchKey);
+        }
+
+        private bool HasMatchKeyChanged(ExcelImportMatchKeySelection selectedMatchKey)
+        {
             var originalMatchKey = GetPreviewSelection(_preview);
 
-            return !MatchKeySelectionEquals(originalMatchKey, SelectedMatchKey);
+            return !MatchKeySelectionEquals(originalMatchKey, selectedMatchKey);
         }
 
         private bool MatchKeySelectionEquals(ExcelImportMatchKeySelection left, ExcelImportMatchKeySelection right)
@@ -428,6 +449,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                 _customMatchFields = dlg.SelectedColumns;
                 SelectMode(_cboMatchMode, "Custom");
                 UpdateMatchKeyControls();
+                UpdatePreviewRefreshState();
             }
         }
 
@@ -438,6 +460,24 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             _cboAlternateKey.Enabled = mode == "AlternateKey" && _cboAlternateKey.Items.Count > 0;
             _btnConfigureMatchKey.Enabled = mode == "Custom" && _preview.AvailableMatchKeys.Any();
             _lblCustomMatchKey.Text = mode == "Custom" ? GetCustomMatchKeyText(_customMatchFields) : string.Empty;
+        }
+
+        private void UpdatePreviewRefreshState()
+        {
+            if (_btnImport == null) return;
+
+            var refreshRequired = IsPreviewRefreshRequired();
+            _btnImport.Enabled = !refreshRequired;
+            if (_btnRefresh != null) _btnRefresh.Enabled = refreshRequired;
+        }
+
+        private bool IsPreviewRefreshRequired()
+        {
+            if (_cbCreate == null || _cbUpdate == null || _cbApplyMappings == null || _cboMatchMode == null) return false;
+
+            return HasMatchKeyChanged(ReadMatchKeySelection())
+                || GetSelectedAction() != _preview.Settings.Action
+                || GetSelectedApplyMappingsOn() != _preview.Settings.ApplyMappingsOn;
         }
 
         private ExcelImportMatchKeySelection ReadMatchKeySelection()
@@ -504,20 +544,29 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
 
         private UiSettings ReadSettings()
         {
-            var action = Enums.Action.None;
-            if (_cbCreate.Checked) action |= Enums.Action.Create;
-            if (_cbUpdate.Checked) action |= Enums.Action.Update;
-
             return new UiSettings
             {
-                Action = action,
+                Action = GetSelectedAction(),
                 BatchSize = (int)_nudBatchSize.Value,
                 MapUsers = false,
                 MapTeams = false,
                 MapBu = Settings.MapBu,
-                ApplyMappingsOn = _cbApplyMappings.Checked ? Operation.Import : Operation.Export,
+                ApplyMappingsOn = GetSelectedApplyMappingsOn(),
                 HideInvalidAttributes = Settings.HideInvalidAttributes
             };
+        }
+
+        private Enums.Action GetSelectedAction()
+        {
+            var action = Enums.Action.None;
+            if (_cbCreate.Checked) action |= Enums.Action.Create;
+            if (_cbUpdate.Checked) action |= Enums.Action.Update;
+            return action;
+        }
+
+        private Operation GetSelectedApplyMappingsOn()
+        {
+            return _cbApplyMappings.Checked ? Operation.Import : Operation.Export;
         }
 
         private UiSettings CloneSettings(UiSettings settings)

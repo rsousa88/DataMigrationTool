@@ -105,6 +105,11 @@ Mappings are stored in `.dmt.json` settings files and can be reviewed from the *
 
 ## Release Notes
 
+### 2026.5.13.x
+- [FIX] Excel imports now write generated record GUIDs and resolved lookup GUIDs back to newly-created workbook rows
+- [FIX] Excel import preview now warns about supplied record GUIDs and skips duplicate record GUID rows
+- [FIX] Import preview disables Import when settings changes require a preview refresh
+
 ### 2026.5.7.x
 - [FIX] Excel imports can now create new rows when the record GUID column is blank or hidden
 - [FIX] Excel lookup columns using custom or alternate key fields no longer require the lookup GUID cell to be populated

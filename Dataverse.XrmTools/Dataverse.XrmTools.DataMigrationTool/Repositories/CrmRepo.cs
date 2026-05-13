@@ -333,6 +333,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Repositories
                     .Select(resp => new CrmBulkResponse
                     {
                         Id = multipleReq.Requests[resp.RequestIndex].RequestId.GetValueOrDefault(Guid.Empty),
+                        ResponseId = GetResponseId(resp),
                         Success = resp.Fault == null,
                         Message = resp.Fault != null ? resp.Fault.Message : string.Empty
                     });
@@ -341,6 +342,14 @@ namespace Dataverse.XrmTools.DataMigrationTool.Repositories
             {
                 throw;
             }
+        }
+
+        private Guid GetResponseId(ExecuteMultipleResponseItem response)
+        {
+            if (response?.Response is CreateResponse createResponse)
+                return createResponse.id;
+
+            return Guid.Empty;
         }
         #endregion Private Methods
     }

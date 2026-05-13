@@ -1207,7 +1207,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     {
                         try
                         {
-                            var importedIds = GetSuccessfulResultIds(result.Items);
+                            var importedIds = result.SuccessfulIdMap ?? GetSuccessfulResultIdMap(result.Items);
                             if (importedIds.Any())
                             {
                                 var excelLogic = new Logic.ExcelLogic();
@@ -1322,7 +1322,12 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private HashSet<Guid> GetSuccessfulResultIds(IEnumerable<ListViewItem> resultItems)
         {
-            var ids = new HashSet<Guid>();
+            return new HashSet<Guid>(GetSuccessfulResultIdMap(resultItems).Keys);
+        }
+
+        private Dictionary<Guid, Guid> GetSuccessfulResultIdMap(IEnumerable<ListViewItem> resultItems)
+        {
+            var ids = new Dictionary<Guid, Guid>();
             foreach (var item in resultItems ?? Enumerable.Empty<ListViewItem>())
             {
                 if (item.SubItems.Count < 4) continue;
@@ -1335,7 +1340,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     continue;
 
                 if (Guid.TryParse(item.SubItems[1].Text, out var id))
-                    ids.Add(id);
+                    ids[id] = id;
             }
 
             return ids;
@@ -1411,6 +1416,18 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 var exists = targetIds.Contains(entity.Id);
                 var action = exists ? Enums.Action.Update : Enums.Action.Create;
                 var enabled = (uiSettings.Action & action) == action;
+                if (config != null && action == Enums.Action.Create && sourceRecord != null && !sourceRecord.PrimaryIdWasBlank)
+                {
+                    var suppliedGuidWarning = $"Row {rowNumber}, column '{collection.PrimaryIdAttribute}': supplied record GUID was not found in target. Create will use this GUID; clear it for a Dataverse-generated ID and workbook writeback.";
+                    if (!warningsByRow.ContainsKey(rowNumber))
+                        warningsByRow[rowNumber] = new List<string>();
+                    if (!warningsByRow[rowNumber].Contains(suppliedGuidWarning))
+                    {
+                        warningsByRow[rowNumber].Add(suppliedGuidWarning);
+                        preview.ImportErrors.Add(suppliedGuidWarning);
+                    }
+                    rowWarnings = string.Join(" | ", warningsByRow[rowNumber]);
+                }
                 var actionText = enabled ? action.ToString() : "Skip";
                 var description = enabled
                     ? (exists ? "Target record found" : "Target record not found")

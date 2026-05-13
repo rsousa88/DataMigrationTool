@@ -36,6 +36,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
         private EntityCollection _targetCollection;
 
         private List<ListViewItem> _resultsData = new List<ListViewItem>();
+        private Dictionary<Guid, Guid> _successfulIdMap = new Dictionary<Guid, Guid>();
         #endregion Variables
 
         #region Constructors
@@ -117,7 +118,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
                 return new OperationResult
                 {
-                    Items = _resultsData
+                    Items = _resultsData,
+                    SuccessfulIdMap = _successfulIdMap
                 };
             }
 
@@ -218,6 +220,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
                 var responses = ExecuteOperation(uiSettings.Action, batchRows, done, diffCount, table.LogicalName, failed).ToList();
                 failed += responses.Count(res => !res.Success);
+                foreach (var response in responses.Where(res => res.Success && res.Id != Guid.Empty))
+                    _successfulIdMap[response.Id] = response.ResponseId != Guid.Empty ? response.ResponseId : response.Id;
 
                 var join = batchRows.Join(responses, mig => mig.Record.Id, res => res.Id, (mig, res) => new
                 {
