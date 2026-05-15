@@ -79,7 +79,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             return _sourceCollection?.Entities ?? Enumerable.Empty<Entity>();
         }
 
-        public bool Export(TableData tableData, UiSettings uiSettings, string filePath, List<Mapping> mappings)
+        public bool Export(TableData tableData, UiSettings uiSettings, string filePath, List<Mapping> mappings, bool confirm = true)
         {
             ReportStatus($"Export: retrieving source {tableData.Table.LogicalName} records...");
             RetrieveSourceData(tableData, uiSettings.BatchSize);
@@ -91,12 +91,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 _mappedCollection = mappingsLogic.ExecuteMappingsOnExport(_sourceCollection.Entities.ToList(), mappings, tableData.Table);
 
                 ReportStatus($"Export: writing {_mappedCollection.Entities.Count} records to JSON...");
-                return SaveJsonFile(_mappedCollection, tableData, filePath);
+                return SaveJsonFile(_mappedCollection, tableData, filePath, confirm);
             }
             else
             {
                 ReportStatus($"Export: writing {_sourceCollection.Entities.Count} records to JSON...");
-                return SaveJsonFile(_sourceCollection, tableData, filePath);
+                return SaveJsonFile(_sourceCollection, tableData, filePath, confirm);
             }
         }
 
@@ -340,14 +340,14 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             return responses;
         }
 
-        private bool SaveJsonFile(EntityCollection entityCollection, TableData tableData, string path)
+        private bool SaveJsonFile(EntityCollection entityCollection, TableData tableData, string path, bool confirm = true)
         {
             var success = false;
 
             // export -> serialize source records to json and save file
             entityCollection.EntityName = tableData.Table.LogicalName;
             var msg = $"You are about to export {entityCollection.Entities.Count} {tableData.Table.LogicalName} records. Continue?";
-            var result = MessageBox.Show(msg, "Info", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            var result = confirm ? MessageBox.Show(msg, "Info", MessageBoxButtons.YesNo, MessageBoxIcon.Question) : DialogResult.Yes;
             if (result.Equals(DialogResult.Yes))
             {
                 var collection = new RecordCollection(entityCollection, tableData.Metadata);

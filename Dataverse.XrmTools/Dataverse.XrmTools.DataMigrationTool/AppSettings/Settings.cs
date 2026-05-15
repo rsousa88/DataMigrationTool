@@ -17,6 +17,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.AppSettings
         public UiSettings UiSettings { get; set; }
         public string LastDataFile { get; set; }
         public string LastUsedDir { get; set; }
+        public bool HideStartupGuide { get; set; }
 
         public Instance this[Guid orgId]
         {

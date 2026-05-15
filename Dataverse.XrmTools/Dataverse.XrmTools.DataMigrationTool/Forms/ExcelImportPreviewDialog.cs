@@ -29,6 +29,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
 
         public UiSettings Settings { get; private set; }
         public ExcelImportMatchKeySelection SelectedMatchKey { get; private set; }
+        public bool AddToPlanRequested { get; private set; }
         public bool RefreshPreviewRequested { get; private set; }
         public bool MatchKeyChanged { get; private set; }
 
@@ -69,12 +70,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             body.Controls.Add(sidePanel, 1, 0);
 
             var footer = new Panel { BackColor = Color.White, Dock = DockStyle.Bottom, Height = 64 };
-            _btnImport = new Button { Text = "Import", Width = 100, Height = 28, Anchor = AnchorStyles.Right | AnchorStyles.Bottom };
+            _btnImport = new Button { Text = "Add to Plan", Width = 110, Height = 28, Anchor = AnchorStyles.Right | AnchorStyles.Bottom };
             _btnRefresh = new Button { Text = "Refresh Preview", Width = 120, Height = 28, Anchor = AnchorStyles.Right | AnchorStyles.Bottom };
             var btnCancel = new Button { Text = "Cancel", Width = 100, Height = 28, Anchor = AnchorStyles.Right | AnchorStyles.Bottom };
-            _btnImport.Location = new Point(ClientSize.Width - 116, 21);
-            _btnRefresh.Location = new Point(ClientSize.Width - 244, 21);
-            btnCancel.Location = new Point(ClientSize.Width - 352, 21);
+            _btnImport.Location = new Point(ClientSize.Width - 126, 21);
+            _btnRefresh.Location = new Point(ClientSize.Width - 254, 21);
+            btnCancel.Location = new Point(ClientSize.Width - 362, 21);
             _btnImport.Click += (s, e) => CloseWith(DialogResult.OK);
             _btnRefresh.Click += (s, e) => CloseWith(DialogResult.Retry);
             btnCancel.Click += (s, e) => CloseWith(DialogResult.Cancel);
@@ -83,9 +84,9 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             footer.Controls.Add(btnCancel);
             footer.Resize += (s, e) =>
             {
-                _btnImport.Left = footer.Width - 116;
-                _btnRefresh.Left = footer.Width - 244;
-                btnCancel.Left = footer.Width - 352;
+                _btnImport.Left = footer.Width - 126;
+                _btnRefresh.Left = footer.Width - 254;
+                btnCancel.Left = footer.Width - 362;
             };
 
             Controls.Add(body);
@@ -322,12 +323,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             SelectedMatchKey = ReadMatchKeySelection();
             MatchKeyChanged = HasMatchKeyChanged();
 
-            if (result == DialogResult.OK && IsPreviewRefreshRequired())
+            if ((result == DialogResult.OK || result == DialogResult.Yes) && IsPreviewRefreshRequired())
             {
                 result = DialogResult.Retry;
             }
 
-            if (result == DialogResult.OK && SettingsWereLoadedFromExcel() && HasImportSettingsChanged())
+            if ((result == DialogResult.OK || result == DialogResult.Yes) && SettingsWereLoadedFromExcel() && HasImportSettingsChanged())
             {
                 MessageBox.Show(
                     this,
@@ -337,17 +338,18 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                     MessageBoxIcon.Warning);
             }
 
-            if (result == DialogResult.OK && MatchKeyChanged)
+            if ((result == DialogResult.OK || result == DialogResult.Yes) && MatchKeyChanged)
             {
                 MessageBox.Show(
                     this,
-                    "The match key changed after this preview was generated. The preview will be refreshed before importing.",
+                    "The match key changed after this preview was generated. The preview will be refreshed before adding the step to the plan.",
                     "Refresh Preview",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
                 result = DialogResult.Retry;
             }
 
+            AddToPlanRequested = result == DialogResult.OK || result == DialogResult.Yes;
             RefreshPreviewRequested = result == DialogResult.Retry;
             DialogResult = result;
             Close();
@@ -356,7 +358,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         private string GetSettingsNoteText()
         {
             var source = string.IsNullOrWhiteSpace(_preview.SettingsSource) ? "current settings" : _preview.SettingsSource;
-            return $"Settings source: {source}. Operation and mapping changes apply on import. Changing the match key refreshes the preview first.";
+            return $"Settings source: {source}. Operation and mapping changes apply when the plan executes. Changing the match key refreshes the preview first.";
         }
 
         private bool SettingsWereLoadedFromExcel()

@@ -128,8 +128,27 @@
     <Compile Include="Forms\DmtSettingsFileDialog.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="Forms\ExecutionPlanDialog.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\ExecutionPlanFileDialog.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\ExecutionPlanResultsDialog.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\ImportSourceDialog.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\StartupGuideDialog.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\WorkingDialog.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="Logic\DataLogic.cs" />
     <Compile Include="Logic\DmtFileService.cs" />
+    <Compile Include="Logic\ExecutionPlanFileService.cs" />
     <Compile Include="Logic\ExcelLogic.cs" />
     <Compile Include="Logic\MappingsLogic.cs" />
     <Compile Include="Models\Attribute.cs" />
@@ -142,6 +161,7 @@
     <Compile Include="Models\ExcelExportConfig.cs" />
     <Compile Include="Models\ExcelImportPreview.cs" />
     <Compile Include="Models\DmtSettings.cs" />
+    <Compile Include="Models\ExecutionPlan.cs" />
     <Compile Include="Models\Table.cs" />
     <Compile Include="Models\TableData.cs" />
     <Compile Include="Models\UiSettings.cs" />

@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
   <metadata>
     <id>Dataverse.XrmTools.DataMigrationTool</id>
-    <version>2026.5.13.1</version>
+    <version>2026.5.15.1</version>
     <title>Data Migration Tool</title>
     <authors>Rui Sousa</authors>
     <owners>Rui Sousa</owners>
@@ -22,6 +22,16 @@
     </description>
     <summary>Migrate data between Dataverse instances</summary>
     <releaseNotes>
+		2026.5.15.x
+		- [NEW] Added execution plans with saved `.dmtplan.json` files, linked steps, validation, review, and unattended sequential execution
+		- [NEW] Added multi-target environment support so import steps can run against different connected target environments in one plan
+		- [NEW] Added an always-visible execution plan panel with per-step environment pickers, validation messages, and execution controls
+		- [NEW] Added startup instructions, toolbar instructions access, and custom working dialogs with rotating tips and abort support
+		- [NEW] Excel export configuration now uses a guided wizard with lookup, option set, column, and review steps
+		- [FIX] Export operations no longer ask for target environments
+		- [FIX] File-based imports now require a target before previewing create/update counts
+		- [FIX] Importing files for a different table now selects the referenced table automatically
+		- [FIX] Startup and plan UI rendering were adjusted to reduce visible UI hangs
 		2026.5.13.x
 		- [FIX] Excel imports now write generated record GUIDs and resolved lookup GUIDs back to newly-created workbook rows
 		- [FIX] Excel import preview now warns about supplied record GUIDs and skips duplicate record GUID rows

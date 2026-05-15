@@ -35,10 +35,16 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         private ComboBox _matchKeyAltCombo;
         private Label _matchKeyCustomLabel;
         private Button _matchKeyCustomButton;
+        private Label _stepLabel;
+        private Button _btnPrevious;
+        private Button _btnNext;
+        private Button _btnAddToPlan;
+        private TextBox _reviewText;
         private List<string> _matchKeyCustomFields = new List<string>();
         private bool _columnsTabInitialized;
 
         public ExcelExportConfig Config { get; private set; }
+        public bool AddToPlanRequested { get; private set; }
 
         private ExcelExportConfig _savedConfig;
 
@@ -76,23 +82,42 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             var outer = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                RowCount = 2,
+                RowCount = 3,
                 ColumnCount = 1,
                 Padding = new Padding(10)
             };
+            outer.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
             outer.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             outer.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
 
-            _tabs = new TabControl { Dock = DockStyle.Fill };
+            _stepLabel = new Label
+            {
+                Dock = DockStyle.Fill,
+                Font = new Font(Font, FontStyle.Bold),
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+
+            _tabs = new TabControl
+            {
+                Dock = DockStyle.Fill,
+                Appearance = TabAppearance.FlatButtons,
+                SizeMode = TabSizeMode.Fixed,
+                ItemSize = new Size(0, 1),
+                TabStop = false
+            };
             var tabLookups = new TabPage("Lookups");
             var tabOptionSets = new TabPage("Option Sets");
             var tabColumns = new TabPage("Columns");
+            var tabReview = new TabPage("Review");
             _tabs.TabPages.Add(tabLookups);
             _tabs.TabPages.Add(tabOptionSets);
             _tabs.TabPages.Add(tabColumns);
+            _tabs.TabPages.Add(tabReview);
             _tabs.SelectedIndexChanged += (s, e) =>
             {
                 if (_tabs.SelectedTab == tabColumns) RefreshColumnsGrid();
+                if (_tabs.SelectedTab == tabReview) RefreshReview();
+                UpdateWizardNavigation();
             };
 
             var grpLookup = new GroupBox { Text = "A — Lookup resolution", Dock = DockStyle.Fill, Padding = new Padding(5) };
@@ -105,6 +130,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             grpOptionSet.Controls.Add(_optionSetPanel);
             tabOptionSets.Controls.Add(grpOptionSet);
             tabColumns.Controls.Add(BuildColumnsTab());
+            tabReview.Controls.Add(BuildReviewTab());
 
             var btnRow = new FlowLayoutPanel
             {
@@ -113,20 +139,28 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                 Padding = new Padding(0, 8, 0, 0)
             };
             var btnCancel = new Button { Text = "Cancel", Width = 90, Height = 30, DialogResult = DialogResult.Cancel };
-            var btnOk = new Button { Text = "Export", Width = 90, Height = 30 };
-            btnOk.Click += OnExportClick;
+            _btnAddToPlan = new Button { Text = "Add to Plan", Width = 110, Height = 30 };
+            _btnAddToPlan.Click += OnExportClick;
+            _btnNext = new Button { Text = "Next >", Width = 90, Height = 30 };
+            _btnNext.Click += (s, e) => MoveWizardStep(1);
+            _btnPrevious = new Button { Text = "< Previous", Width = 90, Height = 30 };
+            _btnPrevious.Click += (s, e) => MoveWizardStep(-1);
             var btnLoad = new Button { Text = "Load from file...", Width = 130, Height = 30 };
             btnLoad.Click += OnLoadFromFileClick;
             btnRow.Controls.Add(btnCancel);
-            btnRow.Controls.Add(btnOk);
+            btnRow.Controls.Add(_btnAddToPlan);
+            btnRow.Controls.Add(_btnNext);
+            btnRow.Controls.Add(_btnPrevious);
             btnRow.Controls.Add(btnLoad);
 
-            outer.Controls.Add(_tabs, 0, 0);
-            outer.Controls.Add(btnRow, 0, 1);
+            outer.Controls.Add(_stepLabel, 0, 0);
+            outer.Controls.Add(_tabs, 0, 1);
+            outer.Controls.Add(btnRow, 0, 2);
 
             Controls.Add(outer);
-            AcceptButton = btnOk;
+            AcceptButton = _btnNext;
             CancelButton = btnCancel;
+            UpdateWizardNavigation();
         }
 
         private Control BuildColumnsTab()
@@ -217,6 +251,67 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             outer.Controls.Add(body, 0, 0);
             outer.Controls.Add(matchRow, 0, 1);
             return outer;
+        }
+
+        private Control BuildReviewTab()
+        {
+            var outer = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                RowCount = 2,
+                ColumnCount = 1,
+                Padding = new Padding(8)
+            };
+            outer.RowStyles.Add(new RowStyle(SizeType.Absolute, 28F));
+            outer.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+            outer.Controls.Add(new Label
+            {
+                Text = "Review the Excel export setup before adding this operation to the execution plan.",
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft
+            }, 0, 0);
+
+            _reviewText = new TextBox
+            {
+                Dock = DockStyle.Fill,
+                Multiline = true,
+                ReadOnly = true,
+                ScrollBars = ScrollBars.Vertical
+            };
+            outer.Controls.Add(_reviewText, 0, 1);
+            return outer;
+        }
+
+        private void MoveWizardStep(int delta)
+        {
+            var next = Math.Max(0, Math.Min(_tabs.TabPages.Count - 1, _tabs.SelectedIndex + delta));
+            if (next == _tabs.SelectedIndex) return;
+            _tabs.SelectedIndex = next;
+        }
+
+        private void UpdateWizardNavigation()
+        {
+            if (_tabs == null || _btnPrevious == null || _btnNext == null || _btnAddToPlan == null || _stepLabel == null) return;
+
+            var step = _tabs.SelectedIndex;
+            _stepLabel.Text = GetWizardStepTitle(step);
+            _btnPrevious.Enabled = step > 0;
+            _btnNext.Visible = step < _tabs.TabPages.Count - 1;
+            _btnAddToPlan.Visible = step == _tabs.TabPages.Count - 1;
+            AcceptButton = _btnNext.Visible ? _btnNext : _btnAddToPlan;
+        }
+
+        private string GetWizardStepTitle(int step)
+        {
+            switch (step)
+            {
+                case 0: return "Step 1 of 4 - Configure lookup columns";
+                case 1: return "Step 2 of 4 - Configure option set columns";
+                case 2: return "Step 3 of 4 - Configure columns and import match key";
+                case 3: return "Step 4 of 4 - Review";
+                default: return "Excel export configuration";
+            }
         }
 
         #endregion
@@ -478,6 +573,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             {
                 try
                 {
+                    Cursor = Cursors.WaitCursor;
                     foreach (var key in _repo.GetAlternateKeys(tableName))
                     {
                         var keyName = key.DisplayName?.UserLocalizedLabel?.Label ?? key.LogicalName;
@@ -485,6 +581,10 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                     }
                 }
                 catch { }
+                finally
+                {
+                    Cursor = Cursors.Default;
+                }
             }
 
             if (combo.Items.Count > 0)
@@ -801,10 +901,45 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
 
         private void OnExportClick(object sender, EventArgs e)
         {
+            if (_tabs.SelectedIndex != _tabs.TabPages.Count - 1)
+            {
+                _tabs.SelectedIndex = _tabs.TabPages.Count - 1;
+                return;
+            }
+
             SaveColumnGridState();
             Config = BuildConfig();
-            DialogResult = DialogResult.OK;
+            AddToPlanRequested = true;
+            DialogResult = DialogResult.Yes;
             Close();
+        }
+
+        private void RefreshReview()
+        {
+            if (_reviewText == null) return;
+
+            SaveColumnGridState();
+            var config = BuildConfig();
+            var lookups = config.Columns.Count(c => c.Type == "Lookup");
+            var lookupKeyFields = config.Columns.Count(c => c.Type == "LookupKeyField");
+            var optionSets = config.Columns.Count(c => c.Type == "OptionSet" || c.Type == "MultiOptionSet");
+            var included = config.Columns.Count(c => !c.Hidden);
+            var hidden = config.Columns.Count(c => c.Hidden);
+            var matchKey = config.MatchKeys?.Any() == true
+                ? $"{config.MatchKeyMode}: {string.Join(", ", config.MatchKeys)}"
+                : "Record GUID";
+
+            _reviewText.Text =
+                $"Table: {_metadata.LogicalName}{Environment.NewLine}" +
+                $"Included columns: {included}{Environment.NewLine}" +
+                $"Hidden/helper columns: {hidden}{Environment.NewLine}" +
+                $"Lookup columns: {lookups}{Environment.NewLine}" +
+                $"Lookup key helper columns: {lookupKeyFields}{Environment.NewLine}" +
+                $"Option set columns: {optionSets}{Environment.NewLine}" +
+                $"Default import match key: {matchKey}{Environment.NewLine}{Environment.NewLine}" +
+                "Columns:" + Environment.NewLine +
+                string.Join(Environment.NewLine, config.Columns.Select((c, i) =>
+                    $"{i + 1:00}. {(c.Hidden ? "[hidden] " : string.Empty)}{c.LogicalName} ({c.Type})"));
         }
 
         private ExcelExportConfig BuildConfig()

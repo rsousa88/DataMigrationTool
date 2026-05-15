@@ -50,6 +50,17 @@
             this.tsmiDmtSaveAs = new System.Windows.Forms.ToolStripMenuItem();
             this.tsSeparatorDmt = new System.Windows.Forms.ToolStripSeparator();
             this.tsmiDmtClose = new System.Windows.Forms.ToolStripMenuItem();
+            this.tsmiExecutionPlan = new System.Windows.Forms.ToolStripMenuItem();
+            this.tsmiPlanNew = new System.Windows.Forms.ToolStripMenuItem();
+            this.tsmiPlanLoad = new System.Windows.Forms.ToolStripMenuItem();
+            this.tsmiPlanSave = new System.Windows.Forms.ToolStripMenuItem();
+            this.tsmiPlanSeparator1 = new System.Windows.Forms.ToolStripSeparator();
+            this.tsmiPlanReview = new System.Windows.Forms.ToolStripMenuItem();
+            this.tsmiPlanValidate = new System.Windows.Forms.ToolStripMenuItem();
+            this.tsmiPlanExecute = new System.Windows.Forms.ToolStripMenuItem();
+            this.tsmiPlanSeparator2 = new System.Windows.Forms.ToolStripSeparator();
+            this.tsmiPlanClose = new System.Windows.Forms.ToolStripMenuItem();
+            this.tsbShowInstructions = new System.Windows.Forms.ToolStripButton();
             this.tsbAbort = new System.Windows.Forms.ToolStripButton();
             this.pnlMain = new System.Windows.Forms.TableLayoutPanel();
             this.pnlSettings = new System.Windows.Forms.TableLayoutPanel();
@@ -114,6 +125,7 @@
             this.tsmiImport,
             this.tsSeparator2,
             this.tsmiDmtFile,
+            this.tsbShowInstructions,
             this.tsbAbort});
             this.tsMain.Location = new System.Drawing.Point(0, 0);
             this.tsMain.Name = "tsMain";
@@ -182,9 +194,8 @@
             // 
             this.tsmiImport.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.tsmiImportData,
-            this.tsmiImportSettings,
-            this.tsmiImportLastFile,
-            this.tsmiImportFromExcel});
+            this.tsmiImportFromExcel,
+            this.tsmiImportSettings});
             this.tsmiImport.Image = global::Dataverse.XrmTools.DataMigrationTool.Properties.Resources.import;
             this.tsmiImport.Name = "tsmiImport";
             this.tsmiImport.Size = new System.Drawing.Size(75, 25);
@@ -202,7 +213,7 @@
             // 
             this.tsmiImportSettings.Name = "tsmiImportSettings";
             this.tsmiImportSettings.Size = new System.Drawing.Size(172, 22);
-            this.tsmiImportSettings.Text = "Settings from file";
+            this.tsmiImportSettings.Text = "Legacy settings file";
             this.tsmiImportSettings.Click += new System.EventHandler(this.tsmiImportSettings_Click);
             // 
             // tsmiImportLastFile
@@ -307,6 +318,88 @@
             this.tsmiDmtClose.Text = "Close file";
             this.tsmiDmtClose.Click += new System.EventHandler(this.tsmiDmtClose_Click);
             //
+            // tsmiExecutionPlan
+            //
+            this.tsmiExecutionPlan.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.tsmiPlanNew,
+            this.tsmiPlanLoad,
+            this.tsmiPlanSave,
+            this.tsmiPlanSeparator1,
+            this.tsmiPlanReview,
+            this.tsmiPlanClose});
+            this.tsmiExecutionPlan.Name = "tsmiExecutionPlan";
+            this.tsmiExecutionPlan.Size = new System.Drawing.Size(104, 25);
+            this.tsmiExecutionPlan.Text = "Execution Plan";
+            //
+            // tsmiPlanNew
+            //
+            this.tsmiPlanNew.Name = "tsmiPlanNew";
+            this.tsmiPlanNew.Size = new System.Drawing.Size(152, 22);
+            this.tsmiPlanNew.Text = "New...";
+            this.tsmiPlanNew.Click += new System.EventHandler(this.tsmiPlanNew_Click);
+            //
+            // tsmiPlanLoad
+            //
+            this.tsmiPlanLoad.Name = "tsmiPlanLoad";
+            this.tsmiPlanLoad.Size = new System.Drawing.Size(152, 22);
+            this.tsmiPlanLoad.Text = "Load...";
+            this.tsmiPlanLoad.Click += new System.EventHandler(this.tsmiPlanLoad_Click);
+            //
+            // tsmiPlanSave
+            //
+            this.tsmiPlanSave.Name = "tsmiPlanSave";
+            this.tsmiPlanSave.Size = new System.Drawing.Size(152, 22);
+            this.tsmiPlanSave.Text = "Save";
+            this.tsmiPlanSave.Click += new System.EventHandler(this.tsmiPlanSave_Click);
+            //
+            // tsmiPlanSeparator1
+            //
+            this.tsmiPlanSeparator1.Name = "tsmiPlanSeparator1";
+            this.tsmiPlanSeparator1.Size = new System.Drawing.Size(149, 6);
+            //
+            // tsmiPlanReview
+            //
+            this.tsmiPlanReview.Name = "tsmiPlanReview";
+            this.tsmiPlanReview.Size = new System.Drawing.Size(152, 22);
+            this.tsmiPlanReview.Text = "Review...";
+            this.tsmiPlanReview.Click += new System.EventHandler(this.tsmiPlanReview_Click);
+            //
+            // tsmiPlanValidate
+            //
+            this.tsmiPlanValidate.Name = "tsmiPlanValidate";
+            this.tsmiPlanValidate.Size = new System.Drawing.Size(152, 22);
+            this.tsmiPlanValidate.Text = "Validate";
+            this.tsmiPlanValidate.Click += new System.EventHandler(this.tsmiPlanValidate_Click);
+            //
+            // tsmiPlanExecute
+            //
+            this.tsmiPlanExecute.Enabled = false;
+            this.tsmiPlanExecute.Name = "tsmiPlanExecute";
+            this.tsmiPlanExecute.Size = new System.Drawing.Size(152, 22);
+            this.tsmiPlanExecute.Text = "Execute";
+            this.tsmiPlanExecute.Click += new System.EventHandler(this.tsmiPlanExecute_Click);
+            //
+            // tsmiPlanSeparator2
+            //
+            this.tsmiPlanSeparator2.Name = "tsmiPlanSeparator2";
+            this.tsmiPlanSeparator2.Size = new System.Drawing.Size(149, 6);
+            //
+            // tsmiPlanClose
+            //
+            this.tsmiPlanClose.Name = "tsmiPlanClose";
+            this.tsmiPlanClose.Size = new System.Drawing.Size(152, 22);
+            this.tsmiPlanClose.Text = "Close plan";
+            this.tsmiPlanClose.Click += new System.EventHandler(this.tsmiPlanClose_Click);
+            //
+            // tsbShowInstructions
+            // 
+            this.tsbShowInstructions.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.tsbShowInstructions.ImageTransparentColor = System.Drawing.Color.Magenta;
+            this.tsbShowInstructions.Name = "tsbShowInstructions";
+            this.tsbShowInstructions.Size = new System.Drawing.Size(75, 22);
+            this.tsbShowInstructions.Text = "Instructions";
+            this.tsbShowInstructions.Click += new System.EventHandler(this.tsbShowInstructions_Click);
+            // 
             // tsbAbort
             // 
             this.tsbAbort.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
@@ -855,6 +948,17 @@
         private System.Windows.Forms.ToolStripMenuItem tsmiDmtSaveAs;
         private System.Windows.Forms.ToolStripSeparator tsSeparatorDmt;
         private System.Windows.Forms.ToolStripMenuItem tsmiDmtClose;
+        private System.Windows.Forms.ToolStripMenuItem tsmiExecutionPlan;
+        private System.Windows.Forms.ToolStripMenuItem tsmiPlanNew;
+        private System.Windows.Forms.ToolStripMenuItem tsmiPlanLoad;
+        private System.Windows.Forms.ToolStripMenuItem tsmiPlanSave;
+        private System.Windows.Forms.ToolStripSeparator tsmiPlanSeparator1;
+        private System.Windows.Forms.ToolStripMenuItem tsmiPlanReview;
+        private System.Windows.Forms.ToolStripMenuItem tsmiPlanValidate;
+        private System.Windows.Forms.ToolStripMenuItem tsmiPlanExecute;
+        private System.Windows.Forms.ToolStripSeparator tsmiPlanSeparator2;
+        private System.Windows.Forms.ToolStripMenuItem tsmiPlanClose;
+        private System.Windows.Forms.ToolStripButton tsbShowInstructions;
         private System.Windows.Forms.ToolStripButton tsbAbort;
 
         // Main panel
