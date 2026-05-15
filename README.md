@@ -132,9 +132,6 @@ Mappings are stored in `.dmt.json` settings files and can be reviewed from the *
 ## Release Notes
 
 ### 2026.5.15.x
-- [FIX] Execution plan panel no longer throws a SplitContainer sizing error on startup
-
-### 2026.5.15.x
 - [NEW] Added execution plans with saved `.dmtplan.json` files, linked steps, validation, review, and unattended sequential execution
 - [NEW] Added multi-target environment support so import steps can run against different connected target environments in one plan
 - [NEW] Added an always-visible execution plan panel with per-step environment pickers, validation messages, and execution controls
@@ -144,6 +141,7 @@ Mappings are stored in `.dmt.json` settings files and can be reviewed from the *
 - [FIX] File-based imports now require a target before previewing create/update counts
 - [FIX] Importing files for a different table now selects the referenced table automatically
 - [FIX] Startup and plan UI rendering were adjusted to reduce visible UI hangs
+- [FIX] Execution plan panel no longer throws a SplitContainer sizing error on startup
 
 ### 2026.5.13.x
 - [FIX] Excel imports now write generated record GUIDs and resolved lookup GUIDs back to newly-created workbook rows
