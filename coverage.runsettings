@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="Code Coverage" uri="datacollector://Microsoft/CodeCoverage/2.0">
+        <Configuration>
+          <CodeCoverage>
+            <ModulePaths>
+              <Include>
+                <ModulePath>.*\\Dataverse\.XrmTools\.DataMigrationTool\.dll$</ModulePath>
+              </Include>
+              <Exclude>
+                <ModulePath>.*\\Dataverse\.XrmTools\.DataMigrationTool\.Tests\.dll$</ModulePath>
+                <ModulePath>.*\\xunit\..*\.dll$</ModulePath>
+              </Exclude>
+            </ModulePaths>
+            <Sources>
+              <Exclude>
+                <Source>.*\\DataMigration\.cs$</Source>
+                <Source>.*\\DataMigrationControl(\..*)?\.cs$</Source>
+                <Source>.*\\External\\.*</Source>
+                <Source>.*\\Forms\\.*</Source>
+                <Source>.*\\Properties\\.*\.cs$</Source>
+                <Source>.*\\.*\.Designer\.cs$</Source>
+                <Source>.*\\.*\.g\.cs$</Source>
+                <Source>.*\\.*\.g\.i\.cs$</Source>
+              </Exclude>
+            </Sources>
+            <Attributes>
+              <Exclude>
+                <Attribute>^System\.Diagnostics\.CodeAnalysis\.ExcludeFromCodeCoverageAttribute$</Attribute>
+                <Attribute>^System\.CodeDom\.Compiler\.GeneratedCodeAttribute$</Attribute>
+                <Attribute>^System\.Runtime\.CompilerServices\.CompilerGeneratedAttribute$</Attribute>
+              </Exclude>
+            </Attributes>
+            <UseVerifiableInstrumentation>True</UseVerifiableInstrumentation>
+            <AllowLowIntegrityProcesses>True</AllowLowIntegrityProcesses>
+            <CollectFromChildProcesses>True</CollectFromChildProcesses>
+            <CollectAspDotNet>False</CollectAspDotNet>
+          </CodeCoverage>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

@@ -580,7 +580,10 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                         combo.Items.Add(new AltKeyItem(key, keyName));
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    combo.Items.Add($"(could not load alternate keys: {ex.Message})");
+                }
                 finally
                 {
                     Cursor = Cursors.Default;

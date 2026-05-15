@@ -1,7 +1,20 @@
 using System.Collections.Generic;
+using System;
 
 namespace Dataverse.XrmTools.DataMigrationTool.Models
 {
+    public class ExcelImportPreviewRequest
+    {
+        public TableData TableData { get; set; }
+        public RecordCollection Collection { get; set; }
+        public ExcelExportConfig Config { get; set; }
+        public UiSettings Settings { get; set; }
+        public string FilePath { get; set; }
+        public string TargetName { get; set; }
+        public int MappingCount { get; set; }
+        public Func<IEnumerable<Guid>, ISet<Guid>> ExistingTargetIdsProvider { get; set; }
+    }
+
     public class ExcelImportPreview
     {
         public string FilePath { get; set; }

@@ -460,33 +460,26 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
 
         public static string FormatXml(this string xml)
         {
-            try
+            using (var ms = new MemoryStream())
             {
-                using (var ms = new MemoryStream())
+                using (var writer = new XmlTextWriter(ms, Encoding.Unicode))
                 {
-                    using (var writer = new XmlTextWriter(ms, Encoding.Unicode))
+                    var doc = new XmlDocument();
+                    doc.LoadXml(xml);
+
+                    writer.Formatting = System.Xml.Formatting.Indented;
+                    doc.WriteContentTo(writer);
+
+                    writer.Flush();
+                    ms.Flush();
+
+                    ms.Position = 0;
+
+                    using (var sReader = new StreamReader(ms))
                     {
-                        var doc = new XmlDocument();
-                        doc.LoadXml(xml);
-
-                        writer.Formatting = System.Xml.Formatting.Indented;
-                        doc.WriteContentTo(writer);
-
-                        writer.Flush();
-                        ms.Flush();
-
-                        ms.Position = 0;
-
-                        using (var sReader = new StreamReader(ms))
-                        {
-                            return sReader.ReadToEnd();
-                        }
+                        return sReader.ReadToEnd();
                     }
                 }
-            }
-            catch
-            {
-                throw;
             }
         }
 

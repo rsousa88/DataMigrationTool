@@ -17,6 +17,7 @@ An [XrmToolBox](https://www.xrmtoolbox.com/) plugin for migrating reference data
 - Select the attributes included in the migration and hide invalid attributes when configuring tables
 - Define organization mappings for users, teams, business units, and lookup values
 - Save portable migration settings in `.dmt.json` files, including selected attributes, filters, mappings, Excel export configuration, and import defaults
+- Build execution plans (`.dmtplan.json`) to sequence multiple export and import steps and run them unattended
 
 ## Installation
 
@@ -78,6 +79,31 @@ A settings file contains:
 
 Settings are auto-saved during normal work, including before preview/export/import, after mapping changes, and after Excel export configuration changes.
 
+## Execution Plans
+
+An execution plan (`.dmtplan.json`) groups multiple export and import steps into a single file that can be validated and run sequentially without manual intervention.
+
+Each step captures:
+
+- the operation (ExportToJson, ExportToExcel, ImportFromJson, ImportFromExcel)
+- a table snapshot with selected attributes, FetchXML filter, mappings, and import settings
+- an output path template (exports) or input file path (imports)
+- an optional link to a preceding export step so the import reads the output directly
+- a failure policy (max failed records, max failed percent, stop on fatal error)
+- an optional per-step target environment override
+
+### Creating a plan
+
+Open the **Execution Plan** panel on the right side of the plugin. Use **New** to create a `.dmtplan.json` file. Add export and import steps through the toolbar menus or by linking an import to an existing export step. Steps are validated automatically — the panel shows status (Ready / Warning / Error) and validation messages for each step.
+
+### Linked steps
+
+When adding an import step, choose **Use output from an execution plan export step** to link it to an earlier export in the same plan. The import reads the export's output file path at execution time, so no manual file selection is needed.
+
+### Executing a plan
+
+Enable or disable individual steps using the checkboxes, then click **Execute**. The plan runs each enabled step in order. A results dialog opens at the end showing per-step status, record counts, and errors.
+
 ## Excel Imports
 
 Excel files exported by the tool are self-describing. The hidden `_dmt` metadata sheet stores the table, columns, lookup resolution, option-set mode, match key, and import defaults.
@@ -104,6 +130,9 @@ Mappings are stored in `.dmt.json` settings files and can be reviewed from the *
 - Result dialogs show failed rows by default, with a checkbox to show all rows and an option to retry failed rows only.
 
 ## Release Notes
+
+### 2026.5.15.x
+- [FIX] Execution plan panel no longer throws a SplitContainer sizing error on startup
 
 ### 2026.5.15.x
 - [NEW] Added execution plans with saved `.dmtplan.json` files, linked steps, validation, review, and unattended sequential execution

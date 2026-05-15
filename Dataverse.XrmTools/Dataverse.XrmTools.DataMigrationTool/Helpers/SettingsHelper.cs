@@ -13,28 +13,17 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
     {
         public static void GetSettings(out Settings settings)
         {
-            try
+            if (!SettingsManager.Instance.TryLoad(typeof(DataMigrationControl), out settings))
             {
-                if (!SettingsManager.Instance.TryLoad(typeof(DataMigrationControl), out settings))
-                {
-                    settings = new Settings { Instances = new List<Instance>(), TableSettings = new List<TableSettings>() };
-                    SetSettings(settings);
-                }
-
-                // reset on each settings load
-                settings.LastDataFile = string.Empty;
+                settings = new Settings { Instances = new List<Instance>(), TableSettings = new List<TableSettings>() };
+                SetSettings(settings);
             }
-            catch { throw; }
         }
 
         public static bool SetSettings(Settings settings)
         {
-            try
-            {
-                SettingsManager.Instance.Save(typeof(DataMigrationControl), settings);
-                return true;
-            }
-            catch { throw; }
+            SettingsManager.Instance.Save(typeof(DataMigrationControl), settings);
+            return true;
         }
     }
 }

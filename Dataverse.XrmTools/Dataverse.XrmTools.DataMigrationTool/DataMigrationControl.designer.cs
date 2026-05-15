@@ -36,7 +36,6 @@
             this.tsmiImport = new System.Windows.Forms.ToolStripMenuItem();
             this.tsmiImportData = new System.Windows.Forms.ToolStripMenuItem();
             this.tsmiImportSettings = new System.Windows.Forms.ToolStripMenuItem();
-            this.tsmiImportLastFile = new System.Windows.Forms.ToolStripMenuItem();
             this.tsmiImportFromExcel = new System.Windows.Forms.ToolStripMenuItem();
             this.tsSeparator2 = new System.Windows.Forms.ToolStripSeparator();
             this.tsmiEnvironments = new System.Windows.Forms.ToolStripMenuItem();
@@ -164,7 +163,7 @@
             this.tsmiExportData.Enabled = false;
             this.tsmiExportData.Name = "tsmiExportData";
             this.tsmiExportData.Size = new System.Drawing.Size(197, 22);
-            this.tsmiExportData.Text = "Data";
+            this.tsmiExportData.Text = "To JSON";
             this.tsmiExportData.Click += new System.EventHandler(this.tsmiExportData_Click);
             // 
             // tsmiExportSettings
@@ -206,7 +205,7 @@
             this.tsmiImportData.Enabled = false;
             this.tsmiImportData.Name = "tsmiImportData";
             this.tsmiImportData.Size = new System.Drawing.Size(172, 22);
-            this.tsmiImportData.Text = "Data";
+            this.tsmiImportData.Text = "From JSON";
             this.tsmiImportData.Click += new System.EventHandler(this.tsmiImportData_Click);
             // 
             // tsmiImportSettings
@@ -216,14 +215,6 @@
             this.tsmiImportSettings.Text = "Legacy settings file";
             this.tsmiImportSettings.Click += new System.EventHandler(this.tsmiImportSettings_Click);
             // 
-            // tsmiImportLastFile
-            // 
-            this.tsmiImportLastFile.Enabled = false;
-            this.tsmiImportLastFile.Name = "tsmiImportLastFile";
-            this.tsmiImportLastFile.Size = new System.Drawing.Size(172, 22);
-            this.tsmiImportLastFile.Text = "From last exported";
-            this.tsmiImportLastFile.Click += new System.EventHandler(this.tsmiImportLastFile_Click);
-            //
             // tsmiImportFromExcel
             //
             this.tsmiImportFromExcel.Name = "tsmiImportFromExcel";
@@ -1019,7 +1010,6 @@
         private System.Windows.Forms.ToolStripMenuItem tsmiImportData;
         private System.Windows.Forms.ToolStripMenuItem tsmiImportSettings;
         private System.Windows.Forms.ToolStripMenuItem tsmiExportSettings;
-        private System.Windows.Forms.ToolStripMenuItem tsmiImportLastFile;
         private System.Windows.Forms.Label lblApplyMappingsOn;
         private System.Windows.Forms.RadioButton rbMapOnExport;
         private System.Windows.Forms.RadioButton rbMapOnImport;

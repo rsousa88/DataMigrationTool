@@ -80,6 +80,14 @@
     <Compile Include="DataMigrationControl.cs">
       <SubType>UserControl</SubType>
     </Compile>
+    <Compile Include="DataMigrationControl.ExecutionPlan.cs">
+      <DependentUpon>DataMigrationControl.cs</DependentUpon>
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="DataMigrationControl.ImportExport.cs">
+      <DependentUpon>DataMigrationControl.cs</DependentUpon>
+      <SubType>UserControl</SubType>
+    </Compile>
     <Compile Include="DataMigrationControl.designer.cs">
       <DependentUpon>DataMigrationControl.cs</DependentUpon>
     </Compile>
@@ -146,11 +154,17 @@
     <Compile Include="Forms\WorkingDialog.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="Logic\BatchingService.cs" />
     <Compile Include="Logic\DataLogic.cs" />
     <Compile Include="Logic\DmtFileService.cs" />
+    <Compile Include="Logic\ExecutionResultService.cs" />
     <Compile Include="Logic\ExecutionPlanFileService.cs" />
     <Compile Include="Logic\ExcelLogic.cs" />
+    <Compile Include="Logic\ExecutionPlanService.cs" />
+    <Compile Include="Logic\ImportPreviewService.cs" />
+    <Compile Include="Logic\ImportWorkflowService.cs" />
     <Compile Include="Logic\MappingsLogic.cs" />
+    <Compile Include="Logic\RecordCollectionService.cs" />
     <Compile Include="Models\Attribute.cs" />
     <Compile Include="Models\CrmBulkResponse.cs" />
     <Compile Include="Models\MigrationItem.cs" />

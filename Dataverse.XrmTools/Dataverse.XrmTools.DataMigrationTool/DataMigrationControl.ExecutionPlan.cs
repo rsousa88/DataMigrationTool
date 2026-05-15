@@ -1,0 +1,1512 @@
+﻿// System
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Drawing;
+using System.IO;
+using System.Linq;
+using System.Windows.Forms;
+
+// Microsoft
+using Microsoft.Xrm.Sdk;
+using Microsoft.Xrm.Sdk.Query;
+
+// XrmToolBox
+using XrmToolBox.Extensibility;
+using XrmToolBox.Extensibility.Args;
+
+// DataMigrationTool
+using Dataverse.XrmTools.DataMigrationTool.AppSettings;
+using Dataverse.XrmTools.DataMigrationTool.Enums;
+using Dataverse.XrmTools.DataMigrationTool.Forms;
+using Dataverse.XrmTools.DataMigrationTool.Helpers;
+using Dataverse.XrmTools.DataMigrationTool.Logic;
+using Dataverse.XrmTools.DataMigrationTool.Models;
+
+namespace Dataverse.XrmTools.DataMigrationTool
+{
+    public partial class DataMigrationControl
+    {
+        #region Execution Plan Methods
+        private bool EnsureExecutionPlanLoaded()
+        {
+            if (_executionPlan != null && !string.IsNullOrWhiteSpace(_executionPlanFilePath)) return true;
+
+            using (var dlg = new ExecutionPlanFileDialog())
+            {
+                if (dlg.ShowDialog(ParentForm) != DialogResult.OK || string.IsNullOrWhiteSpace(dlg.FilePath))
+                    return false;
+
+                if (dlg.Choice == ExecutionPlanFileChoice.NewFile)
+                {
+                    CreateExecutionPlan(dlg.FilePath);
+                    return true;
+                }
+
+                if (dlg.Choice == ExecutionPlanFileChoice.ExistingFile)
+                {
+                    LoadExecutionPlan(dlg.FilePath);
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private void CreateExecutionPlan(string filePath = null)
+        {
+            if (string.IsNullOrWhiteSpace(filePath))
+            {
+                using (var dlg = new SaveFileDialog
+                {
+                    Title = "Create execution plan",
+                    Filter = "DMT Execution Plan (*.dmtplan.json)|*.dmtplan.json",
+                    DefaultExt = "dmtplan.json",
+                    FileName = GetDefaultSaveFileName(".dmtplan.json", "migration-plan")
+                })
+                {
+                    if (dlg.ShowDialog(ParentForm) != DialogResult.OK) return;
+                    filePath = dlg.FileName;
+                }
+            }
+
+            _executionPlan = ExecutionPlanFileService.CreateNew(
+                filePath,
+                _sourceClient?.ConnectedOrgUniqueName,
+                _sourceClient?.ConnectedOrgFriendlyName,
+                _targetClient?.ConnectedOrgUniqueName,
+                _targetClient?.ConnectedOrgFriendlyName);
+            UpdateExecutionPlanTargetEnvironments();
+            _executionPlanFilePath = filePath;
+            _executionPlanValidatedForExecution = false;
+            AutoSaveExecutionPlan();
+            RenderExecutionPlanMenu();
+            SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Execution plan created: {Path.GetFileName(filePath)}"));
+        }
+
+        private void LoadExecutionPlan(string filePath = null)
+        {
+            if (string.IsNullOrWhiteSpace(filePath))
+            {
+                using (var dlg = new OpenFileDialog
+                {
+                    Title = "Load execution plan",
+                    Filter = "DMT Execution Plan (*.dmtplan.json)|*.dmtplan.json"
+                })
+                {
+                    if (dlg.ShowDialog(ParentForm) != DialogResult.OK) return;
+                    filePath = dlg.FileName;
+                }
+            }
+
+            _executionPlan = ExecutionPlanFileService.Load(filePath);
+            _executionPlanFilePath = filePath;
+            UpdateExecutionPlanTargetEnvironments();
+            ExecutionPlanFileService.ValidatePlan(_executionPlan);
+            _executionPlanValidatedForExecution = false;
+            RenderExecutionPlanMenu();
+            SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Execution plan loaded: {Path.GetFileName(filePath)}"));
+        }
+
+        private void SaveExecutionPlan()
+        {
+            if (_executionPlan == null || string.IsNullOrWhiteSpace(_executionPlanFilePath))
+            {
+                CreateExecutionPlan();
+                return;
+            }
+
+            ExecutionPlanFileService.Save(_executionPlanFilePath, _executionPlan);
+            RenderExecutionPlanMenu();
+            SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Execution plan saved: {Path.GetFileName(_executionPlanFilePath)}"));
+        }
+
+        private void AutoSaveExecutionPlan(bool showStatus = false)
+        {
+            if (_executionPlan == null || string.IsNullOrWhiteSpace(_executionPlanFilePath)) return;
+
+            ExecutionPlanFileService.Save(_executionPlanFilePath, _executionPlan);
+            RenderExecutionPlanMenu();
+            if (showStatus)
+                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Execution plan saved: {Path.GetFileName(_executionPlanFilePath)}"));
+        }
+
+        private void ReviewExecutionPlan()
+        {
+            if (!EnsureExecutionPlanLoaded()) return;
+
+            using (var dlg = new ExecutionPlanDialog(_executionPlan))
+            {
+                dlg.ShowDialog(ParentForm);
+                if (dlg.PlanChanged)
+                {
+                    _executionPlanValidatedForExecution = false;
+                    AutoSaveExecutionPlan(true);
+                }
+            }
+        }
+
+        private void InitializeExecutionPlanPanel()
+        {
+            if (_executionPlanGroup != null) return;
+
+            pnlMain.SuspendLayout();
+            pnlMain.ColumnStyles.Clear();
+            pnlMain.ColumnCount = 1;
+            pnlMain.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            pnlMain.Controls.Remove(pnlBody);
+
+            _executionPlanSplitContainer = new SplitContainer
+            {
+                Dock = DockStyle.Fill,
+                Orientation = Orientation.Vertical,
+                SplitterWidth = 6,
+                FixedPanel = FixedPanel.None,
+                Panel1MinSize = 1,
+                Panel2MinSize = 1
+            };
+            _executionPlanSplitContainer.SplitterMoved += (sender, args) => EnforceExecutionPlanPanelWidth();
+            _executionPlanSplitContainer.SizeChanged += (sender, args) => EnforceExecutionPlanPanelWidth();
+            _executionPlanSplitContainer.Panel1.Controls.Add(pnlBody);
+            pnlMain.Controls.Add(_executionPlanSplitContainer, 0, 0);
+
+            _executionPlanGroup = new GroupBox
+            {
+                Text = "Execution Plan",
+                Dock = DockStyle.Fill,
+                Padding = new Padding(6)
+            };
+
+            var headerLayout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 2,
+                RowCount = 1,
+                Margin = new Padding(0)
+            };
+            headerLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            headerLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
+
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                RowCount = 4,
+                ColumnCount = 1
+            };
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 68F));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 32F));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 74));
+
+            _executionPlanSummary = new System.Windows.Forms.Label
+            {
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft,
+                AutoEllipsis = true
+            };
+
+            var planMenuStrip = new ToolStrip
+            {
+                Dock = DockStyle.Fill,
+                GripStyle = ToolStripGripStyle.Hidden,
+                RenderMode = ToolStripRenderMode.System,
+                Padding = new Padding(0),
+                Stretch = true
+            };
+            if (tsmiExecutionPlan.Owner != null)
+                tsmiExecutionPlan.Owner.Items.Remove(tsmiExecutionPlan);
+            planMenuStrip.Items.Add(tsmiExecutionPlan);
+            headerLayout.Controls.Add(_executionPlanSummary, 0, 0);
+            headerLayout.Controls.Add(planMenuStrip, 1, 0);
+
+            _executionPlanSteps = new ListView
+            {
+                Dock = DockStyle.Fill,
+                CheckBoxes = true,
+                FullRowSelect = true,
+                HideSelection = false,
+                MultiSelect = false,
+                View = View.Details
+            };
+            _executionPlanSteps.Columns.Add("#", 34);
+            _executionPlanSteps.Columns.Add("Status", 76);
+            _executionPlanSteps.Columns.Add("Environment", 110);
+            _executionPlanSteps.Columns.Add("Step", 190);
+            _executionPlanSteps.Columns.Add("Input/Output", 180);
+            _executionPlanSteps.ItemChecked += ExecutionPlanStepChecked;
+            _executionPlanSteps.SelectedIndexChanged += (sender, args) =>
+            {
+                RenderExecutionPlanRowTargetEditors();
+                RenderExecutionPlanMessages();
+            };
+            _executionPlanSteps.MouseClick += (sender, args) => RenderExecutionPlanRowTargetEditors();
+            _executionPlanSteps.MouseWheel += (sender, args) => QueueRenderExecutionPlanRowTargetEditors();
+            _executionPlanSteps.KeyDown += (sender, args) => QueueRenderExecutionPlanRowTargetEditors();
+            _executionPlanSteps.Resize += (sender, args) =>
+            {
+                ResizeExecutionPlanColumns();
+                QueueRenderExecutionPlanRowTargetEditors();
+            };
+
+            _executionPlanMessages = new TextBox
+            {
+                Dock = DockStyle.Fill,
+                Multiline = true,
+                ReadOnly = true,
+                ScrollBars = ScrollBars.Vertical
+            };
+
+            var buttons = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 4,
+                RowCount = 2
+            };
+            for (var i = 0; i < 4; i++)
+                buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+            buttons.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
+            buttons.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
+
+            AddPlanPanelButton(buttons, "New", 0, 0, (s, e) => CreateExecutionPlan());
+            AddPlanPanelButton(buttons, "Load", 1, 0, (s, e) => LoadExecutionPlan());
+            AddPlanPanelButton(buttons, "Save", 2, 0, (s, e) => SaveExecutionPlan());
+            AddPlanPanelButton(buttons, "Validate", 3, 0, (s, e) => ValidateExecutionPlan());
+            AddPlanPanelButton(buttons, "Up", 0, 1, (s, e) => MoveSelectedExecutionPlanStep(-1));
+            AddPlanPanelButton(buttons, "Down", 1, 1, (s, e) => MoveSelectedExecutionPlanStep(1));
+            AddPlanPanelButton(buttons, "Remove", 2, 1, (s, e) => RemoveSelectedExecutionPlanStep());
+            _executionPlanExecuteButton = AddPlanPanelButton(buttons, "Execute", 3, 1, (s, e) => ExecuteExecutionPlan());
+
+            layout.Controls.Add(headerLayout, 0, 0);
+            layout.Controls.Add(_executionPlanSteps, 0, 1);
+            layout.Controls.Add(_executionPlanMessages, 0, 2);
+            layout.Controls.Add(buttons, 0, 3);
+            _executionPlanGroup.Controls.Add(layout);
+
+            _executionPlanSplitContainer.Panel2.Controls.Add(_executionPlanGroup);
+            pnlMain.ResumeLayout();
+            System.Action applySplitter = () =>
+            {
+                if (_executionPlanSplitContainer == null || _executionPlanSplitContainer.Width <= 0) return;
+                SetExecutionPlanPanelWidthRatio(0.30m);
+                ResizeExecutionPlanColumns();
+            };
+            if (IsHandleCreated)
+                BeginInvoke(applySplitter);
+            else
+                HandleCreated += (s, e) => BeginInvoke(applySplitter);
+            RenderExecutionPlanPanel();
+        }
+
+        private void SetExecutionPlanPanelWidthRatio(decimal ratio)
+        {
+            if (_executionPlanSplitContainer == null || _executionPlanSplitContainer.Width <= 0) return;
+
+            ratio = Math.Max(0.25m, Math.Min(0.50m, ratio));
+            var total = _executionPlanSplitContainer.Width - _executionPlanSplitContainer.SplitterWidth;
+            if (total <= 0) return;
+
+            var desiredPlanWidth = (int)Math.Round(total * ratio);
+            _executionPlanSplitContainer.SplitterDistance = Math.Max(1, total - desiredPlanWidth);
+        }
+
+        private void EnforceExecutionPlanPanelWidth()
+        {
+            if (_executionPlanSplitContainer == null || _executionPlanSplitContainer.Width <= 0) return;
+
+            var total = _executionPlanSplitContainer.Width - _executionPlanSplitContainer.SplitterWidth;
+            if (total <= 0) return;
+
+            var planWidth = _executionPlanSplitContainer.Panel2.Width;
+            var min = (int)Math.Round(total * 0.25m);
+            var max = (int)Math.Round(total * 0.50m);
+            if (planWidth < min)
+                _executionPlanSplitContainer.SplitterDistance = total - min;
+            else if (planWidth > max)
+                _executionPlanSplitContainer.SplitterDistance = total - max;
+
+            ResizeExecutionPlanColumns();
+        }
+
+        private void ResizeExecutionPlanColumns()
+        {
+            if (_executionPlanSteps == null || _executionPlanSteps.Columns.Count < 5) return;
+
+            var width = Math.Max(360, _executionPlanSteps.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 4);
+            _executionPlanSteps.Columns[0].Width = 38;
+            _executionPlanSteps.Columns[1].Width = 80;
+            _executionPlanSteps.Columns[2].Width = Math.Max(180, (int)(width * 0.25));
+            _executionPlanSteps.Columns[3].Width = Math.Max(120, (int)(width * 0.20));
+            _executionPlanSteps.Columns[4].Width = Math.Max(90, width - _executionPlanSteps.Columns[0].Width - _executionPlanSteps.Columns[1].Width - _executionPlanSteps.Columns[2].Width - _executionPlanSteps.Columns[3].Width);
+        }
+
+        private Button AddPlanPanelButton(TableLayoutPanel panel, string text, int column, int row, EventHandler click)
+        {
+            var button = new Button
+            {
+                Text = text,
+                Dock = DockStyle.Fill,
+                Margin = new Padding(2)
+            };
+            button.Click += click;
+            panel.Controls.Add(button, column, row);
+            return button;
+        }
+
+        private sealed class ExecutionPlanTargetOption
+        {
+            public string UniqueName { get; set; }
+            public string FriendlyName { get; set; }
+            public string DisplayName { get; set; }
+            public override string ToString()
+            {
+                if (!string.IsNullOrWhiteSpace(DisplayName)) return DisplayName;
+                return string.IsNullOrWhiteSpace(FriendlyName) ? UniqueName : FriendlyName;
+            }
+        }
+
+        private ExecutionPlanStep GetSelectedExecutionPlanStep()
+        {
+            return _executionPlanSteps?.SelectedItems.Count > 0
+                ? _executionPlanSteps.SelectedItems[0].Tag as ExecutionPlanStep
+                : null;
+        }
+
+        private void RefreshExecutionPlanStepMappingsForTarget(ExecutionPlanStep step)
+        {
+            if (step?.Snapshot == null) return;
+
+            var settings = (step.Operation ?? string.Empty).StartsWith("Import", StringComparison.OrdinalIgnoreCase)
+                ? step.Snapshot.ImportSettings
+                : step.Snapshot.ExportSettings;
+            if (settings == null) return;
+
+            var previousClientOverride = _executionTargetClientOverride;
+            var previousInstanceOverride = _executionTargetInstanceOverride;
+            try
+            {
+                if (TrySetExecutionTargetOverride(step, out _))
+                    step.Snapshot.Mappings = ExecutionPlanService.CloneMappings(BuildMappingsForImport(settings));
+            }
+            finally
+            {
+                _executionTargetClientOverride = previousClientOverride;
+                _executionTargetInstanceOverride = previousInstanceOverride;
+            }
+        }
+
+        private List<Mapping> BuildMappingsForStepTarget(ExecutionPlanStep step, UiSettings settings)
+        {
+            var previousClientOverride = _executionTargetClientOverride;
+            var previousInstanceOverride = _executionTargetInstanceOverride;
+            try
+            {
+                SetExecutionTargetOverride(step?.TargetEnvironment);
+                return BuildMappingsForImport(settings);
+            }
+            finally
+            {
+                _executionTargetClientOverride = previousClientOverride;
+                _executionTargetInstanceOverride = previousInstanceOverride;
+            }
+        }
+
+        private void RenderExecutionPlanRowTargetEditors()
+        {
+            if (_executionPlanSteps == null) return;
+
+            _executionPlanRowTargetRenderQueued = false;
+            ClearExecutionPlanRowTargetEditors();
+            var targets = GetLoadedTargetEnvironments();
+
+            _suppressExecutionPlanInlineTargetChanged = true;
+            foreach (ListViewItem item in _executionPlanSteps.Items)
+            {
+                if (!(item.Tag is ExecutionPlanStep step)) continue;
+                if (item.SubItems.Count <= 2) continue;
+
+                var bounds = item.SubItems[2].Bounds;
+                if (bounds.Width <= 0 || bounds.Height <= 0) continue;
+                if (bounds.Bottom < 0 || bounds.Top > _executionPlanSteps.ClientSize.Height) continue;
+
+                var isExport = IsExportStep(step);
+                var editor = new ComboBox
+                {
+                    DropDownStyle = ComboBoxStyle.DropDownList,
+                    Bounds = new Rectangle(bounds.Left + 1, bounds.Top, Math.Max(80, bounds.Width - 2), Math.Max(22, bounds.Height + 2)),
+                    Tag = step,
+                    Enabled = !isExport
+                };
+
+                if (isExport)
+                {
+                    editor.Items.Add(new ExecutionPlanTargetOption
+                    {
+                        DisplayName = GetStepEnvironmentDisplay(step)
+                    });
+                    editor.SelectedIndex = 0;
+                }
+                else
+                {
+                    editor.Items.Add(new ExecutionPlanTargetOption
+                    {
+                        UniqueName = string.Empty,
+                        FriendlyName = string.Empty,
+                        DisplayName = targets.Any() ? "Set Environment..." : "Connect target first..."
+                    });
+                    foreach (var env in targets)
+                    {
+                        editor.Items.Add(new ExecutionPlanTargetOption
+                        {
+                            UniqueName = env.UniqueName,
+                            FriendlyName = env.FriendlyName,
+                            DisplayName = string.IsNullOrWhiteSpace(env.FriendlyName) ? env.UniqueName : env.FriendlyName
+                        });
+                    }
+
+                    var selectedUniqueName = step.TargetEnvironment?.UniqueName;
+                    for (var i = 0; i < editor.Items.Count; i++)
+                    {
+                        var option = editor.Items[i] as ExecutionPlanTargetOption;
+                        if (string.Equals(option?.UniqueName, selectedUniqueName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            editor.SelectedIndex = i;
+                            break;
+                        }
+                    }
+                    if (editor.SelectedIndex < 0)
+                        editor.SelectedIndex = 0;
+                }
+
+                editor.SelectedIndexChanged += ExecutionPlanRowTargetEditorChanged;
+                _executionPlanSteps.Controls.Add(editor);
+                editor.BringToFront();
+                _executionPlanRowTargetEditors.Add(editor);
+            }
+            _suppressExecutionPlanInlineTargetChanged = false;
+        }
+
+        private void QueueRenderExecutionPlanRowTargetEditors()
+        {
+            if (_executionPlanRowTargetRenderQueued || _executionPlanSteps == null || _executionPlanSteps.IsDisposed)
+                return;
+
+            _executionPlanRowTargetRenderQueued = true;
+            BeginInvoke(new System.Action(RenderExecutionPlanRowTargetEditors));
+        }
+
+        private void ClearExecutionPlanRowTargetEditors()
+        {
+            foreach (var editor in _executionPlanRowTargetEditors.ToList())
+            {
+                editor.SelectedIndexChanged -= ExecutionPlanRowTargetEditorChanged;
+                _executionPlanSteps?.Controls.Remove(editor);
+                editor.Dispose();
+            }
+            _executionPlanRowTargetEditors.Clear();
+        }
+
+        private void ExecutionPlanRowTargetEditorChanged(object sender, EventArgs e)
+        {
+            if (_suppressExecutionPlanInlineTargetChanged) return;
+            var editor = sender as ComboBox;
+            var step = editor?.Tag as ExecutionPlanStep;
+            var option = editor?.SelectedItem as ExecutionPlanTargetOption;
+            if (step == null || option == null) return;
+            if (string.IsNullOrWhiteSpace(option.UniqueName))
+            {
+                step.TargetEnvironment = null;
+                RefreshExecutionPlanStepMappingsForTarget(step);
+                _executionPlanValidatedForExecution = false;
+                ExecutionPlanFileService.ValidatePlan(_executionPlan);
+                if (!string.IsNullOrWhiteSpace(_executionPlanFilePath))
+                {
+                    ExecutionPlanFileService.Save(_executionPlanFilePath, _executionPlan);
+                    SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Execution plan saved: {Path.GetFileName(_executionPlanFilePath)}"));
+                }
+                BeginInvoke(new System.Action(RenderExecutionPlanMenu));
+                return;
+            }
+
+            step.TargetEnvironment = new DmtEnvironmentInfo
+            {
+                UniqueName = option.UniqueName,
+                FriendlyName = option.FriendlyName
+            };
+            RefreshExecutionPlanStepMappingsForTarget(step);
+            _executionPlanValidatedForExecution = false;
+            ExecutionPlanFileService.ValidatePlan(_executionPlan);
+            if (!string.IsNullOrWhiteSpace(_executionPlanFilePath))
+            {
+                ExecutionPlanFileService.Save(_executionPlanFilePath, _executionPlan);
+                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Execution plan saved: {Path.GetFileName(_executionPlanFilePath)}"));
+            }
+            BeginInvoke(new System.Action(RenderExecutionPlanMenu));
+        }
+
+        private void RenderExecutionPlanPanel()
+        {
+            if (_executionPlanSteps == null) return;
+
+            ClearExecutionPlanRowTargetEditors();
+            var selectedId = _executionPlanSteps.SelectedItems.Count > 0
+                ? (_executionPlanSteps.SelectedItems[0].Tag as ExecutionPlanStep)?.Id
+                : null;
+
+            _executionPlanSteps.BeginUpdate();
+            _executionPlanSteps.SuspendLayout();
+            try
+            {
+                _suppressExecutionPlanStepChecked = true;
+                _executionPlanSteps.Items.Clear();
+                if (_executionPlan?.Steps != null)
+                {
+                    for (var i = 0; i < _executionPlan.Steps.Count; i++)
+                    {
+                        var step = _executionPlan.Steps[i];
+                        var item = new ListViewItem((i + 1).ToString("00"))
+                        {
+                            Checked = step.Enabled,
+                            Tag = step
+                        };
+                        item.SubItems.Add(step.Validation?.Status ?? "Unknown");
+                        item.SubItems.Add(GetStepEnvironmentDisplay(step));
+                        item.SubItems.Add(step.Name ?? GetOperationDisplayName(step.Operation));
+                        item.SubItems.Add(GetExecutionPlanStepInputOutputText(step));
+                        if (string.Equals(step.Validation?.Status, "Error", StringComparison.OrdinalIgnoreCase))
+                            item.ForeColor = Color.DarkRed;
+                        else if (string.Equals(step.Validation?.Status, "Warning", StringComparison.OrdinalIgnoreCase))
+                            item.ForeColor = Color.DarkGoldenrod;
+                        _executionPlanSteps.Items.Add(item);
+                        if (!string.IsNullOrWhiteSpace(selectedId) && string.Equals(step.Id, selectedId, StringComparison.OrdinalIgnoreCase))
+                            item.Selected = true;
+                    }
+                }
+            }
+            finally
+            {
+                _suppressExecutionPlanStepChecked = false;
+                _executionPlanSteps.ResumeLayout();
+                _executionPlanSteps.EndUpdate();
+            }
+
+            var hasPlan = _executionPlan != null && !string.IsNullOrWhiteSpace(_executionPlanFilePath);
+            var errors = _executionPlan?.Steps?.Count(s => string.Equals(s.Validation?.Status, "Error", StringComparison.OrdinalIgnoreCase)) ?? 0;
+            var warnings = _executionPlan?.Steps?.Count(s => string.Equals(s.Validation?.Status, "Warning", StringComparison.OrdinalIgnoreCase)) ?? 0;
+            _executionPlanGroup.Text = hasPlan ? $"Execution Plan - {GetExecutionPlanDisplayName(_executionPlanFilePath)}" : "Execution Plan";
+            _executionPlanSummary.Text = hasPlan
+                ? $"{_executionPlan.Steps.Count} step(s), {errors} error(s), {warnings} warning(s)"
+                : "No active plan";
+            if (_executionPlanExecuteButton != null)
+                _executionPlanExecuteButton.Enabled = CanExecuteValidatedExecutionPlan();
+            RenderExecutionPlanRowTargetEditors();
+            RenderExecutionPlanMessages();
+        }
+
+        private bool CanExecuteValidatedExecutionPlan()
+        {
+            return ExecutionPlanService.CanExecuteValidatedPlan(_executionPlan, _executionPlanValidatedForExecution);
+        }
+
+        private void InvalidateExecutionPlanValidation()
+        {
+            _executionPlanValidatedForExecution = false;
+            RenderExecutionPlanMenu();
+        }
+
+        private string GetExecutionPlanStepInputOutputText(ExecutionPlanStep step)
+        {
+            return ExecutionPlanService.GetStepInputOutputText(_executionPlan, step);
+        }
+
+        private bool IsExportStep(ExecutionPlanStep step)
+        {
+            return ExecutionPlanService.IsExportStep(step);
+        }
+
+        private string GetStepEnvironmentDisplay(ExecutionPlanStep step)
+        {
+            if (IsExportStep(step))
+            {
+                var source = _executionPlan?.SourceEnvironment;
+                var sourceName = source?.FriendlyName ?? source?.UniqueName ?? _sourceClient?.ConnectedOrgFriendlyName ?? _sourceClient?.ConnectedOrgUniqueName;
+                return string.IsNullOrWhiteSpace(sourceName) ? string.Empty : $"Source: {sourceName}";
+            }
+
+            return GetStepTargetDisplay(step);
+        }
+
+        private string GetStepTargetDisplay(ExecutionPlanStep step)
+        {
+            var env = step?.TargetEnvironment;
+            if (env == null || string.IsNullOrWhiteSpace(env.UniqueName))
+                return _targetClient?.ConnectedOrgFriendlyName ?? _targetClient?.ConnectedOrgUniqueName ?? string.Empty;
+            return env.FriendlyName ?? env.UniqueName;
+        }
+
+        private void RenderExecutionPlanMessages()
+        {
+            if (_executionPlanMessages == null) return;
+            var step = _executionPlanSteps.SelectedItems.Count > 0 ? _executionPlanSteps.SelectedItems[0].Tag as ExecutionPlanStep : null;
+            if (step == null)
+            {
+                _executionPlanMessages.Text = "Select a step to view details.";
+                return;
+            }
+
+            var preview = step.Validation?.Preview;
+            var lines = new List<string>
+            {
+                $"{step.Operation} - {step.Table?.LogicalName}",
+                $"Environment: {GetStepEnvironmentDisplay(step)}",
+                GetExecutionPlanStepInputOutputText(step)
+            };
+            if (preview != null)
+                lines.Add($"Preview: {preview.Creates} create, {preview.Updates} update, {preview.Skips} skip, {preview.Warnings} warning(s)");
+
+            var messages = step.Validation?.Messages ?? new List<ExecutionPlanValidationMessage>();
+            lines.AddRange(messages.Select(m => $"{m.Severity}: {m.Message}"));
+            _executionPlanMessages.Text = string.Join(Environment.NewLine, lines.Where(line => !string.IsNullOrWhiteSpace(line)));
+        }
+
+        private void ExecutionPlanStepChecked(object sender, ItemCheckedEventArgs e)
+        {
+            if (_suppressExecutionPlanStepChecked) return;
+            if (!(e.Item.Tag is ExecutionPlanStep step)) return;
+
+            step.Enabled = e.Item.Checked;
+            ExecutionPlanFileService.ValidatePlan(_executionPlan);
+            _executionPlanValidatedForExecution = false;
+            AutoSaveExecutionPlan(true);
+        }
+
+        private void MoveSelectedExecutionPlanStep(int direction)
+        {
+            if (_executionPlan?.Steps == null || _executionPlanSteps.SelectedItems.Count == 0) return;
+            var index = _executionPlanSteps.SelectedItems[0].Index;
+            var newIndex = index + direction;
+            if (newIndex < 0 || newIndex >= _executionPlan.Steps.Count) return;
+
+            var step = _executionPlan.Steps[index];
+            if (!CanMoveExecutionPlanStep(step, newIndex)) return;
+
+            _executionPlan.Steps.RemoveAt(index);
+            _executionPlan.Steps.Insert(newIndex, step);
+            ExecutionPlanFileService.ValidatePlan(_executionPlan);
+            _executionPlanValidatedForExecution = false;
+            AutoSaveExecutionPlan(true);
+            if (newIndex < _executionPlanSteps.Items.Count)
+                _executionPlanSteps.Items[newIndex].Selected = true;
+        }
+
+        private bool CanMoveExecutionPlanStep(ExecutionPlanStep step, int newIndex)
+        {
+            var canMove = ExecutionPlanService.CanMoveStep(_executionPlan, step, newIndex, out var reason);
+            if (!canMove)
+                MessageBox.Show(reason, "Execution Plan", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return canMove;
+        }
+
+        private void RemoveSelectedExecutionPlanStep()
+        {
+            if (_executionPlan?.Steps == null || _executionPlanSteps.SelectedItems.Count == 0) return;
+            var index = _executionPlanSteps.SelectedItems[0].Index;
+            var step = _executionPlan.Steps[index];
+            var dependents = _executionPlan.Steps
+                .Where(s => string.Equals(s.Input?.Mode, "FromStepOutput", StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(s.Input?.SourceStepId, step.Id, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            var message = dependents.Any()
+                ? "Remove this step and unlink dependent import step(s)?"
+                : "Remove selected step from this plan?";
+            if (MessageBox.Show(message, "Execution Plan", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+
+            foreach (var dependent in dependents)
+            {
+                dependent.Input.Mode = "File";
+                dependent.Input.SourceStepId = null;
+            }
+            _executionPlan.Steps.RemoveAt(index);
+            ExecutionPlanFileService.ValidatePlan(_executionPlan);
+            _executionPlanValidatedForExecution = false;
+            AutoSaveExecutionPlan(true);
+        }
+
+        private void ValidateExecutionPlan()
+        {
+            if (!EnsureExecutionPlanLoaded()) return;
+            UpdateExecutionPlanTargetEnvironments();
+
+            ManageWorkingState(true, "Validating execution plan...");
+            WorkAsync(new WorkAsyncInfo
+            {
+                AsyncArgument = _executionPlan,
+                IsCancelable = false,
+                Work = (worker, evt) =>
+                {
+                    var plan = evt.Argument as ExecutionPlan;
+                    ValidateExecutionPlanInternal(plan, worker, true);
+                    evt.Result = plan;
+                },
+                PostWorkCallBack = evt =>
+                {
+                    ManageWorkingState(false);
+                    if (evt.Error != null)
+                    {
+                        _executionPlanValidatedForExecution = false;
+                        RenderExecutionPlanMenu();
+                        _logger.Log(LogLevel.ERROR, evt.Error.ToString());
+                        MessageBox.Show(evt.Error.Message, "Execution Plan", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+
+                    AutoSaveExecutionPlan(true);
+
+                    var errors = _executionPlan.Steps.Count(s => string.Equals(s.Validation?.Status, "Error", StringComparison.OrdinalIgnoreCase));
+                    var warnings = _executionPlan.Steps.Count(s => string.Equals(s.Validation?.Status, "Warning", StringComparison.OrdinalIgnoreCase));
+                    _executionPlanValidatedForExecution = !_executionPlan.Steps.Any(s => s.Enabled && string.Equals(s.Validation?.Status, "Error", StringComparison.OrdinalIgnoreCase));
+                    RenderExecutionPlanMenu();
+                    MessageBox.Show(
+                        $"Validation complete.{Environment.NewLine}{Environment.NewLine}Steps: {_executionPlan.Steps.Count}{Environment.NewLine}Errors: {errors}{Environment.NewLine}Warnings: {warnings}",
+                        "Execution Plan",
+                        MessageBoxButtons.OK,
+                        errors > 0 ? MessageBoxIcon.Error : warnings > 0 ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
+                    ReRenderComponents(true);
+                },
+                ProgressChanged = ReportWorkProgress
+            });
+        }
+
+        private void ExecuteExecutionPlan()
+        {
+            if (!EnsureExecutionPlanLoaded()) return;
+
+            if (!CanExecuteValidatedExecutionPlan())
+            {
+                MessageBox.Show("Validate the execution plan successfully before executing it.", "Execution Plan", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            ConfirmAndStartExecutionPlanRun();
+        }
+
+        private void ConfirmAndStartExecutionPlanRun()
+        {
+            var errors = _executionPlan.Steps.Count(s => s.Enabled && string.Equals(s.Validation?.Status, "Error", StringComparison.OrdinalIgnoreCase));
+            if (errors > 0)
+            {
+                MessageBox.Show("Execution plan has validation errors. Review and fix the plan before executing.", "Execution Plan", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            var warnings = _executionPlan.Steps.Count(s => s.Enabled && string.Equals(s.Validation?.Status, "Warning", StringComparison.OrdinalIgnoreCase));
+            if (warnings > 0)
+            {
+                var proceed = MessageBox.Show(
+                    $"Execution plan has {warnings} warning(s). Continue anyway?",
+                    "Execution Plan",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning);
+                if (proceed != DialogResult.Yes) return;
+            }
+
+            StartExecutionPlanRun();
+        }
+
+        private void StartExecutionPlanRun()
+        {
+            ManageWorkingState(true, "Executing plan...");
+            WorkAsync(new WorkAsyncInfo
+            {
+                AsyncArgument = _executionPlan,
+                IsCancelable = false,
+                Work = (worker, evt) =>
+                {
+                    var plan = evt.Argument as ExecutionPlan;
+                    var runLog = ExecutionPlanService.CreateRunLog(
+                        plan,
+                        _executionPlanFilePath,
+                        new DmtEnvironmentInfo
+                        {
+                            UniqueName = _sourceClient?.ConnectedOrgUniqueName,
+                            FriendlyName = _sourceClient?.ConnectedOrgFriendlyName
+                        },
+                        new DmtEnvironmentInfo
+                        {
+                            UniqueName = ActiveTargetClient?.ConnectedOrgUniqueName,
+                            FriendlyName = ActiveTargetClient?.ConnectedOrgFriendlyName
+                        },
+                        GetLoadedTargetEnvironments());
+                    var stepIndex = 0;
+                    var failedStepIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var step in ExecutionPlanService.GetExecutableSteps(plan))
+                    {
+                        stepIndex++;
+                        worker.ReportProgress(0, $"Execution plan: running step {stepIndex} - {step.Name}...");
+                        var stepLog = ExecutionPlanService.CreateRunStepLog(plan, step, stepIndex, CreateExecutionPlanPathContext());
+                        try
+                        {
+                            if (ExecutionPlanService.IsBlockedByFailedDependency(step, failedStepIds))
+                            {
+                                ExecutionPlanService.MarkSkippedDueToFailedDependency(stepLog, step);
+                                failedStepIds.Add(step.Id);
+                                runLog.Steps.Add(stepLog);
+                                continue;
+                            }
+
+                            if (!TrySetExecutionTargetOverride(step, out var targetError))
+                                throw new Exception(targetError);
+                            var result = ExecuteExecutionPlanStep(step, stepIndex, worker);
+                            ExecutionPlanService.ApplyExecutionResultToLog(stepLog, result);
+
+                            if (result.ShouldStopPlan)
+                            {
+                                failedStepIds.Add(step.Id);
+                                runLog.Steps.Add(stepLog);
+                                break;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            stepLog.Status = "Failed";
+                            stepLog.Error = ex.Message;
+                            stepLog.Summary = $"{step.Name}: failed - {ex.Message}";
+                            failedStepIds.Add(step.Id);
+                            runLog.Steps.Add(stepLog);
+                            if (GetStepStopOnFatalError(plan, step))
+                                break;
+                            continue;
+                        }
+                        finally
+                        {
+                            ClearExecutionTargetOverride();
+                        }
+                        runLog.Steps.Add(stepLog);
+                    }
+
+                    runLog.CompletedOn = DateTime.UtcNow;
+                    evt.Result = runLog;
+                },
+                PostWorkCallBack = evt =>
+                {
+                    ManageWorkingState(false);
+                    if (evt.Error != null)
+                    {
+                        _logger.Log(LogLevel.ERROR, evt.Error.ToString());
+                        MessageBox.Show(evt.Error.Message, "Execution Plan", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+
+                    var runLog = evt.Result as ExecutionPlanRunLog;
+                    if (runLog != null)
+                    {
+                        SaveExecutionPlanRunLog(runLog);
+                        using (var dlg = new ExecutionPlanResultsDialog(runLog))
+                            dlg.ShowDialog(ParentForm);
+                    }
+                    SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Execution plan complete"));
+                    ReRenderComponents(true);
+                },
+                ProgressChanged = ReportWorkProgress
+            });
+        }
+
+        private ExecutionPlanStepExecutionResult ExecuteExecutionPlanStep(ExecutionPlanStep step, int stepIndex, BackgroundWorker worker)
+        {
+            var tableData = BuildTableDataForExecutionStep(step);
+            var path = ResolveExecutionStepPath(step, stepIndex);
+
+            switch (step.Operation)
+            {
+                case "ExportToJson":
+                {
+                    EnsureOutputDirectory(path);
+                    var logic = new DataLogic(worker, _sourceClient, ActiveTargetClient);
+                    logic.Export(tableData, step.Snapshot.ExportSettings ?? GetDefaultImportSettings(Enums.Action.None), path, step.Snapshot.Mappings, false);
+                    return new ExecutionPlanStepExecutionResult { Summary = $"{step.Name}: exported JSON to {path}" };
+                }
+                case "ExportToExcel":
+                {
+                    EnsureOutputDirectory(path);
+                    var logic = new DataLogic(worker, _sourceClient, ActiveTargetClient);
+                    var sourceCollection = logic.GetSourceEntities(tableData, step.Snapshot.ExportSettings ?? GetDefaultImportSettings(Enums.Action.None));
+                    var excelLogic = new Logic.ExcelLogic();
+                    excelLogic.Export(step.Snapshot.ExcelConfig, sourceCollection, path, _sourceClient);
+                    var count = sourceCollection?.Count() ?? 0;
+                    return new ExecutionPlanStepExecutionResult { Summary = $"{step.Name}: exported Excel ({count} record(s)) to {path}", TotalRecords = count };
+                }
+                case "ImportFromJson":
+                {
+                    var json = File.ReadAllText(path);
+                    var collection = json.DeserializeObject<RecordCollection>();
+                    ImportFileDataChecks(collection);
+                    var logic = new DataLogic(worker, _sourceClient, ActiveTargetClient);
+                    var result = logic.Import(tableData, collection, step.Snapshot.ImportSettings ?? GetDefaultImportSettings(Enums.Action.None), step.Snapshot.Mappings, false);
+                    return BuildExecutionStepResult(step, result, "imported JSON");
+                }
+                case "ImportFromExcel":
+                {
+                    var excelLogic = new Logic.ExcelLogic();
+                    var collection = excelLogic.ImportFromExcel(
+                        path,
+                        out ExcelExportConfig config,
+                        ActiveTargetClient,
+                        worker,
+                        importConfig =>
+                        {
+                            if (step.Snapshot.ExcelConfig != null)
+                            {
+                                importConfig.MatchKey = step.Snapshot.ExcelConfig.MatchKey;
+                                importConfig.MatchKeyMode = step.Snapshot.ExcelConfig.MatchKeyMode;
+                                importConfig.MatchKeys = step.Snapshot.ExcelConfig.MatchKeys;
+                                importConfig.MatchAlternateKeyName = step.Snapshot.ExcelConfig.MatchAlternateKeyName;
+                                importConfig.ImportSettings = step.Snapshot.ExcelConfig.ImportSettings;
+                            }
+                            EnsureExcelImportSettings(importConfig, BuildExcelImportSettings(step.Snapshot.ImportSettings, importConfig));
+                        });
+                    var logic = new DataLogic(worker, _sourceClient, ActiveTargetClient);
+                    var result = logic.Import(tableData, collection, step.Snapshot.ImportSettings ?? GetDefaultImportSettings(config, Enums.Action.None), step.Snapshot.Mappings, false);
+                    if (result != null && config != null)
+                    {
+                        var importedIds = result.SuccessfulIdMap ?? GetSuccessfulResultIdMap(result.Items);
+                        if (importedIds.Any())
+                            excelLogic.UpdateImportedGuids(path, config, collection, importedIds, worker);
+                    }
+                    return BuildExecutionStepResult(step, result, "imported Excel");
+                }
+                default:
+                    throw new Exception($"Unsupported execution plan operation: {step.Operation}");
+            }
+        }
+
+        private void ValidateExecutionPlanInternal(ExecutionPlan plan, BackgroundWorker worker, bool includePreviewCounts)
+        {
+            if (plan == null) return;
+
+            ExecutionPlanFileService.ValidatePlan(plan);
+            AddEnvironmentValidationMessages(plan);
+            AddDuplicateOutputPathValidationMessages(plan);
+
+            if (includePreviewCounts)
+            {
+                var stepIndex = 0;
+                foreach (var step in plan.Steps.Where(s => s.Enabled))
+                {
+                    stepIndex++;
+                    worker?.ReportProgress(0, $"Execution plan: validating step {stepIndex} - {step.Name}...");
+                    try
+                    {
+                        if (!TrySetExecutionTargetOverride(step, out var targetError))
+                            AddExecutionPlanValidationMessage(step, "Error", targetError);
+                        else
+                        {
+                            ValidateExecutionPlanStepSnapshot(step);
+                            if ((step.Operation ?? string.Empty).StartsWith("Import", StringComparison.OrdinalIgnoreCase))
+                                RefreshExecutionPlanImportPreview(step, stepIndex, worker);
+                        }
+                        RefreshExecutionPlanStepStatus(step);
+                    }
+                    finally
+                    {
+                        ClearExecutionTargetOverride();
+                    }
+                }
+            }
+            else
+            {
+                foreach (var step in plan.Steps.Where(s => s.Enabled))
+                    RefreshExecutionPlanStepStatus(step);
+            }
+        }
+
+        private void AddEnvironmentValidationMessages(ExecutionPlan plan)
+        {
+            var firstEnabledStep = plan.Steps.FirstOrDefault(s => s.Enabled);
+            if (firstEnabledStep == null) return;
+
+            if (EnvironmentChanged(plan.SourceEnvironment, _sourceClient?.ConnectedOrgUniqueName))
+                AddExecutionPlanValidationMessage(firstEnabledStep, "Warning", "Current source environment differs from the environment captured in the plan.");
+
+            foreach (var step in plan.Steps.Where(s => s.Enabled && s.TargetEnvironment != null && !string.IsNullOrWhiteSpace(s.TargetEnvironment.UniqueName)))
+            {
+                if (!_targetClients.ContainsKey(step.TargetEnvironment.UniqueName))
+                    AddExecutionPlanValidationMessage(step, "Error", $"Target environment is not connected: {step.TargetEnvironment.FriendlyName ?? step.TargetEnvironment.UniqueName}");
+            }
+        }
+
+        private bool EnvironmentChanged(DmtEnvironmentInfo captured, string currentUniqueName)
+        {
+            if (captured == null || string.IsNullOrWhiteSpace(captured.UniqueName) || string.IsNullOrWhiteSpace(currentUniqueName)) return false;
+            return !captured.UniqueName.Equals(currentUniqueName, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private void AddDuplicateOutputPathValidationMessages(ExecutionPlan plan)
+        {
+            var exports = plan.Steps
+                .Select((step, index) => new { step, index })
+                .Where(x => x.step.Enabled && (x.step.Operation ?? string.Empty).StartsWith("Export", StringComparison.OrdinalIgnoreCase))
+                .Select(x => new { x.step, path = ResolvePlanPath(x.step.Output?.PathTemplate, x.step, x.index + 1) })
+                .Where(x => !string.IsNullOrWhiteSpace(x.path))
+                .GroupBy(x => x.path, StringComparer.OrdinalIgnoreCase)
+                .Where(g => g.Count() > 1);
+
+            foreach (var group in exports)
+            {
+                foreach (var item in group)
+                    AddExecutionPlanValidationMessage(item.step, "Warning", $"Another enabled export resolves to the same output path: {group.Key}");
+            }
+        }
+
+        private void ValidateExecutionPlanStepSnapshot(ExecutionPlanStep step)
+        {
+            try
+            {
+                var tableData = BuildTableDataForExecutionStep(step);
+                var selected = step.Snapshot?.SelectedAttributes ?? new List<string>();
+                var missingAttributes = selected
+                    .Where(name => !tableData.Table.AllAttributes.Any(attr => attr.LogicalName.Equals(name, StringComparison.OrdinalIgnoreCase)))
+                    .ToList();
+                foreach (var name in missingAttributes)
+                    AddExecutionPlanValidationMessage(step, "Error", $"Captured attribute no longer exists on '{step.Table.LogicalName}': {name}");
+
+                var mappingAttributes = (step.Snapshot?.Mappings ?? new List<Mapping>())
+                    .Select(m => m.AttributeLogicalName)
+                    .Where(name => !string.IsNullOrWhiteSpace(name))
+                    .Distinct(StringComparer.OrdinalIgnoreCase);
+                foreach (var name in mappingAttributes.Where(name => !tableData.Table.AllAttributes.Any(attr => attr.LogicalName.Equals(name, StringComparison.OrdinalIgnoreCase))))
+                    AddExecutionPlanValidationMessage(step, "Warning", $"Captured mapping references an attribute that is not in the current table metadata: {name}");
+            }
+            catch (Exception ex)
+            {
+                AddExecutionPlanValidationMessage(step, "Error", $"Table validation failed: {ex.Message}");
+            }
+        }
+
+        private void RefreshExecutionPlanImportPreview(ExecutionPlanStep step, int stepIndex, BackgroundWorker worker)
+        {
+            try
+            {
+                var path = ResolveExecutionStepPath(step, stepIndex);
+                if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
+                {
+                    var preview = BuildExecutionPlanImportPreview(step, path, worker);
+                    step.Validation.Preview = ExecutionPlanService.ToPreviewSummary(preview, "Validation preview", false, false);
+                    AddExecutionPlanPreviewMessages(step, preview);
+                    return;
+                }
+
+                if (string.Equals(step.Input?.Mode, "FromStepOutput", StringComparison.OrdinalIgnoreCase))
+                {
+                    var estimate = EstimateLinkedImportPreview(step, worker);
+                    if (estimate != null)
+                    {
+                        step.Validation.Preview = estimate;
+                        AddExecutionPlanValidationMessage(step, "Info", "Linked export output does not exist yet; preview count is estimated from the export step.");
+                        return;
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(path))
+                    AddExecutionPlanValidationMessage(step, "Warning", $"Import preview could not be refreshed because the input file does not exist: {path}");
+            }
+            catch (Exception ex)
+            {
+                AddExecutionPlanValidationMessage(step, "Error", $"Import preview failed: {ex.Message}");
+                if (step.Validation.Preview != null)
+                    step.Validation.Preview.IsStale = true;
+            }
+        }
+
+        private ExcelImportPreview BuildExecutionPlanImportPreview(ExecutionPlanStep step, string path, BackgroundWorker worker)
+        {
+            var tableData = BuildTableDataForExecutionStep(step);
+            if (string.Equals(step.Operation, "ImportFromExcel", StringComparison.OrdinalIgnoreCase))
+            {
+                var excelLogic = new Logic.ExcelLogic();
+                var collection = excelLogic.ImportFromExcel(
+                    path,
+                    out ExcelExportConfig config,
+                    ActiveTargetClient,
+                    worker,
+                    importConfig =>
+                    {
+                        if (step.Snapshot.ExcelConfig != null)
+                        {
+                            importConfig.MatchKey = step.Snapshot.ExcelConfig.MatchKey;
+                            importConfig.MatchKeyMode = step.Snapshot.ExcelConfig.MatchKeyMode;
+                            importConfig.MatchKeys = step.Snapshot.ExcelConfig.MatchKeys;
+                            importConfig.MatchAlternateKeyName = step.Snapshot.ExcelConfig.MatchAlternateKeyName;
+                            importConfig.ImportSettings = step.Snapshot.ExcelConfig.ImportSettings;
+                        }
+                        EnsureExcelImportSettings(importConfig, BuildExcelImportSettings(step.Snapshot.ImportSettings, importConfig));
+                    });
+                return BuildExcelImportPreview(tableData, collection, config, step.Snapshot.ImportSettings ?? GetDefaultImportSettings(config, Enums.Action.None), path);
+            }
+
+            var json = File.ReadAllText(path);
+            var collectionFromJson = json.DeserializeObject<RecordCollection>();
+            ImportFileDataChecks(collectionFromJson);
+            return BuildExcelImportPreview(tableData, collectionFromJson, null, step.Snapshot.ImportSettings ?? GetDefaultImportSettings(Enums.Action.None), path);
+        }
+
+        private ExecutionPlanPreviewSummary EstimateLinkedImportPreview(ExecutionPlanStep importStep, BackgroundWorker worker)
+        {
+            var sourceStep = _executionPlan?.Steps.FirstOrDefault(s => string.Equals(s.Id, importStep.Input?.SourceStepId, StringComparison.OrdinalIgnoreCase));
+            if (sourceStep == null || !(sourceStep.Operation ?? string.Empty).StartsWith("Export", StringComparison.OrdinalIgnoreCase)) return null;
+
+            var tableData = BuildTableDataForExecutionStep(sourceStep);
+            var previousClientOverride = _executionTargetClientOverride;
+            var previousInstanceOverride = _executionTargetInstanceOverride;
+            try
+            {
+                if (!TrySetExecutionTargetOverride(sourceStep, out _))
+                    return null;
+                var logic = new DataLogic(worker, _sourceClient, ActiveTargetClient);
+                var rows = logic.GetSourceEntities(tableData, sourceStep.Snapshot.ExportSettings ?? GetDefaultImportSettings(Enums.Action.None)).Count();
+                return new ExecutionPlanPreviewSummary
+                {
+                    Rows = rows,
+                    Source = "Estimated from linked export",
+                    IsEstimated = true,
+                    IsStale = false
+                };
+            }
+            finally
+            {
+                _executionTargetClientOverride = previousClientOverride;
+                _executionTargetInstanceOverride = previousInstanceOverride;
+            }
+        }
+
+        private void AddExecutionPlanPreviewMessages(ExecutionPlanStep step, ExcelImportPreview preview)
+        {
+            if (preview?.ImportErrors?.Any() != true) return;
+
+            foreach (var warning in preview.ImportErrors.Take(5))
+                AddExecutionPlanValidationMessage(step, "Warning", warning);
+            if (preview.ImportErrors.Count > 5)
+                AddExecutionPlanValidationMessage(step, "Warning", $"{preview.ImportErrors.Count - 5} additional import warning(s) are available in the preview.");
+        }
+
+        private ExecutionPlanStepExecutionResult BuildExecutionStepResult(ExecutionPlanStep step, OperationResult operationResult, string action)
+        {
+            var items = operationResult?.Items?.ToList() ?? new List<ListViewItem>();
+            return ExecutionPlanService.BuildExecutionStepResult(
+                _executionPlan,
+                step,
+                action,
+                items.Select(GetExecutionResultDescription));
+        }
+
+        private string GetExecutionResultDescription(ListViewItem item)
+        {
+            return item?.SubItems?.Count > 0
+                ? item.SubItems[item.SubItems.Count - 1].Text
+                : string.Empty;
+        }
+
+        private bool GetStepStopOnFatalError(ExecutionPlan plan, ExecutionPlanStep step)
+        {
+            return ExecutionPlanService.GetStepStopOnFatalError(plan, step);
+        }
+
+        private void AddExecutionPlanValidationMessage(ExecutionPlanStep step, string severity, string message)
+        {
+            ExecutionPlanService.AddValidationMessage(step, severity, message);
+        }
+
+        private void RefreshExecutionPlanStepStatus(ExecutionPlanStep step)
+        {
+            ExecutionPlanService.RefreshValidationStatus(step);
+        }
+
+        private void SaveExecutionPlanRunLog(ExecutionPlanRunLog runLog)
+        {
+            if (runLog == null || string.IsNullOrWhiteSpace(_executionPlanFilePath)) return;
+
+            var directory = Path.GetDirectoryName(_executionPlanFilePath);
+            if (string.IsNullOrWhiteSpace(directory)) directory = Environment.CurrentDirectory;
+            var fileName = $"{ExecutionPlanService.SanitizePathToken(_executionPlan?.Name ?? "execution-plan")}.{DateTime.Now:yyyy-MM-dd_HHmm}.run.json";
+            var path = Path.Combine(directory, fileName);
+            ExecutionPlanFileService.SaveRunLog(path, runLog);
+        }
+
+        private string ResolveExecutionStepPath(ExecutionPlanStep step, int stepIndex)
+        {
+            return ExecutionPlanService.ResolveExecutionStepPath(_executionPlan, step, stepIndex, CreateExecutionPlanPathContext());
+        }
+
+        private TableData BuildTableDataForExecutionStep(ExecutionPlanStep step)
+        {
+            var tableData = GetTableDataByLogicalName(step.Table.LogicalName, false);
+            tableData.Settings = tableData.Settings ?? new TableSettings();
+            tableData.Settings.Filter = step.Snapshot.Filter;
+            tableData.SelectedAttributes = (step.Snapshot.SelectedAttributes ?? new List<string>())
+                .Select(name => tableData.Table.AllAttributes.FirstOrDefault(a => string.Equals(a.LogicalName, name, StringComparison.OrdinalIgnoreCase)))
+                .Where(attr => attr != null)
+                .ToList();
+            if (!tableData.SelectedAttributes.Any())
+                tableData.SelectedAttributes = tableData.Table.AllAttributes.ToList();
+            return tableData;
+        }
+
+        private string ResolvePlanPath(string template, ExecutionPlanStep step, int stepIndex)
+        {
+            return ExecutionPlanService.ResolvePlanPath(template, step, stepIndex, CreateExecutionPlanPathContext());
+        }
+
+        private ExecutionPlanPathContext CreateExecutionPlanPathContext()
+        {
+            return new ExecutionPlanPathContext
+            {
+                PlanName = _executionPlan?.Name,
+                SourceName = _sourceClient?.ConnectedOrgFriendlyName ?? _sourceClient?.ConnectedOrgUniqueName,
+                FallbackTargetName = ActiveTargetClient?.ConnectedOrgFriendlyName ?? ActiveTargetClient?.ConnectedOrgUniqueName
+            };
+        }
+
+        private void EnsureOutputDirectory(string path)
+        {
+            var directory = Path.GetDirectoryName(path);
+            if (!string.IsNullOrWhiteSpace(directory) && !Directory.Exists(directory))
+                Directory.CreateDirectory(directory);
+        }
+
+        private void CloseExecutionPlan()
+        {
+            AutoSaveExecutionPlan();
+            _executionPlan = null;
+            _executionPlanFilePath = null;
+            _executionPlanValidatedForExecution = false;
+            RenderExecutionPlanMenu();
+            SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Execution plan closed"));
+        }
+
+        private void AddExportStepToExecutionPlan(string operation, TableData tableData, UiSettings uiSettings, ExcelExportConfig excelConfig, string outputPath)
+        {
+            if (!EnsureExecutionPlanLoaded()) return;
+
+            var step = CreateBaseExecutionPlanStep(operation, tableData);
+            step.TargetEnvironment = null;
+            step.Name = $"{GetOperationDisplayName(operation)} {tableData.Table.DisplayName}";
+            step.Output.PathTemplate = outputPath;
+            step.Snapshot.ExportSettings = uiSettings;
+            step.Snapshot.ExcelConfig = excelConfig;
+            step.Snapshot.SelectedAttributes = (tableData.SelectedAttributes ?? Enumerable.Empty<Models.Attribute>())
+                .Select(a => a.LogicalName)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            step.Snapshot.Filter = tableData.Settings?.Filter;
+            step.Snapshot.Mappings = ExecutionPlanService.CloneMappings(BuildMappingsForStepTarget(step, uiSettings));
+
+            _executionPlan.Steps.Add(step);
+            ExecutionPlanFileService.ValidatePlan(_executionPlan);
+            _executionPlanValidatedForExecution = false;
+            AutoSaveExecutionPlan(true);
+            SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Added '{step.Name}' to execution plan"));
+        }
+
+        private void AddImportStepToExecutionPlan(ExcelImportSession session, TableData tableData, UiSettings uiSettings, ExcelImportMatchKeySelection matchKey, ExcelImportPreview preview)
+        {
+            if (!EnsureExecutionPlanLoaded()) return;
+
+            var operation = string.Equals(session.SourceType, "JSON", StringComparison.OrdinalIgnoreCase)
+                ? "ImportFromJson"
+                : "ImportFromExcel";
+            var step = CreateBaseExecutionPlanStep(operation, tableData);
+            if (session.TargetEnvironment != null)
+                step.TargetEnvironment = session.TargetEnvironment;
+            step.Name = $"{GetOperationDisplayName(operation)} {tableData.Table.DisplayName}";
+            step.Input.Path = session.FilePath;
+            ApplyAutomaticStepLink(step, session.FilePath);
+            step.Snapshot.ImportSettings = uiSettings;
+            step.Snapshot.ExcelConfig = session.Config;
+            step.Snapshot.Mappings = ExecutionPlanService.CloneMappings(BuildMappingsForStepTarget(step, uiSettings));
+            step.Validation.Preview = preview == null ? null : new ExecutionPlanPreviewSummary
+            {
+                Rows = preview.TotalRows,
+                Creates = preview.CreateCount,
+                Updates = preview.UpdateCount,
+                Skips = preview.SkippedCount,
+                Warnings = preview.ImportErrors?.Count ?? 0,
+                Errors = preview.Items?.Count(i => string.Equals(i.Action, "Skip", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(i.Warnings)) ?? 0,
+                Source = "Captured preview",
+                IsEstimated = false,
+                IsStale = false
+            };
+
+            if (matchKey != null && step.Snapshot.ExcelConfig != null)
+                ApplyImportMatchKeySelection(step.Snapshot.ExcelConfig, matchKey);
+
+            _executionPlan.Steps.Add(step);
+            ExecutionPlanFileService.ValidatePlan(_executionPlan);
+            _executionPlanValidatedForExecution = false;
+            AutoSaveExecutionPlan(true);
+            SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Added '{step.Name}' to execution plan"));
+        }
+
+        private ImportSourceDialog SelectImportSource(string title, string fileFilter, string linkedExportOperation)
+        {
+            var linkedSteps = GetCompatiblePlanExportSteps(linkedExportOperation);
+            using (var dlg = new ImportSourceDialog(title, fileFilter, linkedSteps))
+            {
+                return dlg.ShowDialog(ParentForm) == DialogResult.OK ? dlg : null;
+            }
+        }
+
+        private DmtEnvironmentInfo SelectOperationTargetEnvironment(string title)
+        {
+            var targets = GetLoadedTargetEnvironments();
+            if (!targets.Any()) return null;
+            if (targets.Count == 1) return targets[0];
+
+            using (var dialog = new Form
+            {
+                Text = title,
+                StartPosition = FormStartPosition.CenterParent,
+                ShowIcon = false,
+                ShowInTaskbar = false,
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                MaximizeBox = false,
+                MinimizeBox = false,
+                ClientSize = new Size(460, 132)
+            })
+            {
+                var label = new System.Windows.Forms.Label
+                {
+                    Text = "Select the target environment for this operation.",
+                    Left = 12,
+                    Top = 14,
+                    Width = 430,
+                    Height = 22
+                };
+                var combo = new ComboBox
+                {
+                    Left = 12,
+                    Top = 42,
+                    Width = 430,
+                    DropDownStyle = ComboBoxStyle.DropDownList
+                };
+                foreach (var target in targets)
+                {
+                    combo.Items.Add(new ExecutionPlanTargetOption
+                    {
+                        UniqueName = target.UniqueName,
+                        FriendlyName = target.FriendlyName,
+                        DisplayName = string.IsNullOrWhiteSpace(target.FriendlyName) ? target.UniqueName : target.FriendlyName
+                    });
+                }
+
+                var defaultUniqueName = _targetClient?.ConnectedOrgUniqueName;
+                for (var i = 0; i < combo.Items.Count; i++)
+                {
+                    var option = combo.Items[i] as ExecutionPlanTargetOption;
+                    if (string.Equals(option?.UniqueName, defaultUniqueName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        combo.SelectedIndex = i;
+                        break;
+                    }
+                }
+                if (combo.SelectedIndex < 0) combo.SelectedIndex = 0;
+
+                var add = new Button { Text = "Add to Plan", Width = 100, Height = 28, Left = 246, Top = 88, DialogResult = DialogResult.OK };
+                var cancel = new Button { Text = "Cancel", Width = 84, Height = 28, Left = 358, Top = 88, DialogResult = DialogResult.Cancel };
+                dialog.Controls.Add(label);
+                dialog.Controls.Add(combo);
+                dialog.Controls.Add(add);
+                dialog.Controls.Add(cancel);
+                dialog.AcceptButton = add;
+                dialog.CancelButton = cancel;
+
+                if (dialog.ShowDialog(ParentForm) != DialogResult.OK) return null;
+
+                var selected = combo.SelectedItem as ExecutionPlanTargetOption;
+                return selected == null ? null : new DmtEnvironmentInfo
+                {
+                    UniqueName = selected.UniqueName,
+                    FriendlyName = selected.FriendlyName
+                };
+            }
+        }
+
+        private bool TrySelectImportPreviewTarget(string title, out DmtEnvironmentInfo targetEnvironment)
+        {
+            targetEnvironment = null;
+            if (!GetLoadedTargetEnvironments().Any())
+            {
+                MessageBox.Show(
+                    "Connect a target environment before configuring an import from a file.\n\n" +
+                    "The import preview needs a target to determine which rows will be created or updated and to resolve match keys/lookups correctly.",
+                    "Target Required",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Import configuration requires a target environment"));
+                return false;
+            }
+
+            targetEnvironment = SelectOperationTargetEnvironment(title);
+            return targetEnvironment != null;
+        }
+
+        private List<ExecutionPlanStep> GetCompatiblePlanExportSteps(string exportOperation)
+        {
+            return ExecutionPlanService.GetCompatibleExportSteps(_executionPlan, exportOperation);
+        }
+
+        private void AddLinkedImportStepToExecutionPlan(ExecutionPlanStep sourceStep, string importOperation, DmtEnvironmentInfo targetEnvironment)
+        {
+            if (sourceStep == null) return;
+            if (!EnsureExecutionPlanLoaded()) return;
+
+            var tableData = BuildTableDataForExecutionStep(sourceStep);
+            var uiSettings = ReadSettings(Enums.Action.None);
+            var step = CreateBaseExecutionPlanStep(importOperation, tableData);
+            if (targetEnvironment != null)
+                step.TargetEnvironment = targetEnvironment;
+            step.Name = $"{GetOperationDisplayName(importOperation)} {tableData.Table.DisplayName}";
+            step.Input.Mode = "FromStepOutput";
+            step.Input.SourceStepId = sourceStep.Id;
+            step.Input.Path = null;
+            step.Snapshot.ImportSettings = uiSettings;
+            step.Snapshot.ExcelConfig = ExecutionPlanService.CloneExcelConfig(sourceStep.Snapshot?.ExcelConfig);
+            step.Snapshot.SelectedAttributes = sourceStep.Snapshot?.SelectedAttributes?.ToList() ?? new List<string>();
+            step.Snapshot.Filter = sourceStep.Snapshot?.Filter;
+            step.Snapshot.Mappings = ExecutionPlanService.CloneMappings(BuildMappingsForStepTarget(step, uiSettings));
+            step.Validation.Preview = new ExecutionPlanPreviewSummary
+            {
+                Rows = sourceStep.Validation?.Preview?.Rows ?? 0,
+                Source = "Linked export output",
+                IsEstimated = true,
+                IsStale = true
+            };
+
+            var sourceIndex = _executionPlan.Steps.FindIndex(s => string.Equals(s.Id, sourceStep.Id, StringComparison.OrdinalIgnoreCase));
+            if (sourceIndex >= 0)
+                _executionPlan.Steps.Insert(sourceIndex + 1, step);
+            else
+                _executionPlan.Steps.Add(step);
+            ExecutionPlanFileService.ValidatePlan(_executionPlan);
+            _executionPlanValidatedForExecution = false;
+            AutoSaveExecutionPlan(true);
+            SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Added linked '{step.Name}' to execution plan"));
+        }
+
+        private ExecutionPlanStep CreateBaseExecutionPlanStep(string operation, TableData tableData)
+        {
+            UpdateExecutionPlanTargetEnvironments();
+            return ExecutionPlanService.CreateBaseStep(operation, tableData, GetActiveTargetEnvironmentInfo(), _dmtFilePath);
+        }
+
+        private void ApplyAutomaticStepLink(ExecutionPlanStep importStep, string inputPath)
+        {
+            ExecutionPlanService.ApplyAutomaticStepLink(_executionPlan, importStep, inputPath);
+        }
+
+        private string GetOperationDisplayName(string operation)
+        {
+            return ExecutionPlanService.GetOperationDisplayName(operation);
+        }
+
+        #endregion Execution Plan Methods
+    }
+}

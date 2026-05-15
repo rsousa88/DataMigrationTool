@@ -76,7 +76,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
         {
             if (settings?.Environment == null) return (true, null);
 
-            if (settings.Environment.UniqueName == currentUniqueName) return (true, null);
+            if (settings.Environment.UniqueName?.Equals(currentUniqueName, System.StringComparison.OrdinalIgnoreCase) == true) return (true, null);
 
             var warning = $"This file was created for '{settings.Environment.FriendlyName}' ({settings.Environment.UniqueName}).\n" +
                           $"You are connected to '{currentFriendlyName}' ({currentUniqueName}).\n\n" +

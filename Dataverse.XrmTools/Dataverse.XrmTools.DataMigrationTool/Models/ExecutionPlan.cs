@@ -137,4 +137,14 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
         public string Summary { get; set; }
         public string Error { get; set; }
     }
+
+    public class ExecutionPlanStepExecutionResult
+    {
+        public string Summary { get; set; }
+        public int TotalRecords { get; set; }
+        public int FailedRecords { get; set; }
+        public decimal FailedPercent { get; set; }
+        public bool HasFailures { get; set; }
+        public bool ShouldStopPlan { get; set; }
+    }
 }
