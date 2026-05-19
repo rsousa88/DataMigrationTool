@@ -1631,6 +1631,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             _suppressTableSelectionChanged = true;
             try
             {
+                EnsureTableVisible(tableData.Table.LogicalName);
                 SetSelectedTableItem(tableData);
             }
             finally
@@ -1854,7 +1855,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             ApplyDmtFileAndSelectTable(filePath, settings);
         }
 
-        private void ApplyDmtFileAndSelectTable(string filePath, DmtSettings settings)
+        private void ApplyDmtFileAndSelectTable(string filePath, DmtSettings settings, bool promptEnvironmentMismatch = true, bool showStatus = true)
         {
             var logicalName = settings?.Table?.LogicalName;
             if (string.IsNullOrWhiteSpace(logicalName))
@@ -1870,12 +1871,19 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 _sourceClient?.ConnectedOrgFriendlyName);
             if (!environmentValidation.matches)
             {
-                var result = MessageBox.Show(
-                    $"{environmentValidation.warning}\n\nContinue anyway?",
-                    "Environment Mismatch",
-                    MessageBoxButtons.YesNo,
-                    MessageBoxIcon.Warning);
-                if (result != DialogResult.Yes) return;
+                if (promptEnvironmentMismatch)
+                {
+                    var result = MessageBox.Show(
+                        $"{environmentValidation.warning}\n\nContinue anyway?",
+                        "Environment Mismatch",
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Warning);
+                    if (result != DialogResult.Yes) return;
+                }
+                else
+                {
+                    _logger?.Log(LogLevel.WARN, environmentValidation.warning);
+                }
             }
 
             _suppressTableSelectionChanged = true;
@@ -1893,7 +1901,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
             _previousTableLogicalName = logicalName;
             LoadAttributes();
             LoadFilters(null);
-            SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Settings file loaded: {Path.GetFileName(_dmtFilePath)}"));
+            if (showStatus)
+                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Settings file loaded: {Path.GetFileName(_dmtFilePath)}"));
         }
 
         private void SaveDmtFileAs()

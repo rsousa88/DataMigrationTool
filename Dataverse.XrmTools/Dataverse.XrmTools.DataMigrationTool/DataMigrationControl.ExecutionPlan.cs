@@ -236,6 +236,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             _executionPlanSteps.ItemChecked += ExecutionPlanStepChecked;
             _executionPlanSteps.SelectedIndexChanged += (sender, args) =>
             {
+                SelectExecutionPlanStepContext();
                 RenderExecutionPlanRowTargetEditors();
                 RenderExecutionPlanMessages();
             };
@@ -371,6 +372,127 @@ namespace Dataverse.XrmTools.DataMigrationTool
             return _executionPlanSteps?.SelectedItems.Count > 0
                 ? _executionPlanSteps.SelectedItems[0].Tag as ExecutionPlanStep
                 : null;
+        }
+
+        private void SelectExecutionPlanStepContext()
+        {
+            var step = GetSelectedExecutionPlanStep();
+            if (step == null || string.IsNullOrWhiteSpace(step.Table?.LogicalName) || _tables == null) return;
+
+            try
+            {
+                var settingsPath = step.SettingsProvenance?.SettingsFilePath;
+                if (!string.IsNullOrWhiteSpace(settingsPath) && File.Exists(settingsPath))
+                {
+                    var settings = DmtFileService.Load(settingsPath);
+                    if (string.Equals(settings?.Table?.LogicalName, step.Table.LogicalName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        ApplyDmtFileAndSelectTable(settingsPath, settings, false, false);
+                        SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Loaded step settings: {Path.GetFileName(settingsPath)}"));
+                        return;
+                    }
+
+                    _logger?.Log(
+                        LogLevel.WARN,
+                        $"Plan step '{step.Name}' references settings file '{settingsPath}', but the file is for table '{settings?.Table?.LogicalName}'. Loading the plan snapshot instead.");
+                }
+
+                ApplyExecutionPlanStepSnapshotToMainContext(step);
+            }
+            catch (Exception ex)
+            {
+                _logger?.Log(LogLevel.WARN, $"Could not load plan step context: {ex.Message}");
+                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Could not load step context: {ex.Message}"));
+            }
+        }
+
+        private void ApplyExecutionPlanStepSnapshotToMainContext(ExecutionPlanStep step)
+        {
+            var tableData = GetTableDataByLogicalName(step.Table.LogicalName, false);
+            EnsureTableDataAttributes(tableData);
+
+            var settings = CreateDmtSettingsFromExecutionPlanStep(step, tableData);
+
+            _suppressTableSelectionChanged = true;
+            try
+            {
+                EnsureTableVisible(tableData.Table.LogicalName);
+                SetSelectedTableItem(tableData);
+            }
+            finally
+            {
+                _suppressTableSelectionChanged = false;
+            }
+
+            _dmtFilePath = null;
+            ApplyDmtSettingsToCurrentTable(settings);
+            _previousTableLogicalName = tableData.Table.LogicalName;
+            LoadAttributes();
+            LoadFilters(null);
+            SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Loaded step snapshot for table: {tableData.Table.LogicalName}"));
+        }
+
+        private void EnsureTableVisible(string logicalName)
+        {
+            if (lvTables.Items.Cast<ListViewItem>().Any(item => item.SubItems[0].Text.Equals(logicalName, StringComparison.OrdinalIgnoreCase)))
+                return;
+
+            if (!string.IsNullOrWhiteSpace(txtTableFilter.Text))
+            {
+                txtTableFilter.Text = string.Empty;
+                lvTables.Items.Clear();
+                LoadTablesList();
+            }
+        }
+
+        private DmtSettings CreateDmtSettingsFromExecutionPlanStep(ExecutionPlanStep step, TableData tableData)
+        {
+            var selected = new HashSet<string>(
+                step.Snapshot?.SelectedAttributes ?? new List<string>(),
+                StringComparer.OrdinalIgnoreCase);
+
+            var deselected = selected.Count > 0 && tableData.Table.AllAttributes != null
+                ? tableData.Table.AllAttributes
+                    .Where(attr => !selected.Contains(attr.LogicalName))
+                    .Select(attr => attr.LogicalName)
+                    .ToList()
+                : null;
+
+            var importSettings = step.Snapshot?.ImportMatchKeySelection != null
+                ? new DmtImportSettings
+                {
+                    MatchKeyMode = step.Snapshot.ImportMatchKeySelection.Mode,
+                    MatchKeyFields = step.Snapshot.ImportMatchKeySelection.Fields != null ? new List<string>(step.Snapshot.ImportMatchKeySelection.Fields) : new List<string>(),
+                    MatchAlternateKeyName = step.Snapshot.ImportMatchKeySelection.AlternateKeyName,
+                    BatchSize = Math.Min((step.Snapshot.ImportSettings ?? step.Snapshot.ExportSettings)?.BatchSize ?? 25, 25)
+                }
+                : new DmtImportSettings
+                {
+                    BatchSize = Math.Min((step.Snapshot?.ImportSettings ?? step.Snapshot?.ExportSettings)?.BatchSize ?? 25, 25)
+                };
+
+            return new DmtSettings
+            {
+                Environment = _sourceClient == null
+                    ? null
+                    : new DmtEnvironmentInfo
+                    {
+                        UniqueName = _sourceClient.ConnectedOrgUniqueName,
+                        FriendlyName = _sourceClient.ConnectedOrgFriendlyName
+                    },
+                Table = new DmtTableInfo
+                {
+                    LogicalName = tableData.Table.LogicalName,
+                    DisplayName = tableData.Table.DisplayName,
+                    PrimaryIdAttribute = tableData.Table.IdAttribute,
+                    PrimaryNameAttribute = tableData.Table.NameAttribute
+                },
+                DeselectedAttributes = deselected,
+                Filter = step.Snapshot?.Filter,
+                Mappings = ExecutionPlanService.CloneMappings(step.Snapshot?.Mappings ?? new List<Mapping>()),
+                ExcelConfig = ExecutionPlanService.CloneExcelConfig(step.Snapshot?.ExcelConfig),
+                ImportSettings = importSettings
+            };
         }
 
         private void RefreshExecutionPlanStepMappingsForTarget(ExecutionPlanStep step)
@@ -1246,7 +1368,10 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 foreach (var name in missingAttributes)
                     AddExecutionPlanValidationMessage(step, "Error", $"Captured attribute no longer exists on '{step.Table.LogicalName}': {name}");
 
+                var stepTableName = step.Table?.LogicalName;
                 var mappingAttributes = (step.Snapshot?.Mappings ?? new List<Mapping>())
+                    .Where(mapping => string.IsNullOrWhiteSpace(mapping.TableLogicalName)
+                        || string.Equals(mapping.TableLogicalName, stepTableName, StringComparison.OrdinalIgnoreCase))
                     .Select(m => m.AttributeLogicalName)
                     .Where(name => !string.IsNullOrWhiteSpace(name))
                     .Distinct(StringComparer.OrdinalIgnoreCase);
@@ -1269,7 +1394,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     if (!fullPreview && string.Equals(step.Operation, "ImportFromExcel", StringComparison.OrdinalIgnoreCase))
                     {
                         step.Validation.Preview = BuildLightweightExcelImportPreview(step, path, worker);
-                        AddExecutionPlanValidationMessage(step, "Info", "Excel import preview is estimated from workbook metadata. Use step Preview for full create/update counts.");
                         return;
                     }
 
@@ -1321,7 +1445,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (string.Equals(step.Operation, "ImportFromExcel", StringComparison.OrdinalIgnoreCase))
             {
                 var excelLogic = new Logic.ExcelLogic();
-                var planLookupResolver = BuildPlanLookupContextForPriorSteps(step.TargetEnvironment, step);
+                var planLookupResolver = BuildPlanLookupContextForPriorSteps(step.TargetEnvironment, step, worker, true);
                 var collection = excelLogic.ImportFromExcel(
                     path,
                     out ExcelExportConfig config,

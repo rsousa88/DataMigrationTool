@@ -66,12 +66,23 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private PlanLookupContext BuildPlanLookupContextForPriorSteps(DmtEnvironmentInfo targetEnvironment, ExecutionPlanStep currentStep)
         {
+            return BuildPlanLookupContextForPriorSteps(targetEnvironment, currentStep, null, false);
+        }
+
+        private PlanLookupContext BuildPlanLookupContextForPriorSteps(
+            DmtEnvironmentInfo targetEnvironment,
+            ExecutionPlanStep currentStep,
+            BackgroundWorker worker,
+            bool hydrateMissingCollections)
+        {
             var context = new PlanLookupContext();
             if (_executionPlan?.Steps == null)
                 return context;
 
+            var stepIndex = 0;
             foreach (var step in _executionPlan.Steps)
             {
+                stepIndex++;
                 if (currentStep != null && string.Equals(step.Id, currentStep.Id, StringComparison.OrdinalIgnoreCase))
                     break;
                 if (!step.Enabled || !(step.Operation ?? string.Empty).StartsWith("Import", StringComparison.OrdinalIgnoreCase))
@@ -79,10 +90,70 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 if (!SameExecutionTarget(step.TargetEnvironment, targetEnvironment))
                     continue;
 
-                context.AddRecordCollection(step.Snapshot?.RecordCollection);
+                var collection = step.Snapshot?.RecordCollection;
+                if (collection == null && hydrateMissingCollections)
+                    collection = TryLoadExecutionPlanImportCollectionForLookupContext(step, stepIndex, context, worker);
+
+                context.AddRecordCollection(collection);
             }
 
             return context;
+        }
+
+        private RecordCollection TryLoadExecutionPlanImportCollectionForLookupContext(
+            ExecutionPlanStep step,
+            int stepIndex,
+            IPlanLookupResolver planLookupResolver,
+            BackgroundWorker worker)
+        {
+            try
+            {
+                var path = ResolveExecutionStepPath(step, stepIndex);
+                if (string.IsNullOrWhiteSpace(path) || !System.IO.File.Exists(path))
+                    return null;
+
+                worker?.ReportProgress(0, $"Execution plan: reading prior import context for {step.Name}...");
+
+                if (string.Equals(step.Operation, "ImportFromExcel", StringComparison.OrdinalIgnoreCase))
+                {
+                    var excelLogic = new ExcelLogic();
+                    return excelLogic.ImportFromExcel(
+                        path,
+                        out ExcelExportConfig _,
+                        ActiveTargetClient,
+                        worker,
+                        importConfig =>
+                        {
+                            if (step.Snapshot?.ExcelConfig != null)
+                            {
+                                importConfig.MatchKey = step.Snapshot.ExcelConfig.MatchKey;
+                                importConfig.MatchKeyMode = step.Snapshot.ExcelConfig.MatchKeyMode;
+                                importConfig.MatchKeys = step.Snapshot.ExcelConfig.MatchKeys;
+                                importConfig.MatchAlternateKeyName = step.Snapshot.ExcelConfig.MatchAlternateKeyName;
+                                importConfig.ImportSettings = step.Snapshot.ExcelConfig.ImportSettings;
+                            }
+                            ApplyImportMatchKeySelection(importConfig, step.Snapshot?.ImportMatchKeySelection);
+                            EnsureExcelImportSettings(importConfig, BuildExcelImportSettings(step.Snapshot?.ImportSettings, importConfig));
+                        },
+                        planLookupResolver);
+                }
+
+                if (string.Equals(step.Operation, "ImportFromJson", StringComparison.OrdinalIgnoreCase))
+                {
+                    var json = System.IO.File.ReadAllText(path);
+                    var collection = json.DeserializeObject<RecordCollection>();
+                    ImportFileDataChecks(collection);
+                    var tableData = BuildTableDataForExecutionStep(step);
+                    ApplyJsonImportMatchKeySelection(collection, tableData, step.Snapshot?.ImportMatchKeySelection);
+                    return collection;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.Log(Enums.LogLevel.WARN, $"Could not read prior import context for '{step?.Name}': {ex.Message}");
+            }
+
+            return null;
         }
 
         private PlanLookupContext GetRuntimePlanLookupContext(Dictionary<string, PlanLookupContext> contexts, ExecutionPlanStep step)
