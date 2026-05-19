@@ -1073,8 +1073,9 @@ namespace Dataverse.XrmTools.DataMigrationTool
             {
                 var tableData = BuildTableDataForExecutionStep(step);
                 var selected = step.Snapshot?.SelectedAttributes ?? new List<string>();
+                var allAttributes = tableData.Table.AllAttributes ?? new List<Models.Attribute>();
                 var missingAttributes = selected
-                    .Where(name => !tableData.Table.AllAttributes.Any(attr => attr.LogicalName.Equals(name, StringComparison.OrdinalIgnoreCase)))
+                    .Where(name => !allAttributes.Any(attr => attr.LogicalName.Equals(name, StringComparison.OrdinalIgnoreCase)))
                     .ToList();
                 foreach (var name in missingAttributes)
                     AddExecutionPlanValidationMessage(step, "Error", $"Captured attribute no longer exists on '{step.Table.LogicalName}': {name}");
@@ -1083,7 +1084,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     .Select(m => m.AttributeLogicalName)
                     .Where(name => !string.IsNullOrWhiteSpace(name))
                     .Distinct(StringComparer.OrdinalIgnoreCase);
-                foreach (var name in mappingAttributes.Where(name => !tableData.Table.AllAttributes.Any(attr => attr.LogicalName.Equals(name, StringComparison.OrdinalIgnoreCase))))
+                foreach (var name in mappingAttributes.Where(name => !allAttributes.Any(attr => attr.LogicalName.Equals(name, StringComparison.OrdinalIgnoreCase))))
                     AddExecutionPlanValidationMessage(step, "Warning", $"Captured mapping references an attribute that is not in the current table metadata: {name}");
             }
             catch (Exception ex)
@@ -1252,10 +1253,15 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private TableData BuildTableDataForExecutionStep(ExecutionPlanStep step)
         {
+            if (step?.Table == null || string.IsNullOrWhiteSpace(step.Table.LogicalName))
+                throw new Exception("Execution plan step has no table.");
+
             var tableData = GetTableDataByLogicalName(step.Table.LogicalName, false);
             tableData.Settings = tableData.Settings ?? new TableSettings();
-            tableData.Settings.Filter = step.Snapshot.Filter;
-            tableData.SelectedAttributes = (step.Snapshot.SelectedAttributes ?? new List<string>())
+            EnsureTableDataAttributes(tableData);
+
+            tableData.Settings.Filter = step.Snapshot?.Filter;
+            tableData.SelectedAttributes = (step.Snapshot?.SelectedAttributes ?? new List<string>())
                 .Select(name => tableData.Table.AllAttributes.FirstOrDefault(a => string.Equals(a.LogicalName, name, StringComparison.OrdinalIgnoreCase)))
                 .Where(attr => attr != null)
                 .ToList();

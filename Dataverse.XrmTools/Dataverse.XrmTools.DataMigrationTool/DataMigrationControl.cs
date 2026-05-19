@@ -1637,22 +1637,43 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
             lvAttributes.Items.Clear();
             cbSelectAll.Checked = false;
-            tableData.Table.AllAttributes = tableData.Metadata.Attributes
-                .Where(att => att.IsValidForRead != null && att.IsValidForRead.Value)
-                .Select(att => new Models.Attribute
-                {
-                    Type = att.AttributeTypeName.Value.EndsWith("Type") ? att.AttributeTypeName.Value.Substring(0, att.AttributeTypeName.Value.LastIndexOf("Type")) : att.AttributeTypeName.Value,
-                    LogicalName = att.LogicalName,
-                    DisplayName = att.DisplayName.UserLocalizedLabel != null ? att.DisplayName.UserLocalizedLabel.Label : string.Empty,
-                    ValidOnCreate = att.IsValidForCreate.Value,
-                    ValidOnUpdate = att.IsValidForUpdate.Value
-                })
-                .ToList();
+            EnsureTableDataAttributes(tableData);
 
             LoadAttributesList(tableData);
             LoadFilters(tableData);
             RenderDmtFileMenu();
             SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Selected table from import file: {tableData.Table.LogicalName}"));
+        }
+
+        private void EnsureTableDataAttributes(TableData tableData)
+        {
+            if (tableData?.Table == null)
+                throw new Exception("Table metadata could not be resolved.");
+
+            if (tableData.Table.AllAttributes?.Any() == true)
+                return;
+
+            var metadataAttributes = tableData.Metadata?.Attributes;
+            if (metadataAttributes == null)
+                throw new Exception($"Metadata attributes could not be loaded for table '{tableData.Table.LogicalName}'.");
+
+            tableData.Table.AllAttributes = metadataAttributes
+                .Where(att => att != null && att.IsValidForRead != null && att.IsValidForRead.Value)
+                .Select(att =>
+                {
+                    var typeName = att.AttributeTypeName?.Value ?? string.Empty;
+                    return new Models.Attribute
+                    {
+                        Type = typeName.EndsWith("Type", StringComparison.Ordinal)
+                            ? typeName.Substring(0, typeName.LastIndexOf("Type", StringComparison.Ordinal))
+                            : typeName,
+                        LogicalName = att.LogicalName,
+                        DisplayName = att.DisplayName?.UserLocalizedLabel != null ? att.DisplayName.UserLocalizedLabel.Label : string.Empty,
+                        ValidOnCreate = att.IsValidForCreate == true,
+                        ValidOnUpdate = att.IsValidForUpdate == true
+                    };
+                })
+                .ToList();
         }
 
         private bool PrepareSelectedTableSettings()

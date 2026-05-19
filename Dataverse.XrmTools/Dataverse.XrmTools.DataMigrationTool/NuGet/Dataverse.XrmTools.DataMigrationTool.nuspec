@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
   <metadata>
     <id>Dataverse.XrmTools.DataMigrationTool</id>
-    <version>2026.5.19.1</version>
+    <version>2026.5.19.2</version>
     <title>Data Migration Tool</title>
     <authors>Rui Sousa</authors>
     <owners>Rui Sousa</owners>
@@ -22,6 +22,8 @@
     </description>
     <summary>Migrate data between Dataverse instances</summary>
     <releaseNotes>
+		2026.5.19.x
+		- [FIX] Loaded execution plans now hydrate table attributes before validation and import preview, preventing null-source validation errors
 		2026.5.19.x
 		- [NEW] Execution plan imports can resolve lookups against records imported by earlier steps in the same target environment
 		- [FIX] JSON execution-plan imports now persist and honor the selected match key during validation and execution

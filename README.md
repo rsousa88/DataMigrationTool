@@ -132,6 +132,9 @@ Mappings are stored in `.dmt.json` settings files and can be reviewed from the *
 ## Release Notes
 
 ### 2026.5.19.x
+- [FIX] Loaded execution plans now hydrate table attributes before validation and import preview, preventing null-source validation errors
+
+### 2026.5.19.x
 - [NEW] Execution plan imports can resolve lookups against records imported by earlier steps in the same target environment
 - [FIX] JSON execution-plan imports now persist and honor the selected match key during validation and execution
 - [FIX] Excel execution-plan imports reapply the captured match key when the plan runs
