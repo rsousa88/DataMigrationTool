@@ -93,14 +93,21 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
                 var attrName = dictionary.FirstOrDefault(kvp => kvp.Key.Equals("attributename")).Value;
                 var actionName = dictionary.FirstOrDefault(kvp => kvp.Key.Equals("action")).Value;
                 var description = dictionary.FirstOrDefault(kvp => kvp.Key.Equals("description")).Value;
+                var columns = (dictionary.FirstOrDefault(kvp => kvp.Key.Equals("columns")).Value ?? string.Empty)
+                    .Split(new[] { '|' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
 
-                return new ListViewItem(new string[]
+                var values = new List<string>
                 {
                     actionName,
                     entity.Id.ToString(),
                     !string.IsNullOrEmpty(attrName) ? entity.GetAttributeValue<string>(attrName) : string.Empty,
                     description
-                });
+                };
+                values.AddRange(columns.Select(column => entity.Attributes.Contains(column) && entity[column] != null ? FormatListViewValue(entity[column]) : string.Empty));
+
+                return new ListViewItem(values.ToArray());
             }
             if (value is ExecuteMultipleResponseItem)
             {
@@ -111,6 +118,16 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
             }
 
             return null;
+        }
+
+        private static string FormatListViewValue(object value)
+        {
+            if (value == null) return string.Empty;
+            if (value is EntityReference reference) return reference.Id.ToString("D");
+            if (value is OptionSetValue option) return option.Value.ToString();
+            if (value is OptionSetValueCollection options) return string.Join(", ", options.Select(o => o.Value));
+            if (value is Money money) return money.Value.ToString(CultureInfo.InvariantCulture);
+            return value.ToString();
         }
 
         public static object ToObject<T>(this ListViewItem lvItem, T output, Tuple<string, object> parameters = null)

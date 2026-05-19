@@ -21,16 +21,18 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         private Label _lblSumFailedValue;
         private readonly bool _allowRetryFailed;
         private readonly bool _showExecutionControls;
+        private readonly List<string> _extraColumns;
         private Button _btnRetryFailed;
         private Panel _pnlShowAllRows;
         public List<Guid> FailedRecordIds { get; private set; } = new List<Guid>();
 
-        public Results(IEnumerable<ListViewItem> recordItems, Settings settings, bool allowRetryFailed = false)
+        public Results(IEnumerable<ListViewItem> recordItems, Settings settings, bool allowRetryFailed = false, IEnumerable<string> extraColumns = null)
         {
             _settings = settings;
             _recordItems = AddRowNumbers(recordItems ?? Enumerable.Empty<ListViewItem>()).ToList();
             _allowRetryFailed = allowRetryFailed;
             _showExecutionControls = allowRetryFailed;
+            _extraColumns = (extraColumns ?? Enumerable.Empty<string>()).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             InitializeComponent();
             ConfigureResultsUi();
         }
@@ -89,6 +91,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             chResRecordId.Width = (int)Math.Floor(maxWidth * 0.24);
             chResRecordName.Width = (int)Math.Floor(maxWidth * 0.27);
             chResDescription.Width = (int)Math.Floor(maxWidth * 0.35);
+            if (lvItems.Columns.Count > 5)
+            {
+                var extraWidth = Math.Max(120, (int)Math.Floor(maxWidth * 0.16));
+                for (var i = 5; i < lvItems.Columns.Count; i++)
+                    lvItems.Columns[i].Width = extraWidth;
+            }
             LayoutSummaryLabels();
         }
 
@@ -143,6 +151,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         private void ConfigureResultsUi()
         {
             lvItems.Columns.Insert(0, new ColumnHeader { Text = "Row", Width = 70 });
+            foreach (var column in _extraColumns)
+                lvItems.Columns.Add(new ColumnHeader { Text = column, Width = 130 });
 
             pnlBody.ColumnStyles[0].SizeType = SizeType.Percent;
             pnlBody.ColumnStyles[0].Width = 100F;

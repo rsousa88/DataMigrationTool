@@ -259,11 +259,11 @@ namespace Dataverse.XrmTools.DataMigrationTool
             var buttons = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                ColumnCount = 4,
+                ColumnCount = 5,
                 RowCount = 2
             };
-            for (var i = 0; i < 4; i++)
-                buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+            for (var i = 0; i < 5; i++)
+                buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20F));
             buttons.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
             buttons.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
 
@@ -271,10 +271,12 @@ namespace Dataverse.XrmTools.DataMigrationTool
             AddPlanPanelButton(buttons, "Load", 1, 0, (s, e) => LoadExecutionPlan());
             AddPlanPanelButton(buttons, "Save", 2, 0, (s, e) => SaveExecutionPlan());
             AddPlanPanelButton(buttons, "Validate", 3, 0, (s, e) => ValidateExecutionPlan());
+            AddPlanPanelButton(buttons, "Preview", 4, 0, (s, e) => PreviewSelectedExecutionPlanStep());
             AddPlanPanelButton(buttons, "Up", 0, 1, (s, e) => MoveSelectedExecutionPlanStep(-1));
             AddPlanPanelButton(buttons, "Down", 1, 1, (s, e) => MoveSelectedExecutionPlanStep(1));
             AddPlanPanelButton(buttons, "Remove", 2, 1, (s, e) => RemoveSelectedExecutionPlanStep());
-            _executionPlanExecuteButton = AddPlanPanelButton(buttons, "Execute", 3, 1, (s, e) => ExecuteExecutionPlan());
+            AddPlanPanelButton(buttons, "Configure", 3, 1, (s, e) => ReconfigureSelectedExecutionPlanStep());
+            _executionPlanExecuteButton = AddPlanPanelButton(buttons, "Execute", 4, 1, (s, e) => ExecuteExecutionPlan());
 
             layout.Controls.Add(headerLayout, 0, 0);
             layout.Controls.Add(_executionPlanSteps, 0, 1);
@@ -731,6 +733,170 @@ namespace Dataverse.XrmTools.DataMigrationTool
             AutoSaveExecutionPlan(true);
         }
 
+        private void PreviewSelectedExecutionPlanStep()
+        {
+            var step = GetSelectedExecutionPlanStep();
+            if (step == null)
+            {
+                MessageBox.Show("Select a step to preview.", "Execution Plan", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            var stepIndex = _executionPlan.Steps.FindIndex(s => string.Equals(s.Id, step.Id, StringComparison.OrdinalIgnoreCase)) + 1;
+            ManageWorkingState(true, $"Previewing {step.Name}...");
+            WorkAsync(new WorkAsyncInfo
+            {
+                AsyncArgument = new { step, stepIndex },
+                IsCancelable = true,
+                Work = (worker, evt) =>
+                {
+                    dynamic args = evt.Argument;
+                    var previewStep = args.step as ExecutionPlanStep;
+                    var index = (int)args.stepIndex;
+                    if (!TrySetExecutionTargetOverride(previewStep, out var targetError))
+                        throw new Exception(targetError);
+                    try
+                    {
+                        if ((previewStep.Operation ?? string.Empty).StartsWith("Import", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var path = ResolveExecutionStepPath(previewStep, index);
+                            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+                                throw new FileNotFoundException("Import input file was not found.", path);
+                            evt.Result = BuildExecutionPlanImportPreview(previewStep, path, worker);
+                            return;
+                        }
+
+                        var tableData = BuildTableDataForExecutionStep(previewStep);
+                        var logic = new DataLogic(worker, _sourceClient, ActiveTargetClient);
+                        evt.Result = logic.Preview(tableData, previewStep.Snapshot.ExportSettings ?? GetDefaultImportSettings(Enums.Action.Preview), false);
+                    }
+                    finally
+                    {
+                        ClearExecutionTargetOverride();
+                    }
+                },
+                PostWorkCallBack = evt =>
+                {
+                    ManageWorkingState(false);
+                    if (evt.Error != null)
+                    {
+                        _logger.Log(LogLevel.ERROR, evt.Error.ToString());
+                        MessageBox.Show(evt.Error.Message, "Step Preview", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+
+                    if (evt.Result is ExcelImportPreview importPreview)
+                    {
+                        using (var dlg = new ExcelImportPreviewDialog(importPreview, "Close", null, true))
+                            dlg.ShowDialog(ParentForm);
+                        return;
+                    }
+
+                    if (evt.Result is OperationResult result)
+                    {
+                        var tableData = BuildTableDataForExecutionStep(step);
+                        var columns = tableData.SelectedAttributes.Select(attr => attr.LogicalName).ToList();
+                        using (var dlg = new Results(result.Items, _settings, extraColumns: columns))
+                            dlg.ShowDialog(ParentForm);
+                    }
+                },
+                ProgressChanged = ReportWorkProgress
+            });
+        }
+
+        private void ReconfigureSelectedExecutionPlanStep()
+        {
+            var step = GetSelectedExecutionPlanStep();
+            if (step == null)
+            {
+                MessageBox.Show("Select a step to configure.", "Execution Plan", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (!(step.Operation ?? string.Empty).StartsWith("Import", StringComparison.OrdinalIgnoreCase))
+            {
+                using (var dlg = new ExecutionPlanStepEditDialog(step))
+                {
+                    if (dlg.ShowDialog(ParentForm) != DialogResult.OK) return;
+                }
+                step.Snapshot.Mappings = ExecutionPlanService.CloneMappings(BuildMappingsForStepTarget(step, step.Snapshot.ExportSettings ?? GetDefaultImportSettings(Enums.Action.None)));
+                _executionPlanValidatedForExecution = false;
+                ExecutionPlanFileService.ValidatePlan(_executionPlan);
+                AutoSaveExecutionPlan(true);
+                return;
+            }
+
+            var stepIndex = _executionPlan.Steps.FindIndex(s => string.Equals(s.Id, step.Id, StringComparison.OrdinalIgnoreCase)) + 1;
+            ManageWorkingState(true, $"Loading {step.Name} configuration...");
+            WorkAsync(new WorkAsyncInfo
+            {
+                AsyncArgument = new { step, stepIndex },
+                IsCancelable = true,
+                Work = (worker, evt) =>
+                {
+                    dynamic args = evt.Argument;
+                    var configureStep = args.step as ExecutionPlanStep;
+                    var index = (int)args.stepIndex;
+                    if (!TrySetExecutionTargetOverride(configureStep, out var targetError))
+                        throw new Exception(targetError);
+                    try
+                    {
+                        var path = ResolveExecutionStepPath(configureStep, index);
+                        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+                            throw new FileNotFoundException("Import input file was not found.", path);
+                        evt.Result = BuildExecutionPlanImportPreview(configureStep, path, worker);
+                    }
+                    finally
+                    {
+                        ClearExecutionTargetOverride();
+                    }
+                },
+                PostWorkCallBack = evt =>
+                {
+                    ManageWorkingState(false);
+                    if (evt.Error != null)
+                    {
+                        _logger.Log(LogLevel.ERROR, evt.Error.ToString());
+                        MessageBox.Show(evt.Error.Message, "Configure Step", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+
+                    var preview = evt.Result as ExcelImportPreview;
+                    if (preview == null) return;
+                    using (var dlg = new ExcelImportPreviewDialog(preview, "Apply", () => ConfigureMappingsForExecutionTarget(step.TargetEnvironment)))
+                    {
+                        var result = dlg.ShowDialog(ParentForm);
+                        if (result == DialogResult.Retry)
+                        {
+                            ApplyImportStepConfiguration(step, dlg.Settings, dlg.SelectedMatchKey, null);
+                            ReconfigureSelectedExecutionPlanStep();
+                            return;
+                        }
+
+                        if (result != DialogResult.OK && result != DialogResult.Yes) return;
+                        ApplyImportStepConfiguration(step, dlg.Settings, dlg.SelectedMatchKey, preview);
+                        _executionPlanValidatedForExecution = false;
+                        AutoSaveExecutionPlan(true);
+                    }
+                },
+                ProgressChanged = ReportWorkProgress
+            });
+        }
+
+        private void ApplyImportStepConfiguration(ExecutionPlanStep step, UiSettings settings, ExcelImportMatchKeySelection matchKey, ExcelImportPreview preview)
+        {
+            if (step?.Snapshot == null) return;
+            step.Snapshot.ImportSettings = settings;
+            step.Snapshot.ImportMatchKeySelection = ExecutionPlanService.CloneImportMatchKeySelection(matchKey);
+            if (step.Snapshot.ExcelConfig != null)
+                ApplyImportMatchKeySelection(step.Snapshot.ExcelConfig, matchKey);
+            step.Snapshot.Mappings = ExecutionPlanService.CloneMappings(BuildMappingsForStepTarget(step, settings));
+            if (preview != null)
+                step.Validation.Preview = ExecutionPlanService.ToPreviewSummary(preview, "Captured preview", false, false);
+            ExecutionPlanFileService.ValidatePlan(_executionPlan);
+            RenderExecutionPlanMenu();
+        }
+
         private void ValidateExecutionPlan()
         {
             if (!EnsureExecutionPlanLoaded()) return;
@@ -1093,13 +1259,20 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
         }
 
-        private void RefreshExecutionPlanImportPreview(ExecutionPlanStep step, int stepIndex, BackgroundWorker worker)
+        private void RefreshExecutionPlanImportPreview(ExecutionPlanStep step, int stepIndex, BackgroundWorker worker, bool fullPreview = false)
         {
             try
             {
                 var path = ResolveExecutionStepPath(step, stepIndex);
                 if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
                 {
+                    if (!fullPreview && string.Equals(step.Operation, "ImportFromExcel", StringComparison.OrdinalIgnoreCase))
+                    {
+                        step.Validation.Preview = BuildLightweightExcelImportPreview(step, path, worker);
+                        AddExecutionPlanValidationMessage(step, "Info", "Excel import preview is estimated from workbook metadata. Use step Preview for full create/update counts.");
+                        return;
+                    }
+
                     var preview = BuildExecutionPlanImportPreview(step, path, worker);
                     step.Validation.Preview = ExecutionPlanService.ToPreviewSummary(preview, "Validation preview", false, false);
                     AddExecutionPlanPreviewMessages(step, preview);
@@ -1126,6 +1299,20 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 if (step.Validation.Preview != null)
                     step.Validation.Preview.IsStale = true;
             }
+        }
+
+        private ExecutionPlanPreviewSummary BuildLightweightExcelImportPreview(ExecutionPlanStep step, string path, BackgroundWorker worker)
+        {
+            worker?.ReportProgress(0, $"Execution plan: reading Excel metadata for {step.Name}...");
+            var excelLogic = new Logic.ExcelLogic();
+            var rows = excelLogic.GetImportRowCount(path, out _);
+            return new ExecutionPlanPreviewSummary
+            {
+                Rows = rows,
+                Source = "Estimated from Excel metadata",
+                IsEstimated = true,
+                IsStale = false
+            };
         }
 
         private ExcelImportPreview BuildExecutionPlanImportPreview(ExecutionPlanStep step, string path, BackgroundWorker worker)

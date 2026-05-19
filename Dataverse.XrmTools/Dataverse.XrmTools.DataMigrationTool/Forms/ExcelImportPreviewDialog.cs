@@ -13,6 +13,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
     public class ExcelImportPreviewDialog : Form
     {
         private readonly ExcelImportPreview _preview;
+        private readonly System.Action _configureMappings;
+        private readonly bool _previewOnly;
         private readonly ListView _list;
         private readonly CheckBox _cbCreate;
         private readonly CheckBox _cbUpdate;
@@ -33,9 +35,11 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         public bool RefreshPreviewRequested { get; private set; }
         public bool MatchKeyChanged { get; private set; }
 
-        public ExcelImportPreviewDialog(ExcelImportPreview preview)
+        public ExcelImportPreviewDialog(ExcelImportPreview preview, string acceptButtonText = "Add to Plan", System.Action configureMappings = null, bool previewOnly = false)
         {
             _preview = preview;
+            _configureMappings = configureMappings;
+            _previewOnly = previewOnly;
             Settings = CloneSettings(preview.Settings);
             SelectedMatchKey = GetPreviewSelection(preview);
             _customMatchFields = SelectedMatchKey.Fields.ToList();
@@ -70,7 +74,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             body.Controls.Add(sidePanel, 1, 0);
 
             var footer = new Panel { BackColor = Color.White, Dock = DockStyle.Bottom, Height = 64 };
-            _btnImport = new Button { Text = "Add to Plan", Width = 110, Height = 28, Anchor = AnchorStyles.Right | AnchorStyles.Bottom };
+            _btnImport = new Button { Text = acceptButtonText, Width = 110, Height = 28, Anchor = AnchorStyles.Right | AnchorStyles.Bottom };
             _btnRefresh = new Button { Text = "Refresh Preview", Width = 120, Height = 28, Anchor = AnchorStyles.Right | AnchorStyles.Bottom };
             var btnCancel = new Button { Text = "Cancel", Width = 100, Height = 28, Anchor = AnchorStyles.Right | AnchorStyles.Bottom };
             _btnImport.Location = new Point(ClientSize.Width - 126, 21);
@@ -111,6 +115,11 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             _cbCreate.CheckedChanged += (s, e) => UpdatePreviewRefreshState();
             _cbUpdate.CheckedChanged += (s, e) => UpdatePreviewRefreshState();
             _cbApplyMappings.CheckedChanged += (s, e) => UpdatePreviewRefreshState();
+            if (_previewOnly)
+            {
+                SetSettingsControlsEnabled(false);
+                _btnRefresh.Visible = false;
+            }
             UpdateMatchKeyControls();
             UpdatePreviewRefreshState();
 
@@ -228,7 +237,15 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             panel.Controls.Add(new NumericUpDown { Name = "nudBatchSize", Dock = DockStyle.Left, Width = 86, Minimum = 1, Maximum = 100, Value = Math.Max(1, Math.Min(100, Settings.BatchSize)) }, 1, 4);
 
             panel.Controls.Add(new Label { Text = "Mappings:", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 5);
-            panel.Controls.Add(new CheckBox { Name = "cbApplyMappings", Text = "Use organization mappings", AutoSize = true, Checked = Settings.ApplyMappingsOn == Operation.Import }, 1, 5);
+            var mappingPanel = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, Margin = Padding.Empty, WrapContents = false };
+            mappingPanel.Controls.Add(new CheckBox { Name = "cbApplyMappings", Text = "Use organization mappings", AutoSize = true, Checked = Settings.ApplyMappingsOn == Operation.Import });
+            if (_configureMappings != null)
+            {
+                var configure = new Button { Text = "Configure...", Width = 88, Height = 25, Margin = new Padding(8, 2, 0, 0) };
+                configure.Click += (s, e) => _configureMappings();
+                mappingPanel.Controls.Add(configure);
+            }
+            panel.Controls.Add(mappingPanel, 1, 5);
 
             var note = new Label
             {
@@ -276,6 +293,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             list.Columns.Add("Record Name");
             list.Columns.Add("Description");
             list.Columns.Add("Warnings");
+            foreach (var column in _preview.ValueColumns ?? new List<string>())
+                list.Columns.Add(column);
             return list;
         }
 
@@ -293,7 +312,9 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                     item.Name,
                     item.Description,
                     item.Warnings
-                });
+                }.Concat((_preview.ValueColumns ?? new List<string>())
+                    .Select(column => item.Values != null && item.Values.TryGetValue(column, out var value) ? value : string.Empty))
+                    .ToArray());
                 if (!string.IsNullOrWhiteSpace(item.Warnings))
                 {
                     listItem.BackColor = Color.FromArgb(255, 250, 230);
@@ -315,6 +336,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             _list.Columns[4].Width = (int)(width * 0.17);
             _list.Columns[5].Width = (int)(width * 0.18);
             _list.Columns[6].Width = (int)(width * 0.13);
+            if (_list.Columns.Count > 7)
+            {
+                var extraWidth = Math.Max(120, (int)(width * 0.14));
+                for (var i = 7; i < _list.Columns.Count; i++)
+                    _list.Columns[i].Width = extraWidth;
+            }
         }
 
         private void CloseWith(DialogResult result)
@@ -353,6 +380,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             RefreshPreviewRequested = result == DialogResult.Retry;
             DialogResult = result;
             Close();
+        }
+
+        private void SetSettingsControlsEnabled(bool enabled)
+        {
+            foreach (var control in new Control[] { _cbCreate, _cbUpdate, _cboMatchMode, _cboAlternateKey, _btnConfigureMatchKey, _nudBatchSize, _cbApplyMappings }.Where(c => c != null))
+                control.Enabled = enabled;
         }
 
         private string GetSettingsNoteText()
@@ -458,6 +491,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         private void UpdateMatchKeyControls()
         {
             if (_btnConfigureMatchKey == null || _cboMatchMode == null) return;
+            if (_previewOnly) return;
             var mode = (_cboMatchMode.SelectedItem as MatchKeyModeItem)?.Mode ?? "Guid";
             _cboAlternateKey.Enabled = mode == "AlternateKey" && _cboAlternateKey.Items.Count > 0;
             _btnConfigureMatchKey.Enabled = mode == "Custom" && _preview.AvailableMatchKeys.Any();
@@ -469,7 +503,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             if (_btnImport == null) return;
 
             var refreshRequired = IsPreviewRefreshRequired();
-            _btnImport.Enabled = !refreshRequired;
+            _btnImport.Enabled = _previewOnly || !refreshRequired;
             if (_btnRefresh != null) _btnRefresh.Enabled = refreshRequired;
         }
 

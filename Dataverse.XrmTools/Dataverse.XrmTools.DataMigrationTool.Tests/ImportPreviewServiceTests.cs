@@ -142,6 +142,28 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
         }
 
         [Fact]
+        public void BuildPreview_IncludesSourceValueColumnsAndRowValues()
+        {
+            var id = Guid.NewGuid();
+            var collection = CreateCollection(CreateRecord(4, id, "Visible row"));
+
+            var preview = ImportPreviewService.BuildPreview(new ExcelImportPreviewRequest
+            {
+                TableData = CreateTableData(),
+                Collection = collection,
+                Config = CreateExcelConfig(),
+                Settings = new UiSettings { Action = DmtAction.Create },
+                ExistingTargetIdsProvider = ids => new HashSet<Guid>()
+            });
+
+            Assert.Contains("name", preview.ValueColumns);
+            Assert.Contains("accountnumber", preview.ValueColumns);
+            var item = Assert.Single(preview.Items);
+            Assert.Equal("Visible row", item.Values["name"]);
+            Assert.Equal("A-004", item.Values["accountnumber"]);
+        }
+
+        [Fact]
         public void BuildPreview_AddsSuppliedGuidWarningOnlyForExcelCreatesWithSuppliedGuid()
         {
             var existingId = Guid.NewGuid();

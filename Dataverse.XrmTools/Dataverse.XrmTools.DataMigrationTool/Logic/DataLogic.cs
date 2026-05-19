@@ -63,7 +63,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             }
 
             ReportStatus("Preview: comparing source and target records...");
-            ExecuteTargetOperations(uiSettings, tableData.Table, true, targetReady);
+            ExecuteTargetOperations(
+                uiSettings,
+                tableData.Table,
+                true,
+                targetReady,
+                previewColumns: tableData.SelectedAttributes.Select(a => a.LogicalName));
             if (_worker.CancellationPending) return null;
 
             return new OperationResult
@@ -168,7 +173,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             ReportStatus($"Found {_targetCollection?.Entities.Count ?? 0} matching target {logicalName} records.");
         }
 
-        private void ExecuteTargetOperations(UiSettings uiSettings, Table table, bool isPreview, bool targetReady, List<Mapping> mappings = null)
+        private void ExecuteTargetOperations(UiSettings uiSettings, Table table, bool isPreview, bool targetReady, List<Mapping> mappings = null, IEnumerable<string> previewColumns = null)
         {
             if (_sourceCollection == null || (targetReady && _targetCollection == null)) { return; }
 
@@ -183,7 +188,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     {
                         { "attributename", table.NameAttribute != null ? table.NameAttribute : string.Empty },
                         { "action", mig.Action.ToString() },
-                        { "description", Enums.Action.Preview.ToString() }
+                        { "description", Enums.Action.Preview.ToString() },
+                        { "columns", string.Join("|", previewColumns ?? Enumerable.Empty<string>()) }
                     })));
 
                 _resultsData.AddRange(prvItems);

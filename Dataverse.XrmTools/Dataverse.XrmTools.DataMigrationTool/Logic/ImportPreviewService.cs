@@ -37,6 +37,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 ?? new HashSet<Guid>();
             var targetIdSet = new HashSet<Guid>(targetIds);
             var availableMatchKeys = GetAvailableImportMatchKeys(request.Collection, request.Config);
+            var valueColumns = GetPreviewValueColumns(request.Collection, request.Config);
 
             var preview = new ExcelImportPreview
             {
@@ -54,7 +55,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 Settings = settings,
                 MappingCount = request.MappingCount,
                 AvailableMatchKeys = availableMatchKeys,
-                AvailableAlternateKeys = GetAvailableImportAlternateKeys(metadata, availableMatchKeys)
+                AvailableAlternateKeys = GetAvailableImportAlternateKeys(metadata, availableMatchKeys),
+                ValueColumns = valueColumns
             };
 
             var entityIndex = 0;
@@ -98,7 +100,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     MatchValue = GetPreviewMatchValue(entity, request.Collection.ImportMatchKeys),
                     Name = name,
                     Description = description,
-                    Warnings = rowWarnings
+                    Warnings = rowWarnings,
+                    Values = GetPreviewValues(sourceRecord, valueColumns)
                 });
                 entityIndex++;
             }
@@ -250,6 +253,39 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(key => key)
                 .ToList();
+        }
+
+        public static List<string> GetPreviewValueColumns(RecordCollection collection, ExcelExportConfig config)
+        {
+            if (config?.Columns != null)
+            {
+                return config.Columns
+                    .Where(c => c.Type != "LookupKeyField" && !string.IsNullOrWhiteSpace(c.LogicalName))
+                    .Select(c => c.LogicalName)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(c => c)
+                    .ToList();
+            }
+
+            return (collection?.Records ?? Enumerable.Empty<Record>())
+                .SelectMany(record => record.Attributes ?? Enumerable.Empty<RecordAttribute>())
+                .Select(attr => attr.Key)
+                .Where(key => !string.IsNullOrWhiteSpace(key))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(key => key)
+                .ToList();
+        }
+
+        private static Dictionary<string, string> GetPreviewValues(Record record, IEnumerable<string> columns)
+        {
+            var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var attributes = record?.Attributes ?? new List<RecordAttribute>();
+            foreach (var column in columns ?? Enumerable.Empty<string>())
+            {
+                var value = attributes.FirstOrDefault(a => string.Equals(a.Key, column, StringComparison.OrdinalIgnoreCase))?.Value;
+                result[column] = FormatPreviewMatchValue(ToImportQueryValue(value));
+            }
+            return result;
         }
 
         public static List<ExcelImportAlternateKeyOption> GetAvailableImportAlternateKeys(EntityMetadata metadata, IEnumerable<string> availableFields)

@@ -857,7 +857,11 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         // show preview form
                         var result = evt.Result as OperationResult;
 
-                        var prvwDialog = new Results(result.Items, _settings);
+                        var previewColumns = tableData.SelectedAttributes
+                            .Select(attr => attr.LogicalName)
+                            .Where(name => !string.IsNullOrWhiteSpace(name))
+                            .ToList();
+                        var prvwDialog = new Results(result.Items, _settings, extraColumns: previewColumns);
                         prvwDialog.ShowDialog(ParentForm);
 
                         SettingsHelper.SetSettings(_settings);
@@ -1283,7 +1287,10 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
                     if (_importPreviewDialogOpen) return;
                     _importPreviewDialogOpen = true;
-                    using (var dlg = new ExcelImportPreviewDialog(preview))
+                    using (var dlg = new ExcelImportPreviewDialog(
+                        preview,
+                        "Add to Plan",
+                        () => ConfigureMappingsForExecutionTarget(session?.TargetEnvironment)))
                     {
                         var result = DialogResult.Cancel;
                         try
@@ -1643,6 +1650,44 @@ namespace Dataverse.XrmTools.DataMigrationTool
             LoadFilters(tableData);
             RenderDmtFileMenu();
             SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Selected table from import file: {tableData.Table.LogicalName}"));
+        }
+
+        private bool ConfigureMappingsForExecutionTarget(DmtEnvironmentInfo targetEnvironment)
+        {
+            if (_sourceClient == null || _sourceInstance == null)
+                return false;
+
+            var previousClientOverride = _executionTargetClientOverride;
+            var previousInstanceOverride = _executionTargetInstanceOverride;
+            try
+            {
+                SetExecutionTargetOverride(targetEnvironment);
+                var targetInstance = ActiveTargetInstance;
+                if (targetInstance == null)
+                {
+                    MessageBox.Show("Connect or select the target environment before configuring mappings.", "Mappings", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return false;
+                }
+
+                var mappingsDlg = new Mappings(_sourceClient, _sourceInstance, targetInstance, _tables, _settings);
+                mappingsDlg.ShowDialog(ParentForm);
+
+                if (!mappingsDlg.Updated) return false;
+
+                _mappings = _sourceInstance.Mappings?
+                    .Where(map => string.Equals(map.TargetInstanceName, targetInstance.FriendlyName, StringComparison.OrdinalIgnoreCase))
+                    .ToList() ?? new List<Mapping>();
+                RenderMappingsButton();
+                SettingsHelper.SetSettings(_settings);
+                AutoSaveDmtSettings();
+                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Successfully updated Organization Mappings"));
+                return true;
+            }
+            finally
+            {
+                _executionTargetClientOverride = previousClientOverride;
+                _executionTargetInstanceOverride = previousInstanceOverride;
+            }
         }
 
         private void EnsureTableDataAttributes(TableData tableData)

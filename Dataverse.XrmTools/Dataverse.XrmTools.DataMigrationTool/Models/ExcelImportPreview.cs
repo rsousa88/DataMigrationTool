@@ -34,6 +34,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
         public UiSettings Settings { get; set; }
         public List<string> AvailableMatchKeys { get; set; } = new List<string>();
         public List<ExcelImportAlternateKeyOption> AvailableAlternateKeys { get; set; } = new List<ExcelImportAlternateKeyOption>();
+        public List<string> ValueColumns { get; set; } = new List<string>();
         public List<string> ImportErrors { get; set; } = new List<string>();
         public List<ExcelImportPreviewItem> Items { get; set; } = new List<ExcelImportPreviewItem>();
     }
@@ -60,5 +61,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
         public string Name { get; set; }
         public string Description { get; set; }
         public string Warnings { get; set; }
+        public Dictionary<string, string> Values { get; set; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     }
 }
