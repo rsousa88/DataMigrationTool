@@ -1155,12 +1155,11 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             var operationId = BeginExcelImportOperation();
             var defaultImportSettings = BuildExcelImportSettings(GetDefaultImportSettings(Enums.Action.None), preflightConfig);
-            var planLookupResolver = BuildPlanLookupContextForPriorSteps(targetEnvironment, null);
             ManageWorkingState(true, "Reading Excel file...");
 
             WorkAsync(new WorkAsyncInfo
             {
-                AsyncArgument = new { path, operationId, defaultImportSettings, planLookupResolver },
+                AsyncArgument = new { path, operationId, defaultImportSettings, targetEnvironment },
                 IsCancelable = true,
                 Work = (worker, evt) =>
                 {
@@ -1169,13 +1168,13 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         dynamic args = evt.Argument;
                         string filePath = args.path;
                         var workbookDefaultImportSettings = args.defaultImportSettings as ExcelImportSettings;
-                        var resolver = args.planLookupResolver as IPlanLookupResolver;
                         worker.ReportProgress(0, "Excel import: reading workbook metadata...");
                         ThrowIfCancelled(worker);
                         var excelLogic = new Logic.ExcelLogic();
                         var target = targetEnvironment != null && _targetClients.TryGetValue(targetEnvironment.UniqueName, out CrmServiceClient selectedTarget)
                             ? selectedTarget
                             : ActiveTargetClient;
+                        var resolver = BuildPlanLookupContextForPriorSteps(targetEnvironment, null, worker, true, target);
 
                         var collection = excelLogic.ImportFromExcel(
                             filePath,
@@ -1340,11 +1339,10 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private void ReloadExcelImportSession(string filePath, ExcelImportMatchKeySelection matchKey, TableData tableData, UiSettings uiSettings, DmtEnvironmentInfo targetEnvironment)
         {
             var operationId = BeginExcelImportOperation();
-            var planLookupResolver = BuildPlanLookupContextForPriorSteps(targetEnvironment, null);
             ManageWorkingState(true, "Reading Excel file...");
             WorkAsync(new WorkAsyncInfo
             {
-                AsyncArgument = new { filePath, matchKey, operationId, planLookupResolver },
+                AsyncArgument = new { filePath, matchKey, operationId, targetEnvironment },
                 IsCancelable = true,
                 Work = (worker, evt) =>
                 {
@@ -1354,7 +1352,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         string reloadFilePath = args.filePath;
                         var reloadOperationId = (int)args.operationId;
                         var reloadMatchKey = args.matchKey as ExcelImportMatchKeySelection;
-                        var resolver = args.planLookupResolver as IPlanLookupResolver;
                         var reloadDefaultImportSettings = BuildExcelImportSettings(uiSettings, null);
                         worker.ReportProgress(0, "Excel import: re-reading workbook metadata...");
                         ThrowIfCancelled(worker);
@@ -1362,6 +1359,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         var target = targetEnvironment != null && _targetClients.TryGetValue(targetEnvironment.UniqueName, out CrmServiceClient selectedTarget)
                             ? selectedTarget
                             : ActiveTargetClient;
+                        var resolver = BuildPlanLookupContextForPriorSteps(targetEnvironment, null, worker, true, target);
                         var collection = excelLogic.ImportFromExcel(
                             reloadFilePath,
                             out ExcelExportConfig config,

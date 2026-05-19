@@ -6,6 +6,7 @@ using System.Linq;
 using System.Windows.Forms;
 
 // Microsoft
+using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
 using Microsoft.Xrm.Tooling.Connector;
 
@@ -73,7 +74,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
             DmtEnvironmentInfo targetEnvironment,
             ExecutionPlanStep currentStep,
             BackgroundWorker worker,
-            bool hydrateMissingCollections)
+            bool hydrateMissingCollections,
+            IOrganizationService targetService = null)
         {
             var context = new PlanLookupContext();
             if (_executionPlan?.Steps == null)
@@ -92,7 +94,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
                 var collection = step.Snapshot?.RecordCollection;
                 if (collection == null && hydrateMissingCollections)
-                    collection = TryLoadExecutionPlanImportCollectionForLookupContext(step, stepIndex, context, worker);
+                    collection = TryLoadExecutionPlanImportCollectionForLookupContext(step, stepIndex, context, worker, targetService);
 
                 context.AddRecordCollection(collection);
             }
@@ -104,7 +106,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
             ExecutionPlanStep step,
             int stepIndex,
             IPlanLookupResolver planLookupResolver,
-            BackgroundWorker worker)
+            BackgroundWorker worker,
+            IOrganizationService targetService)
         {
             try
             {
@@ -120,7 +123,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     return excelLogic.ImportFromExcel(
                         path,
                         out ExcelExportConfig _,
-                        ActiveTargetClient,
+                        targetService ?? ActiveTargetClient,
                         worker,
                         importConfig =>
                         {

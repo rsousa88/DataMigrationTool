@@ -136,6 +136,7 @@ Mappings are stored in `.dmt.json` settings files and can be reviewed from the *
 - [NEW] Execution plan steps can now be previewed individually and reconfigured before execution, including import settings, match keys, mappings, and file columns
 - [FIX] Whole-plan validation now avoids expensive full Excel preview reads and uses lightweight workbook metadata for large files
 - [FIX] Step preview now hydrates prior import files when needed so chained lookup dependencies are considered before execution
+- [FIX] Adding or reloading Excel import steps now hydrates prior plan imports so lookup dependencies are resolved before the step is added
 - [FIX] Selecting an execution plan step now selects the referenced table and loads its captured settings file or plan snapshot
 - [FIX] JSON and Excel execution-plan imports now persist and honor the captured match key during validation and execution
 - [FIX] Loaded execution plans now hydrate table attributes before validation and import preview, preventing null-source validation errors
