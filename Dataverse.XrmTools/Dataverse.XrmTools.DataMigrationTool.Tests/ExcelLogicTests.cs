@@ -352,6 +352,55 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
             }
         }
 
+        [Fact]
+        public void LookupAlternateKeyCanResolveFromPlanContext()
+        {
+            using (var files = new TemporaryFileScope())
+            {
+                var accountRequestId = Guid.NewGuid();
+                var accountActualId = Guid.NewGuid();
+                var context = new PlanLookupContext();
+                context.AddRecordCollection(new RecordCollection
+                {
+                    LogicalName = "account",
+                    PrimaryIdAttribute = "accountid",
+                    Records = new List<DmtRecord>
+                    {
+                        new DmtRecord
+                        {
+                            Attributes = new List<RecordAttribute>
+                            {
+                                new RecordAttribute { Key = "accountid", Value = accountRequestId },
+                                new RecordAttribute { Key = "accountnumber", Value = "A-001" }
+                            }
+                        }
+                    },
+                    Count = 1
+                }, new Dictionary<Guid, Guid> { [accountRequestId] = accountActualId });
+
+                var path = files.GetExcelPath();
+                var config = CreateContactConfigWithAccountLookup();
+                new ExcelLogic().Export(config, Enumerable.Empty<Entity>(), path);
+                SetDataRows(path, new[]
+                {
+                    new Dictionary<string, object>
+                    {
+                        ["contactid"] = Guid.NewGuid().ToString("D"),
+                        ["fullname"] = "Contact",
+                        ["parentcustomerid.accountnumber"] = "A-001"
+                    }
+                });
+
+                var collection = new ExcelLogic().ImportFromExcel(path, config, null, null, context);
+                var record = Assert.Single(collection.Records);
+                var lookup = Assert.IsType<EntityReference>(record.Attributes.Single(a => a.Key == "parentcustomerid").Value);
+
+                Assert.Equal("account", lookup.LogicalName);
+                Assert.Equal(accountActualId, lookup.Id);
+                Assert.Empty(collection.ImportErrors);
+            }
+        }
+
         private static ExcelExportConfig CreateAccountConfig(bool includeOwnerLookup = false)
         {
             var config = new ExcelExportConfig
@@ -389,6 +438,48 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
             }
 
             return config;
+        }
+
+        private static ExcelExportConfig CreateContactConfigWithAccountLookup()
+        {
+            return new ExcelExportConfig
+            {
+                Table = new ExcelTableConfig
+                {
+                    LogicalName = "contact",
+                    PrimaryIdAttribute = "contactid",
+                    PrimaryNameAttribute = "fullname"
+                },
+                ImportSettings = new ExcelImportSettings
+                {
+                    Action = Action.Create | Action.Update,
+                    BatchSize = 25,
+                    MatchKeyMode = "Guid"
+                },
+                Columns = new List<ExcelColumnConfig>
+                {
+                    new ExcelColumnConfig { LogicalName = "contactid", DisplayName = "Contact", Type = "Guid" },
+                    new ExcelColumnConfig { LogicalName = "fullname", DisplayName = "Full Name", Type = "String" },
+                    new ExcelColumnConfig
+                    {
+                        LogicalName = "parentcustomerid",
+                        DisplayName = "Parent Account",
+                        Type = "Lookup",
+                        RelatedTable = "account",
+                        Resolution = "AlternateKey",
+                        AlternateKeyFields = new List<string> { "accountnumber" }
+                    },
+                    new ExcelColumnConfig
+                    {
+                        LogicalName = "parentcustomerid.accountnumber",
+                        DisplayName = "Parent Account Number",
+                        Type = "LookupKeyField",
+                        OwnerAttribute = "parentcustomerid",
+                        KeyFieldType = "String",
+                        RelatedTable = "account"
+                    }
+                }
+            };
         }
 
         private static ExcelColumnConfig StatusColumn(string exportMode)

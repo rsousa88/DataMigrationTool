@@ -131,6 +131,13 @@ Mappings are stored in `.dmt.json` settings files and can be reviewed from the *
 
 ## Release Notes
 
+### 2026.5.19.x
+- [NEW] Execution plan imports can resolve lookups against records imported by earlier steps in the same target environment
+- [FIX] JSON execution-plan imports now persist and honor the selected match key during validation and execution
+- [FIX] Excel execution-plan imports reapply the captured match key when the plan runs
+- [NEW] Added tests for plan lookup resolution and import match-key snapshot persistence
+- [FIX] Stability refactor moved more import/export and execution-plan logic out of the main plugin control for better maintainability
+
 ### 2026.5.15.x
 - [NEW] Added execution plans with saved `.dmtplan.json` files, linked steps, validation, review, and unattended sequential execution
 - [NEW] Added multi-target environment support so import steps can run against different connected target environments in one plan

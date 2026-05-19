@@ -32,9 +32,14 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
                 var path = scope.GetPath("migration.dmtplan.json");
                 var step = TestDataBuilder.ExecutionPlanStep("export", "ExportToJson");
                 step.Output.PathTemplate = scope.GetPath("accounts.json");
+                step.Snapshot.ImportMatchKeySelection = new ExcelImportMatchKeySelection
+                {
+                    Mode = "AlternateKey",
+                    Fields = new System.Collections.Generic.List<string> { "accountnumber" },
+                    AlternateKeyName = "account_alt_key"
+                };
                 step.Input = null;
                 step.Output = null;
-                step.Snapshot = null;
                 step.FailurePolicy = null;
                 step.Validation = null;
                 var plan = TestDataBuilder.ExecutionPlan(step);
@@ -46,6 +51,9 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
                 Assert.NotNull(loaded.Steps[0].Input);
                 Assert.NotNull(loaded.Steps[0].Output);
                 Assert.NotNull(loaded.Steps[0].Snapshot);
+                Assert.Equal("AlternateKey", loaded.Steps[0].Snapshot.ImportMatchKeySelection.Mode);
+                Assert.Equal("accountnumber", loaded.Steps[0].Snapshot.ImportMatchKeySelection.Fields.Single());
+                Assert.Equal("account_alt_key", loaded.Steps[0].Snapshot.ImportMatchKeySelection.AlternateKeyName);
                 Assert.NotNull(loaded.Steps[0].FailurePolicy);
                 Assert.NotNull(loaded.Steps[0].Validation);
             }

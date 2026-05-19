@@ -838,6 +838,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         GetLoadedTargetEnvironments());
                     var stepIndex = 0;
                     var failedStepIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    var runtimeLookupContexts = new Dictionary<string, PlanLookupContext>(StringComparer.OrdinalIgnoreCase);
                     foreach (var step in ExecutionPlanService.GetExecutableSteps(plan))
                     {
                         stepIndex++;
@@ -855,7 +856,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
                             if (!TrySetExecutionTargetOverride(step, out var targetError))
                                 throw new Exception(targetError);
-                            var result = ExecuteExecutionPlanStep(step, stepIndex, worker);
+                            var result = ExecuteExecutionPlanStep(step, stepIndex, worker, runtimeLookupContexts);
                             ExecutionPlanService.ApplyExecutionResultToLog(stepLog, result);
 
                             if (result.ShouldStopPlan)
@@ -910,7 +911,11 @@ namespace Dataverse.XrmTools.DataMigrationTool
             });
         }
 
-        private ExecutionPlanStepExecutionResult ExecuteExecutionPlanStep(ExecutionPlanStep step, int stepIndex, BackgroundWorker worker)
+        private ExecutionPlanStepExecutionResult ExecuteExecutionPlanStep(
+            ExecutionPlanStep step,
+            int stepIndex,
+            BackgroundWorker worker,
+            Dictionary<string, PlanLookupContext> runtimeLookupContexts)
         {
             var tableData = BuildTableDataForExecutionStep(step);
             var path = ResolveExecutionStepPath(step, stepIndex);
@@ -939,13 +944,16 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     var json = File.ReadAllText(path);
                     var collection = json.DeserializeObject<RecordCollection>();
                     ImportFileDataChecks(collection);
+                    ApplyJsonImportMatchKeySelection(collection, tableData, step.Snapshot?.ImportMatchKeySelection);
                     var logic = new DataLogic(worker, _sourceClient, ActiveTargetClient);
                     var result = logic.Import(tableData, collection, step.Snapshot.ImportSettings ?? GetDefaultImportSettings(Enums.Action.None), step.Snapshot.Mappings, false);
+                    AddImportedRecordsToPlanLookupContext(runtimeLookupContexts, step, collection, result?.SuccessfulIdMap ?? GetSuccessfulResultIdMap(result?.Items));
                     return BuildExecutionStepResult(step, result, "imported JSON");
                 }
                 case "ImportFromExcel":
                 {
                     var excelLogic = new Logic.ExcelLogic();
+                    var planLookupResolver = GetRuntimePlanLookupContext(runtimeLookupContexts, step);
                     var collection = excelLogic.ImportFromExcel(
                         path,
                         out ExcelExportConfig config,
@@ -961,8 +969,10 @@ namespace Dataverse.XrmTools.DataMigrationTool
                                 importConfig.MatchAlternateKeyName = step.Snapshot.ExcelConfig.MatchAlternateKeyName;
                                 importConfig.ImportSettings = step.Snapshot.ExcelConfig.ImportSettings;
                             }
+                            ApplyImportMatchKeySelection(importConfig, step.Snapshot?.ImportMatchKeySelection);
                             EnsureExcelImportSettings(importConfig, BuildExcelImportSettings(step.Snapshot.ImportSettings, importConfig));
-                        });
+                        },
+                        planLookupResolver);
                     var logic = new DataLogic(worker, _sourceClient, ActiveTargetClient);
                     var result = logic.Import(tableData, collection, step.Snapshot.ImportSettings ?? GetDefaultImportSettings(config, Enums.Action.None), step.Snapshot.Mappings, false);
                     if (result != null && config != null)
@@ -970,6 +980,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         var importedIds = result.SuccessfulIdMap ?? GetSuccessfulResultIdMap(result.Items);
                         if (importedIds.Any())
                             excelLogic.UpdateImportedGuids(path, config, collection, importedIds, worker);
+                        AddImportedRecordsToPlanLookupContext(runtimeLookupContexts, step, collection, importedIds);
                     }
                     return BuildExecutionStepResult(step, result, "imported Excel");
                 }
@@ -1122,6 +1133,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (string.Equals(step.Operation, "ImportFromExcel", StringComparison.OrdinalIgnoreCase))
             {
                 var excelLogic = new Logic.ExcelLogic();
+                var planLookupResolver = BuildPlanLookupContextForPriorSteps(step.TargetEnvironment, step);
                 var collection = excelLogic.ImportFromExcel(
                     path,
                     out ExcelExportConfig config,
@@ -1137,14 +1149,17 @@ namespace Dataverse.XrmTools.DataMigrationTool
                             importConfig.MatchAlternateKeyName = step.Snapshot.ExcelConfig.MatchAlternateKeyName;
                             importConfig.ImportSettings = step.Snapshot.ExcelConfig.ImportSettings;
                         }
+                        ApplyImportMatchKeySelection(importConfig, step.Snapshot?.ImportMatchKeySelection);
                         EnsureExcelImportSettings(importConfig, BuildExcelImportSettings(step.Snapshot.ImportSettings, importConfig));
-                    });
+                    },
+                    planLookupResolver);
                 return BuildExcelImportPreview(tableData, collection, config, step.Snapshot.ImportSettings ?? GetDefaultImportSettings(config, Enums.Action.None), path);
             }
 
             var json = File.ReadAllText(path);
             var collectionFromJson = json.DeserializeObject<RecordCollection>();
             ImportFileDataChecks(collectionFromJson);
+            ApplyJsonImportMatchKeySelection(collectionFromJson, tableData, step.Snapshot?.ImportMatchKeySelection);
             return BuildExcelImportPreview(tableData, collectionFromJson, null, step.Snapshot.ImportSettings ?? GetDefaultImportSettings(Enums.Action.None), path);
         }
 
@@ -1321,6 +1336,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
             ApplyAutomaticStepLink(step, session.FilePath);
             step.Snapshot.ImportSettings = uiSettings;
             step.Snapshot.ExcelConfig = session.Config;
+            step.Snapshot.RecordCollection = session.Collection;
+            step.Snapshot.ImportMatchKeySelection = ExecutionPlanService.CloneImportMatchKeySelection(matchKey);
             step.Snapshot.Mappings = ExecutionPlanService.CloneMappings(BuildMappingsForStepTarget(step, uiSettings));
             step.Validation.Preview = preview == null ? null : new ExecutionPlanPreviewSummary
             {
@@ -1469,6 +1486,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             step.Input.Path = null;
             step.Snapshot.ImportSettings = uiSettings;
             step.Snapshot.ExcelConfig = ExecutionPlanService.CloneExcelConfig(sourceStep.Snapshot?.ExcelConfig);
+            step.Snapshot.ImportMatchKeySelection = ExecutionPlanService.CloneImportMatchKeySelection(sourceStep.Snapshot?.ImportMatchKeySelection);
             step.Snapshot.SelectedAttributes = sourceStep.Snapshot?.SelectedAttributes?.ToList() ?? new List<string>();
             step.Snapshot.Filter = sourceStep.Snapshot?.Filter;
             step.Snapshot.Mappings = ExecutionPlanService.CloneMappings(BuildMappingsForStepTarget(step, uiSettings));

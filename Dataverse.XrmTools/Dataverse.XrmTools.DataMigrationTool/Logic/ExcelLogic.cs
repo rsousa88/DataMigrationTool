@@ -30,6 +30,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
         private const string MetaSheetName = "_dmt";
         private Dictionary<string, Guid?> _lookupResolutionCache;
         private Dictionary<string, Guid?> _matchKeyResolutionCache;
+        private IPlanLookupResolver _planLookupResolver;
 
         #region Export
 
@@ -490,17 +491,17 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             }
         }
 
-        public RecordCollection ImportFromExcel(string filePath, ExcelExportConfig config, IOrganizationService targetService, BackgroundWorker worker = null)
+        public RecordCollection ImportFromExcel(string filePath, ExcelExportConfig config, IOrganizationService targetService, BackgroundWorker worker = null, IPlanLookupResolver planLookupResolver = null)
         {
             using (var wb = new XLWorkbook(filePath))
             {
-                return ImportFromWorkbook(wb, config, targetService, worker);
+                return ImportFromWorkbook(wb, config, targetService, worker, planLookupResolver);
             }
         }
 
-        public RecordCollection ImportFromExcel(string filePath, out ExcelExportConfig config, IOrganizationService targetService, BackgroundWorker worker = null)
+        public RecordCollection ImportFromExcel(string filePath, out ExcelExportConfig config, IOrganizationService targetService, BackgroundWorker worker = null, IPlanLookupResolver planLookupResolver = null)
         {
-            return ImportFromExcel(filePath, out config, targetService, worker, null);
+            return ImportFromExcel(filePath, out config, targetService, worker, null, planLookupResolver);
         }
 
         public int GetImportRowCount(string filePath, out ExcelExportConfig config)
@@ -519,7 +520,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             }
         }
 
-        public RecordCollection ImportFromExcel(string filePath, out ExcelExportConfig config, IOrganizationService targetService, BackgroundWorker worker, Action<ExcelExportConfig> configure)
+        public RecordCollection ImportFromExcel(string filePath, out ExcelExportConfig config, IOrganizationService targetService, BackgroundWorker worker, Action<ExcelExportConfig> configure, IPlanLookupResolver planLookupResolver = null)
         {
             using (var wb = new XLWorkbook(filePath))
             {
@@ -533,7 +534,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     wb.Save();
                 }
 
-                return ImportFromWorkbook(wb, config, targetService, worker);
+                return ImportFromWorkbook(wb, config, targetService, worker, planLookupResolver);
             }
         }
 
@@ -617,10 +618,11 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             return JsonConvert.DeserializeObject<ExcelExportConfig>(json);
         }
 
-        private RecordCollection ImportFromWorkbook(XLWorkbook wb, ExcelExportConfig config, IOrganizationService targetService, BackgroundWorker worker = null)
+        private RecordCollection ImportFromWorkbook(XLWorkbook wb, ExcelExportConfig config, IOrganizationService targetService, BackgroundWorker worker = null, IPlanLookupResolver planLookupResolver = null)
         {
             _lookupResolutionCache = new Dictionary<string, Guid?>(StringComparer.OrdinalIgnoreCase);
             _matchKeyResolutionCache = new Dictionary<string, Guid?>(StringComparer.OrdinalIgnoreCase);
+            _planLookupResolver = planLookupResolver;
 
             ThrowIfCancelled(worker);
             if (!wb.Worksheets.Contains(DataSheetName))
@@ -986,7 +988,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 case "Lookup":
                     if (canResolveLookupFromKeys)
                     {
-                        if (targetRepo == null) throw new Exception("Target connection required for alternate key resolution.");
+                        if (targetRepo == null && _planLookupResolver == null) throw new Exception("Target connection or plan lookup context required for alternate key resolution.");
                         var keyValues = BuildLookupKeyValues(column, row, sheet, headerMap, altKeyGroups, targetRepo);
                         if (AllKeyValuesBlank(keyValues)) return null;
                         var resolvedId = ResolveByAlternateKeyCached(targetRepo, column.RelatedTable, keyValues);
@@ -1116,7 +1118,15 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             if (_lookupResolutionCache != null && _lookupResolutionCache.TryGetValue(cacheKey, out var cached))
                 return cached;
 
-            var resolvedId = targetRepo.ResolveByAlternateKey(logicalName, keyValues);
+            Guid? resolvedId = null;
+            var planResolution = _planLookupResolver?.ResolveByAlternateKey(logicalName, keyValues);
+            if (planResolution?.Status == PlanLookupResolutionStatus.Ambiguous)
+                throw new Exception(planResolution.Message);
+            if (planResolution?.Status == PlanLookupResolutionStatus.Found)
+                resolvedId = planResolution.Id;
+            else if (targetRepo != null)
+                resolvedId = targetRepo.ResolveByAlternateKey(logicalName, keyValues);
+
             if (_lookupResolutionCache != null)
                 _lookupResolutionCache[cacheKey] = resolvedId;
 

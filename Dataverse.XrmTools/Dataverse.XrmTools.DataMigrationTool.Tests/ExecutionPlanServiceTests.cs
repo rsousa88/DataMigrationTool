@@ -324,6 +324,25 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
         }
 
         [Fact]
+        public void CloneImportMatchKeySelection_ReturnsIndependentNormalizedCopy()
+        {
+            var selection = new ExcelImportMatchKeySelection
+            {
+                Mode = "Custom",
+                Fields = new List<string> { "accountnumber", "AccountNumber", null, "name" },
+                AlternateKeyName = "account_alt_key"
+            };
+
+            var clone = ExecutionPlanService.CloneImportMatchKeySelection(selection);
+            clone.Fields.Add("emailaddress1");
+
+            Assert.NotSame(selection, clone);
+            Assert.Equal("Custom", clone.Mode);
+            Assert.Equal(new[] { "accountnumber", "name", "emailaddress1" }, clone.Fields);
+            Assert.Equal(new[] { "accountnumber", "AccountNumber", null, "name" }, selection.Fields);
+        }
+
+        [Fact]
         public void CreateBaseStep_CapturesTableTargetAndSettingsProvenance()
         {
             var tableData = new TableData

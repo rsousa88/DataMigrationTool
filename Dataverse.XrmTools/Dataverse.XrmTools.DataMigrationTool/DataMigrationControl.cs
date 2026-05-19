@@ -1141,7 +1141,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     if (!ValidateActiveSettingsTable(preflight.Config?.Table?.LogicalName, "Excel file")) return;
                     if (!ConfirmLargeExcelImport(preflight.RowCount)) return;
 
-                    StartExcelImportRead(preflight.FilePath, targetEnvironment, preflight.Config);
+            StartExcelImportRead(preflight.FilePath, targetEnvironment, preflight.Config);
                 },
                 ProgressChanged = ReportWorkProgress
             });
@@ -1151,11 +1151,12 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             var operationId = BeginExcelImportOperation();
             var defaultImportSettings = BuildExcelImportSettings(GetDefaultImportSettings(Enums.Action.None), preflightConfig);
+            var planLookupResolver = BuildPlanLookupContextForPriorSteps(targetEnvironment, null);
             ManageWorkingState(true, "Reading Excel file...");
 
             WorkAsync(new WorkAsyncInfo
             {
-                AsyncArgument = new { path, operationId, defaultImportSettings },
+                AsyncArgument = new { path, operationId, defaultImportSettings, planLookupResolver },
                 IsCancelable = true,
                 Work = (worker, evt) =>
                 {
@@ -1164,6 +1165,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         dynamic args = evt.Argument;
                         string filePath = args.path;
                         var workbookDefaultImportSettings = args.defaultImportSettings as ExcelImportSettings;
+                        var resolver = args.planLookupResolver as IPlanLookupResolver;
                         worker.ReportProgress(0, "Excel import: reading workbook metadata...");
                         ThrowIfCancelled(worker);
                         var excelLogic = new Logic.ExcelLogic();
@@ -1181,7 +1183,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
                                 ThrowIfCancelled(worker);
                                 EnsureExcelImportSettings(importConfig, workbookDefaultImportSettings);
                                 ValidateActiveSettingsTable(importConfig?.Table?.LogicalName, "Excel file", promptUser: false);
-                            });
+                            },
+                            resolver);
                         ThrowIfCancelled(worker);
                         worker.ReportProgress(0, $"Excel import: read {collection?.Count ?? 0} records with {collection?.ImportErrors?.Count ?? 0} warning(s).");
 
@@ -1330,10 +1333,11 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private void ReloadExcelImportSession(string filePath, ExcelImportMatchKeySelection matchKey, TableData tableData, UiSettings uiSettings, DmtEnvironmentInfo targetEnvironment)
         {
             var operationId = BeginExcelImportOperation();
+            var planLookupResolver = BuildPlanLookupContextForPriorSteps(targetEnvironment, null);
             ManageWorkingState(true, "Reading Excel file...");
             WorkAsync(new WorkAsyncInfo
             {
-                AsyncArgument = new { filePath, matchKey, operationId },
+                AsyncArgument = new { filePath, matchKey, operationId, planLookupResolver },
                 IsCancelable = true,
                 Work = (worker, evt) =>
                 {
@@ -1343,6 +1347,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         string reloadFilePath = args.filePath;
                         var reloadOperationId = (int)args.operationId;
                         var reloadMatchKey = args.matchKey as ExcelImportMatchKeySelection;
+                        var resolver = args.planLookupResolver as IPlanLookupResolver;
                         var reloadDefaultImportSettings = BuildExcelImportSettings(uiSettings, null);
                         worker.ReportProgress(0, "Excel import: re-reading workbook metadata...");
                         ThrowIfCancelled(worker);
@@ -1364,7 +1369,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
                                 ApplyImportMatchKeySelection(importConfig, reloadMatchKey);
                                 ThrowIfCancelled(worker);
                                 worker.ReportProgress(0, $"Excel import: resolving rows using {importConfig.MatchKeyMode} match key...");
-                            });
+                            },
+                            resolver);
                         ThrowIfCancelled(worker);
                         worker.ReportProgress(0, $"Excel import: read {collection?.Count ?? 0} records with {collection?.ImportErrors?.Count ?? 0} warning(s).");
                         evt.Result = new ExcelImportSession { FilePath = reloadFilePath, SourceType = "Excel", Config = config, Collection = collection, OperationId = reloadOperationId, TargetEnvironment = targetEnvironment };

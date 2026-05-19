@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
   <metadata>
     <id>Dataverse.XrmTools.DataMigrationTool</id>
-    <version>2026.5.15.2</version>
+    <version>2026.5.19.1</version>
     <title>Data Migration Tool</title>
     <authors>Rui Sousa</authors>
     <owners>Rui Sousa</owners>
@@ -22,8 +22,12 @@
     </description>
     <summary>Migrate data between Dataverse instances</summary>
     <releaseNotes>
-		2026.5.15.x
-		- [FIX] Execution plan panel no longer throws a SplitContainer sizing error on startup
+		2026.5.19.x
+		- [NEW] Execution plan imports can resolve lookups against records imported by earlier steps in the same target environment
+		- [FIX] JSON execution-plan imports now persist and honor the selected match key during validation and execution
+		- [FIX] Excel execution-plan imports reapply the captured match key when the plan runs
+		- [NEW] Added tests for plan lookup resolution and import match-key snapshot persistence
+		- [FIX] Stability refactor moved more import/export and execution-plan logic out of the main plugin control for better maintainability
 		2026.5.15.x
 		- [NEW] Added execution plans with saved `.dmtplan.json` files, linked steps, validation, review, and unattended sequential execution
 		- [NEW] Added multi-target environment support so import steps can run against different connected target environments in one plan
@@ -34,6 +38,7 @@
 		- [FIX] File-based imports now require a target before previewing create/update counts
 		- [FIX] Importing files for a different table now selects the referenced table automatically
 		- [FIX] Startup and plan UI rendering were adjusted to reduce visible UI hangs
+		- [FIX] Execution plan panel no longer throws a SplitContainer sizing error on startup
 		2026.5.13.x
 		- [FIX] Excel imports now write generated record GUIDs and resolved lookup GUIDs back to newly-created workbook rows
 		- [FIX] Excel import preview now warns about supplied record GUIDs and skips duplicate record GUID rows

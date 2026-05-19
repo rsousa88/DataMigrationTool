@@ -64,6 +64,71 @@ namespace Dataverse.XrmTools.DataMigrationTool
             return new HashSet<Guid>(GetSuccessfulResultIdMap(resultItems).Keys);
         }
 
+        private PlanLookupContext BuildPlanLookupContextForPriorSteps(DmtEnvironmentInfo targetEnvironment, ExecutionPlanStep currentStep)
+        {
+            var context = new PlanLookupContext();
+            if (_executionPlan?.Steps == null)
+                return context;
+
+            foreach (var step in _executionPlan.Steps)
+            {
+                if (currentStep != null && string.Equals(step.Id, currentStep.Id, StringComparison.OrdinalIgnoreCase))
+                    break;
+                if (!step.Enabled || !(step.Operation ?? string.Empty).StartsWith("Import", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (!SameExecutionTarget(step.TargetEnvironment, targetEnvironment))
+                    continue;
+
+                context.AddRecordCollection(step.Snapshot?.RecordCollection);
+            }
+
+            return context;
+        }
+
+        private PlanLookupContext GetRuntimePlanLookupContext(Dictionary<string, PlanLookupContext> contexts, ExecutionPlanStep step)
+        {
+            if (contexts == null)
+                return null;
+
+            var key = GetExecutionTargetKey(step?.TargetEnvironment);
+            return contexts.TryGetValue(key, out var context)
+                ? context
+                : new PlanLookupContext();
+        }
+
+        private void AddImportedRecordsToPlanLookupContext(
+            Dictionary<string, PlanLookupContext> contexts,
+            ExecutionPlanStep step,
+            RecordCollection collection,
+            IDictionary<Guid, Guid> importedIdMap)
+        {
+            if (contexts == null || collection == null)
+                return;
+
+            var key = GetExecutionTargetKey(step?.TargetEnvironment);
+            if (!contexts.TryGetValue(key, out var context))
+            {
+                context = new PlanLookupContext();
+                contexts[key] = context;
+            }
+
+            context.AddRecordCollection(collection, importedIdMap);
+        }
+
+        private bool SameExecutionTarget(DmtEnvironmentInfo left, DmtEnvironmentInfo right)
+        {
+            return string.Equals(GetExecutionTargetKey(left), GetExecutionTargetKey(right), StringComparison.OrdinalIgnoreCase);
+        }
+
+        private string GetExecutionTargetKey(DmtEnvironmentInfo environment)
+        {
+            return environment?.UniqueName
+                ?? environment?.FriendlyName
+                ?? ActiveTargetClient?.ConnectedOrgUniqueName
+                ?? ActiveTargetClient?.ConnectedOrgFriendlyName
+                ?? string.Empty;
+        }
+
         private Dictionary<Guid, Guid> GetSuccessfulResultIdMap(IEnumerable<ListViewItem> resultItems)
         {
             return ExecutionResultService.GetSuccessfulIdMap((resultItems ?? Enumerable.Empty<ListViewItem>())

@@ -71,6 +71,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
         public List<Mapping> Mappings { get; set; } = new List<Mapping>();
         public ExcelExportConfig ExcelConfig { get; set; }
         public RecordCollection RecordCollection { get; set; }
+        public ExcelImportMatchKeySelection ImportMatchKeySelection { get; set; }
         public UiSettings ImportSettings { get; set; }
         public UiSettings ExportSettings { get; set; }
     }

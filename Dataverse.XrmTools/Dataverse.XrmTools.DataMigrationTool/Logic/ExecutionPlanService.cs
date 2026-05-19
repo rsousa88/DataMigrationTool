@@ -305,6 +305,17 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             return JsonConvert.DeserializeObject<ExcelExportConfig>(JsonConvert.SerializeObject(config));
         }
 
+        public static ExcelImportMatchKeySelection CloneImportMatchKeySelection(ExcelImportMatchKeySelection selection)
+        {
+            if (selection == null) return null;
+            return new ExcelImportMatchKeySelection
+            {
+                Mode = selection.Mode,
+                Fields = selection.Fields?.Where(f => !string.IsNullOrWhiteSpace(f)).Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? new List<string>(),
+                AlternateKeyName = selection.AlternateKeyName
+            };
+        }
+
         public static List<Mapping> CloneMappings(IEnumerable<Mapping> mappings)
         {
             return (mappings ?? Enumerable.Empty<Mapping>())

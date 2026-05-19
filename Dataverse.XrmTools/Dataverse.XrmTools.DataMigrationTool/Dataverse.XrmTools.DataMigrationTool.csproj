@@ -164,6 +164,7 @@
     <Compile Include="Logic\ImportPreviewService.cs" />
     <Compile Include="Logic\ImportWorkflowService.cs" />
     <Compile Include="Logic\MappingsLogic.cs" />
+    <Compile Include="Logic\PlanLookupContext.cs" />
     <Compile Include="Logic\RecordCollectionService.cs" />
     <Compile Include="Models\Attribute.cs" />
     <Compile Include="Models\CrmBulkResponse.cs" />
