@@ -99,7 +99,17 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private readonly List<ComboBox> _executionPlanRowTargetEditors = new List<ComboBox>();
         private TextBox _executionPlanMessages;
         private System.Windows.Forms.Label _executionPlanSummary;
-        private Button _executionPlanExecuteButton;
+        private ToolStripButton _executionPlanSaveButton;
+        private ToolStripButton _executionPlanSaveAsButton;
+        private ToolStripButton _executionPlanValidateButton;
+        private ToolStripButton _executionPlanExecuteButton;
+        private ToolStripButton _executionPlanPreviewStepButton;
+        private ToolStripButton _executionPlanConfigureStepButton;
+        private ToolStripButton _executionPlanExecuteStepButton;
+        private ToolStripButton _executionPlanMoveStepUpButton;
+        private ToolStripButton _executionPlanMoveStepDownButton;
+        private ToolStripButton _executionPlanRemoveStepButton;
+        private ContextMenuStrip _executionPlanStepContextMenu;
         private bool _suppressExecutionPlanStepChecked;
         private bool _suppressExecutionPlanInlineTargetChanged;
         private bool _executionPlanRowTargetRenderQueued;
@@ -1174,7 +1184,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         var target = targetEnvironment != null && _targetClients.TryGetValue(targetEnvironment.UniqueName, out CrmServiceClient selectedTarget)
                             ? selectedTarget
                             : ActiveTargetClient;
-                        var resolver = BuildPlanLookupContextForPriorSteps(targetEnvironment, null, worker, true, target);
+                        var requiredLookupTables = GetPlanLookupTablesRequiredByImportConfig(preflightConfig);
+                        var resolver = BuildPlanLookupContextForPriorSteps(targetEnvironment, null, worker, true, target, requiredLookupTables);
 
                         var collection = excelLogic.ImportFromExcel(
                             filePath,
@@ -1359,7 +1370,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         var target = targetEnvironment != null && _targetClients.TryGetValue(targetEnvironment.UniqueName, out CrmServiceClient selectedTarget)
                             ? selectedTarget
                             : ActiveTargetClient;
-                        var resolver = BuildPlanLookupContextForPriorSteps(targetEnvironment, null, worker, true, target);
+                        var requiredLookupTables = GetPlanLookupTablesRequiredByImportConfig(excelLogic.ReadMetadata(reloadFilePath));
+                        var resolver = BuildPlanLookupContextForPriorSteps(targetEnvironment, null, worker, true, target, requiredLookupTables);
                         var collection = excelLogic.ImportFromExcel(
                             reloadFilePath,
                             out ExcelExportConfig config,
@@ -2348,6 +2360,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
             tsmiPlanClose.Enabled = hasPlan;
             if (renderPanel)
                 RenderExecutionPlanPanel();
+            else
+                RenderExecutionPlanActionState();
         }
 
         private string GetDmtFileDisplayName(string filePath)

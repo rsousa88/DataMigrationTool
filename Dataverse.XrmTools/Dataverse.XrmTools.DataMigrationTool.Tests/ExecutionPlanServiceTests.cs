@@ -199,6 +199,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
             Assert.Equal(66.67m, result.FailedPercent);
             Assert.True(result.HasFailures);
             Assert.True(result.ShouldStopPlan);
+            Assert.Equal(new[] { "ERROR: bad row", "ERROR: other bad row" }, result.ErrorDetails);
             Assert.Contains("failure threshold reached", result.Summary);
         }
 

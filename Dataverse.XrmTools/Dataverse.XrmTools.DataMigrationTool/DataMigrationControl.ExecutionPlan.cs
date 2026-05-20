@@ -121,6 +121,35 @@ namespace Dataverse.XrmTools.DataMigrationTool
             SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Execution plan saved: {Path.GetFileName(_executionPlanFilePath)}"));
         }
 
+        private void SaveExecutionPlanAs()
+        {
+            if (_executionPlan == null)
+            {
+                CreateExecutionPlan();
+                return;
+            }
+
+            using (var dlg = new SaveFileDialog
+            {
+                Title = "Save execution plan as",
+                Filter = "DMT Execution Plan (*.dmtplan.json)|*.dmtplan.json",
+                DefaultExt = "dmtplan.json",
+                FileName = !string.IsNullOrWhiteSpace(_executionPlanFilePath)
+                    ? Path.GetFileName(_executionPlanFilePath)
+                    : GetDefaultSaveFileName(".dmtplan.json", "migration-plan")
+            })
+            {
+                if (!string.IsNullOrWhiteSpace(_executionPlanFilePath))
+                    dlg.InitialDirectory = Path.GetDirectoryName(_executionPlanFilePath);
+                if (dlg.ShowDialog(ParentForm) != DialogResult.OK) return;
+
+                _executionPlanFilePath = dlg.FileName;
+                ExecutionPlanFileService.Save(_executionPlanFilePath, _executionPlan);
+                RenderExecutionPlanMenu();
+                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Execution plan saved as: {Path.GetFileName(_executionPlanFilePath)}"));
+            }
+        }
+
         private void AutoSaveExecutionPlan(bool showStatus = false)
         {
             if (_executionPlan == null || string.IsNullOrWhiteSpace(_executionPlanFilePath)) return;
@@ -190,13 +219,14 @@ namespace Dataverse.XrmTools.DataMigrationTool
             var layout = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                RowCount = 4,
+                RowCount = 5,
                 ColumnCount = 1
             };
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 68F));
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 32F));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 74));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
 
             _executionPlanSummary = new System.Windows.Forms.Label
             {
@@ -219,6 +249,14 @@ namespace Dataverse.XrmTools.DataMigrationTool
             headerLayout.Controls.Add(_executionPlanSummary, 0, 0);
             headerLayout.Controls.Add(planMenuStrip, 1, 0);
 
+            var globalActions = CreateExecutionPlanToolStrip();
+            AddExecutionPlanToolStripButton(globalActions, "New", (s, e) => CreateExecutionPlan());
+            AddExecutionPlanToolStripButton(globalActions, "Load", (s, e) => LoadExecutionPlan());
+            _executionPlanSaveButton = AddExecutionPlanToolStripButton(globalActions, "Save", (s, e) => SaveExecutionPlan());
+            _executionPlanSaveAsButton = AddExecutionPlanToolStripButton(globalActions, "Save As", (s, e) => SaveExecutionPlanAs());
+            _executionPlanValidateButton = AddExecutionPlanToolStripButton(globalActions, "Validate", (s, e) => ValidateExecutionPlan());
+            _executionPlanExecuteButton = AddExecutionPlanToolStripButton(globalActions, "Execute Plan", (s, e) => ExecuteExecutionPlan());
+
             _executionPlanSteps = new ListView
             {
                 Dock = DockStyle.Fill,
@@ -233,14 +271,23 @@ namespace Dataverse.XrmTools.DataMigrationTool
             _executionPlanSteps.Columns.Add("Environment", 110);
             _executionPlanSteps.Columns.Add("Step", 190);
             _executionPlanSteps.Columns.Add("Input/Output", 180);
+            _executionPlanStepContextMenu = BuildExecutionPlanStepContextMenu();
+            _executionPlanSteps.ContextMenuStrip = _executionPlanStepContextMenu;
             _executionPlanSteps.ItemChecked += ExecutionPlanStepChecked;
             _executionPlanSteps.SelectedIndexChanged += (sender, args) =>
             {
                 SelectExecutionPlanStepContext();
                 RenderExecutionPlanRowTargetEditors();
                 RenderExecutionPlanMessages();
+                RenderExecutionPlanActionState();
             };
-            _executionPlanSteps.MouseClick += (sender, args) => RenderExecutionPlanRowTargetEditors();
+            _executionPlanSteps.MouseClick += (sender, args) =>
+            {
+                if (args.Button == MouseButtons.Right)
+                    SelectExecutionPlanStepAt(args.Location);
+                RenderExecutionPlanRowTargetEditors();
+                RenderExecutionPlanActionState();
+            };
             _executionPlanSteps.MouseWheel += (sender, args) => QueueRenderExecutionPlanRowTargetEditors();
             _executionPlanSteps.KeyDown += (sender, args) => QueueRenderExecutionPlanRowTargetEditors();
             _executionPlanSteps.Resize += (sender, args) =>
@@ -257,32 +304,20 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 ScrollBars = ScrollBars.Vertical
             };
 
-            var buttons = new TableLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                ColumnCount = 5,
-                RowCount = 2
-            };
-            for (var i = 0; i < 5; i++)
-                buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20F));
-            buttons.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
-            buttons.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
-
-            AddPlanPanelButton(buttons, "New", 0, 0, (s, e) => CreateExecutionPlan());
-            AddPlanPanelButton(buttons, "Load", 1, 0, (s, e) => LoadExecutionPlan());
-            AddPlanPanelButton(buttons, "Save", 2, 0, (s, e) => SaveExecutionPlan());
-            AddPlanPanelButton(buttons, "Validate", 3, 0, (s, e) => ValidateExecutionPlan());
-            AddPlanPanelButton(buttons, "Preview", 4, 0, (s, e) => PreviewSelectedExecutionPlanStep());
-            AddPlanPanelButton(buttons, "Up", 0, 1, (s, e) => MoveSelectedExecutionPlanStep(-1));
-            AddPlanPanelButton(buttons, "Down", 1, 1, (s, e) => MoveSelectedExecutionPlanStep(1));
-            AddPlanPanelButton(buttons, "Remove", 2, 1, (s, e) => RemoveSelectedExecutionPlanStep());
-            AddPlanPanelButton(buttons, "Configure", 3, 1, (s, e) => ReconfigureSelectedExecutionPlanStep());
-            _executionPlanExecuteButton = AddPlanPanelButton(buttons, "Execute", 4, 1, (s, e) => ExecuteExecutionPlan());
+            var stepActions = CreateExecutionPlanToolStrip();
+            _executionPlanPreviewStepButton = AddExecutionPlanToolStripButton(stepActions, "Preview", (s, e) => PreviewSelectedExecutionPlanStep());
+            _executionPlanConfigureStepButton = AddExecutionPlanToolStripButton(stepActions, "Configure", (s, e) => ReconfigureSelectedExecutionPlanStep());
+            _executionPlanExecuteStepButton = AddExecutionPlanToolStripButton(stepActions, "Execute Step", (s, e) => ExecuteSelectedExecutionPlanStep());
+            stepActions.Items.Add(new ToolStripSeparator());
+            _executionPlanMoveStepUpButton = AddExecutionPlanToolStripButton(stepActions, "Move Up", (s, e) => MoveSelectedExecutionPlanStep(-1));
+            _executionPlanMoveStepDownButton = AddExecutionPlanToolStripButton(stepActions, "Move Down", (s, e) => MoveSelectedExecutionPlanStep(1));
+            _executionPlanRemoveStepButton = AddExecutionPlanToolStripButton(stepActions, "Remove", (s, e) => RemoveSelectedExecutionPlanStep());
 
             layout.Controls.Add(headerLayout, 0, 0);
-            layout.Controls.Add(_executionPlanSteps, 0, 1);
-            layout.Controls.Add(_executionPlanMessages, 0, 2);
-            layout.Controls.Add(buttons, 0, 3);
+            layout.Controls.Add(globalActions, 0, 1);
+            layout.Controls.Add(_executionPlanSteps, 0, 2);
+            layout.Controls.Add(_executionPlanMessages, 0, 3);
+            layout.Controls.Add(stepActions, 0, 4);
             _executionPlanGroup.Controls.Add(layout);
 
             _executionPlanSplitContainer.Panel2.Controls.Add(_executionPlanGroup);
@@ -342,17 +377,56 @@ namespace Dataverse.XrmTools.DataMigrationTool
             _executionPlanSteps.Columns[4].Width = Math.Max(90, width - _executionPlanSteps.Columns[0].Width - _executionPlanSteps.Columns[1].Width - _executionPlanSteps.Columns[2].Width - _executionPlanSteps.Columns[3].Width);
         }
 
-        private Button AddPlanPanelButton(TableLayoutPanel panel, string text, int column, int row, EventHandler click)
+        private ToolStrip CreateExecutionPlanToolStrip()
         {
-            var button = new Button
+            return new ToolStrip
             {
-                Text = text,
                 Dock = DockStyle.Fill,
-                Margin = new Padding(2)
+                GripStyle = ToolStripGripStyle.Hidden,
+                RenderMode = ToolStripRenderMode.System,
+                Padding = new Padding(0),
+                Stretch = true
+            };
+        }
+
+        private ToolStripButton AddExecutionPlanToolStripButton(ToolStrip strip, string text, EventHandler click)
+        {
+            var button = new ToolStripButton(text)
+            {
+                DisplayStyle = ToolStripItemDisplayStyle.Text,
+                AutoSize = true
             };
             button.Click += click;
-            panel.Controls.Add(button, column, row);
+            strip.Items.Add(button);
             return button;
+        }
+
+        private ContextMenuStrip BuildExecutionPlanStepContextMenu()
+        {
+            var menu = new ContextMenuStrip();
+            menu.Items.Add("Preview", null, (s, e) => PreviewSelectedExecutionPlanStep());
+            menu.Items.Add("Configure", null, (s, e) => ReconfigureSelectedExecutionPlanStep());
+            menu.Items.Add("Execute Step", null, (s, e) => ExecuteSelectedExecutionPlanStep());
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add("Move Up", null, (s, e) => MoveSelectedExecutionPlanStep(-1));
+            menu.Items.Add("Move Down", null, (s, e) => MoveSelectedExecutionPlanStep(1));
+            menu.Items.Add("Remove", null, (s, e) => RemoveSelectedExecutionPlanStep());
+            menu.Opening += (s, e) =>
+            {
+                RenderExecutionPlanActionState();
+                e.Cancel = GetSelectedExecutionPlanStep() == null;
+            };
+            return menu;
+        }
+
+        private void SelectExecutionPlanStepAt(Point location)
+        {
+            if (_executionPlanSteps == null) return;
+            var item = _executionPlanSteps.GetItemAt(location.X, location.Y);
+            if (item == null) return;
+
+            item.Selected = true;
+            item.Focused = true;
         }
 
         private sealed class ExecutionPlanTargetOption
@@ -720,10 +794,88 @@ namespace Dataverse.XrmTools.DataMigrationTool
             _executionPlanSummary.Text = hasPlan
                 ? $"{_executionPlan.Steps.Count} step(s), {errors} error(s), {warnings} warning(s)"
                 : "No active plan";
-            if (_executionPlanExecuteButton != null)
-                _executionPlanExecuteButton.Enabled = CanExecuteValidatedExecutionPlan();
+            RenderExecutionPlanActionState();
             RenderExecutionPlanRowTargetEditors();
             RenderExecutionPlanMessages();
+        }
+
+        private void RenderExecutionPlanActionState()
+        {
+            var hasPlan = _executionPlan != null && !string.IsNullOrWhiteSpace(_executionPlanFilePath);
+            var selectedStep = GetSelectedExecutionPlanStep();
+            var selectedIndex = selectedStep == null || _executionPlan?.Steps == null
+                ? -1
+                : _executionPlan.Steps.FindIndex(s => string.Equals(s.Id, selectedStep.Id, StringComparison.OrdinalIgnoreCase));
+            var hasSelectedStep = selectedStep != null && selectedIndex >= 0;
+            var canMoveUp = hasSelectedStep && selectedIndex > 0 && ExecutionPlanService.CanMoveStep(_executionPlan, selectedStep, selectedIndex - 1, out _);
+            var canMoveDown = hasSelectedStep && selectedIndex < _executionPlan.Steps.Count - 1 && ExecutionPlanService.CanMoveStep(_executionPlan, selectedStep, selectedIndex + 1, out _);
+            var canPreviewStep = CanPreviewSelectedExecutionPlanStep(selectedStep);
+            var canExecuteStep = CanExecuteSelectedExecutionPlanStep(selectedStep);
+
+            if (_executionPlanSaveButton != null) _executionPlanSaveButton.Enabled = hasPlan;
+            if (_executionPlanSaveAsButton != null) _executionPlanSaveAsButton.Enabled = _executionPlan != null;
+            if (_executionPlanValidateButton != null) _executionPlanValidateButton.Enabled = hasPlan;
+            if (_executionPlanExecuteButton != null) _executionPlanExecuteButton.Enabled = CanExecuteValidatedExecutionPlan();
+
+            if (_executionPlanPreviewStepButton != null) _executionPlanPreviewStepButton.Enabled = canPreviewStep;
+            if (_executionPlanConfigureStepButton != null) _executionPlanConfigureStepButton.Enabled = canPreviewStep && (selectedStep.Operation ?? string.Empty).StartsWith("Import", StringComparison.OrdinalIgnoreCase);
+            if (_executionPlanExecuteStepButton != null) _executionPlanExecuteStepButton.Enabled = canExecuteStep;
+            if (_executionPlanMoveStepUpButton != null) _executionPlanMoveStepUpButton.Enabled = canMoveUp;
+            if (_executionPlanMoveStepDownButton != null) _executionPlanMoveStepDownButton.Enabled = canMoveDown;
+            if (_executionPlanRemoveStepButton != null) _executionPlanRemoveStepButton.Enabled = hasSelectedStep;
+
+            if (_executionPlanStepContextMenu != null)
+            {
+                SetContextMenuItemEnabled("Preview", canPreviewStep);
+                SetContextMenuItemEnabled("Configure", _executionPlanConfigureStepButton?.Enabled == true);
+                SetContextMenuItemEnabled("Execute Step", canExecuteStep);
+                SetContextMenuItemEnabled("Move Up", canMoveUp);
+                SetContextMenuItemEnabled("Move Down", canMoveDown);
+                SetContextMenuItemEnabled("Remove", hasSelectedStep);
+            }
+        }
+
+        private void SetContextMenuItemEnabled(string text, bool enabled)
+        {
+            var item = _executionPlanStepContextMenu?.Items
+                .Cast<ToolStripItem>()
+                .FirstOrDefault(menuItem => string.Equals(menuItem.Text, text, StringComparison.OrdinalIgnoreCase));
+            if (item != null)
+                item.Enabled = enabled;
+        }
+
+        private bool CanExecuteSelectedExecutionPlanStep(ExecutionPlanStep step)
+        {
+            if (_executionPlan == null || step == null || _working)
+                return false;
+            if (string.Equals(step.Validation?.Status, "Error", StringComparison.OrdinalIgnoreCase))
+                return false;
+            if (!ExecutionPlanService.TryValidateTargetConnection(step, _targetClients.Keys, _targetClient != null, out _))
+                return false;
+            if ((step.Operation ?? string.Empty).StartsWith("Import", StringComparison.OrdinalIgnoreCase))
+            {
+                var stepIndex = _executionPlan.Steps.FindIndex(s => string.Equals(s.Id, step.Id, StringComparison.OrdinalIgnoreCase)) + 1;
+                var path = ResolveExecutionStepPath(step, stepIndex);
+                return !string.IsNullOrWhiteSpace(path) && File.Exists(path);
+            }
+
+            return true;
+        }
+
+        private bool CanPreviewSelectedExecutionPlanStep(ExecutionPlanStep step)
+        {
+            if (_executionPlan == null || step == null || _working)
+                return false;
+            if (!ExecutionPlanService.TryValidateTargetConnection(step, _targetClients.Keys, _targetClient != null, out _))
+                return false;
+            if ((step.Operation ?? string.Empty).StartsWith("Import", StringComparison.OrdinalIgnoreCase))
+            {
+                var stepIndex = _executionPlan.Steps.FindIndex(s => string.Equals(s.Id, step.Id, StringComparison.OrdinalIgnoreCase)) + 1;
+                var path = ResolveExecutionStepPath(step, stepIndex);
+                return !string.IsNullOrWhiteSpace(path) && File.Exists(path);
+            }
+
+            return true;
         }
 
         private bool CanExecuteValidatedExecutionPlan()
@@ -1077,6 +1229,36 @@ namespace Dataverse.XrmTools.DataMigrationTool
             ConfirmAndStartExecutionPlanRun();
         }
 
+        private void ExecuteSelectedExecutionPlanStep()
+        {
+            if (!EnsureExecutionPlanLoaded()) return;
+
+            var step = GetSelectedExecutionPlanStep();
+            if (step == null)
+            {
+                MessageBox.Show("Select a step to execute.", "Execution Plan", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (!CanExecuteSelectedExecutionPlanStep(step))
+            {
+                MessageBox.Show("The selected step cannot be executed yet. Check its validation status, target connection, and input/output path.", "Execution Plan", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (string.Equals(step.Validation?.Status, "Warning", StringComparison.OrdinalIgnoreCase))
+            {
+                var proceed = MessageBox.Show(
+                    $"Selected step has warning(s). Execute '{step.Name}' anyway?",
+                    "Execution Plan",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning);
+                if (proceed != DialogResult.Yes) return;
+            }
+
+            StartExecutionPlanSingleStepRun(step);
+        }
+
         private void ConfirmAndStartExecutionPlanRun()
         {
             var errors = _executionPlan.Steps.Count(s => s.Enabled && string.Equals(s.Validation?.Status, "Error", StringComparison.OrdinalIgnoreCase));
@@ -1158,6 +1340,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         {
                             stepLog.Status = "Failed";
                             stepLog.Error = ex.Message;
+                            stepLog.ErrorDetails = new List<string> { ex.Message };
                             stepLog.Summary = $"{step.Name}: failed - {ex.Message}";
                             failedStepIds.Add(step.Id);
                             runLog.Steps.Add(stepLog);
@@ -1197,6 +1380,106 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 },
                 ProgressChanged = ReportWorkProgress
             });
+        }
+
+        private void StartExecutionPlanSingleStepRun(ExecutionPlanStep selectedStep)
+        {
+            ManageWorkingState(true, $"Executing {selectedStep.Name}...");
+            WorkAsync(new WorkAsyncInfo
+            {
+                AsyncArgument = selectedStep,
+                IsCancelable = false,
+                Work = (worker, evt) =>
+                {
+                    var step = evt.Argument as ExecutionPlanStep;
+                    var stepIndex = _executionPlan.Steps.FindIndex(s => string.Equals(s.Id, step.Id, StringComparison.OrdinalIgnoreCase)) + 1;
+                    var runLog = ExecutionPlanService.CreateRunLog(
+                        _executionPlan,
+                        _executionPlanFilePath,
+                        new DmtEnvironmentInfo
+                        {
+                            UniqueName = _sourceClient?.ConnectedOrgUniqueName,
+                            FriendlyName = _sourceClient?.ConnectedOrgFriendlyName
+                        },
+                        new DmtEnvironmentInfo
+                        {
+                            UniqueName = ActiveTargetClient?.ConnectedOrgUniqueName,
+                            FriendlyName = ActiveTargetClient?.ConnectedOrgFriendlyName
+                        },
+                        GetLoadedTargetEnvironments());
+                    var stepLog = ExecutionPlanService.CreateRunStepLog(_executionPlan, step, stepIndex, CreateExecutionPlanPathContext());
+                    var runtimeLookupContexts = BuildSingleStepRuntimeLookupContexts(step, stepIndex, worker);
+
+                    try
+                    {
+                        worker.ReportProgress(0, $"Execution plan: running selected step {stepIndex} - {step.Name}...");
+                        if (!TrySetExecutionTargetOverride(step, out var targetError))
+                            throw new Exception(targetError);
+
+                        var result = ExecuteExecutionPlanStep(step, stepIndex, worker, runtimeLookupContexts);
+                        ExecutionPlanService.ApplyExecutionResultToLog(stepLog, result);
+                    }
+                    catch (Exception ex)
+                    {
+                        stepLog.Status = "Failed";
+                        stepLog.Error = ex.Message;
+                        stepLog.ErrorDetails = new List<string> { ex.Message };
+                        stepLog.Summary = $"{step.Name}: failed - {ex.Message}";
+                    }
+                    finally
+                    {
+                        ClearExecutionTargetOverride();
+                    }
+
+                    runLog.Steps.Add(stepLog);
+                    runLog.CompletedOn = DateTime.UtcNow;
+                    evt.Result = runLog;
+                },
+                PostWorkCallBack = evt =>
+                {
+                    ManageWorkingState(false);
+                    if (evt.Error != null)
+                    {
+                        _logger.Log(LogLevel.ERROR, evt.Error.ToString());
+                        MessageBox.Show(evt.Error.Message, "Execution Plan", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+
+                    var runLog = evt.Result as ExecutionPlanRunLog;
+                    if (runLog != null)
+                    {
+                        SaveExecutionPlanRunLog(runLog);
+                        using (var dlg = new ExecutionPlanResultsDialog(runLog))
+                            dlg.ShowDialog(ParentForm);
+                    }
+                    SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Execution plan step complete"));
+                    ReRenderComponents(true);
+                },
+                ProgressChanged = ReportWorkProgress
+            });
+        }
+
+        private Dictionary<string, PlanLookupContext> BuildSingleStepRuntimeLookupContexts(ExecutionPlanStep step, int stepIndex, BackgroundWorker worker)
+        {
+            var contexts = new Dictionary<string, PlanLookupContext>(StringComparer.OrdinalIgnoreCase);
+            if (step == null || !(step.Operation ?? string.Empty).StartsWith("Import", StringComparison.OrdinalIgnoreCase))
+                return contexts;
+
+            ISet<string> requiredLookupTables = null;
+            if (string.Equals(step.Operation, "ImportFromExcel", StringComparison.OrdinalIgnoreCase))
+            {
+                var path = ResolveExecutionStepPath(step, stepIndex);
+                var excelLogic = new Logic.ExcelLogic();
+                var lookupConfig = step.Snapshot?.ExcelConfig ?? (!string.IsNullOrWhiteSpace(path) && File.Exists(path) ? excelLogic.ReadMetadata(path) : null);
+                requiredLookupTables = GetPlanLookupTablesRequiredByImportConfig(lookupConfig);
+            }
+
+            var target = step.TargetEnvironment != null && _targetClients.TryGetValue(step.TargetEnvironment.UniqueName, out var selectedTarget)
+                ? selectedTarget
+                : ActiveTargetClient;
+            var context = BuildPlanLookupContextForPriorSteps(step.TargetEnvironment, step, worker, true, target, requiredLookupTables);
+            contexts[GetExecutionTargetKey(step.TargetEnvironment)] = context;
+            return contexts;
         }
 
         private ExecutionPlanStepExecutionResult ExecuteExecutionPlanStep(
@@ -1445,7 +1728,9 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (string.Equals(step.Operation, "ImportFromExcel", StringComparison.OrdinalIgnoreCase))
             {
                 var excelLogic = new Logic.ExcelLogic();
-                var planLookupResolver = BuildPlanLookupContextForPriorSteps(step.TargetEnvironment, step, worker, true);
+                var lookupConfig = step.Snapshot?.ExcelConfig ?? excelLogic.ReadMetadata(path);
+                var requiredLookupTables = GetPlanLookupTablesRequiredByImportConfig(lookupConfig);
+                var planLookupResolver = BuildPlanLookupContextForPriorSteps(step.TargetEnvironment, step, worker, true, null, requiredLookupTables);
                 var collection = excelLogic.ImportFromExcel(
                     path,
                     out ExcelExportConfig config,

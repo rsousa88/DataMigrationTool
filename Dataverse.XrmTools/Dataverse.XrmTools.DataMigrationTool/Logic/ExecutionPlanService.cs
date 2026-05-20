@@ -172,11 +172,22 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
         public static ExecutionPlanStepExecutionResult BuildExecutionStepResult(ExecutionPlan plan, ExecutionPlanStep step, string action, IEnumerable<string> resultDescriptions)
         {
             var descriptions = (resultDescriptions ?? Enumerable.Empty<string>()).ToList();
-            var failed = descriptions.Count(IsFailedResultDescription);
-            return BuildExecutionStepResult(plan, step, action, descriptions.Count, failed);
+            var failedDescriptions = descriptions.Where(IsFailedResultDescription).ToList();
+            return BuildExecutionStepResult(plan, step, action, descriptions.Count, failedDescriptions.Count, failedDescriptions);
         }
 
         public static ExecutionPlanStepExecutionResult BuildExecutionStepResult(ExecutionPlan plan, ExecutionPlanStep step, string action, int total, int failed)
+        {
+            return BuildExecutionStepResult(plan, step, action, total, failed, Enumerable.Empty<string>());
+        }
+
+        public static ExecutionPlanStepExecutionResult BuildExecutionStepResult(
+            ExecutionPlan plan,
+            ExecutionPlanStep step,
+            string action,
+            int total,
+            int failed,
+            IEnumerable<string> errorDetails)
         {
             var percent = GetFailedPercent(failed, total);
             var thresholdHit = HasReachedFailureThreshold(plan, step, failed, total);
@@ -187,6 +198,9 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 FailedPercent = percent,
                 HasFailures = failed > 0,
                 ShouldStopPlan = thresholdHit,
+                ErrorDetails = (errorDetails ?? Enumerable.Empty<string>())
+                    .Where(error => !string.IsNullOrWhiteSpace(error))
+                    .ToList(),
                 Summary = thresholdHit
                     ? $"{step?.Name}: {action} with {failed}/{total} failed record(s); failure threshold reached, plan stopped."
                     : $"{step?.Name}: {action} ({total} result row(s), {failed} failed)"
@@ -244,6 +258,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             stepLog.TotalRecords = result.TotalRecords;
             stepLog.FailedRecords = result.FailedRecords;
             stepLog.FailedPercent = result.FailedPercent;
+            stepLog.ErrorDetails = result.ErrorDetails ?? new List<string>();
             stepLog.Status = result.ShouldStopPlan ? "Failed" : result.HasFailures ? "Warning" : "Success";
         }
 

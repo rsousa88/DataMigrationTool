@@ -131,12 +131,20 @@ Mappings are stored in `.dmt.json` settings files and can be reviewed from the *
 
 ## Release Notes
 
+### 2026.5.20.x
+- [NEW] Execution plan steps can now be executed manually from the selected step actions
+- [NEW] Execution plan step actions are available from a right-click context menu
+- [NEW] Added Save As to execution plan actions
+- [FIX] Execution plan actions are now grouped into global and step-specific toolbars with state-aware enablement
+- [FIX] Execution plan results now use the standard dialog style and show per-step error details with copy support
+
 ### 2026.5.19.x
 - [NEW] Execution plan imports can resolve lookups against records imported by earlier steps in the same target environment
 - [NEW] Execution plan steps can now be previewed individually and reconfigured before execution, including import settings, match keys, mappings, and file columns
 - [FIX] Whole-plan validation now avoids expensive full Excel preview reads and uses lightweight workbook metadata for large files
 - [FIX] Step preview now hydrates prior import files when needed so chained lookup dependencies are considered before execution
 - [FIX] Adding or reloading Excel import steps now hydrates prior plan imports so lookup dependencies are resolved before the step is added
+- [FIX] Excel import setup and step preview now only read prior import files required for lookup matching instead of every previous Excel import
 - [FIX] Selecting an execution plan step now selects the referenced table and loads its captured settings file or plan snapshot
 - [FIX] JSON and Excel execution-plan imports now persist and honor the captured match key during validation and execution
 - [FIX] Loaded execution plans now hydrate table attributes before validation and import preview, preventing null-source validation errors

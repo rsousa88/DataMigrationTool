@@ -75,7 +75,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
             ExecutionPlanStep currentStep,
             BackgroundWorker worker,
             bool hydrateMissingCollections,
-            IOrganizationService targetService = null)
+            IOrganizationService targetService = null,
+            ISet<string> requiredLookupTables = null)
         {
             var context = new PlanLookupContext();
             if (_executionPlan?.Steps == null)
@@ -91,6 +92,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     continue;
                 if (!SameExecutionTarget(step.TargetEnvironment, targetEnvironment))
                     continue;
+                if (!IsPlanLookupStepRequired(step, requiredLookupTables))
+                    continue;
 
                 var collection = step.Snapshot?.RecordCollection;
                 if (collection == null && hydrateMissingCollections)
@@ -100,6 +103,40 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
 
             return context;
+        }
+
+        private bool IsPlanLookupStepRequired(ExecutionPlanStep step, ISet<string> requiredLookupTables)
+        {
+            if (requiredLookupTables == null)
+                return true;
+            if (!requiredLookupTables.Any())
+                return false;
+
+            var logicalName = step?.Snapshot?.RecordCollection?.LogicalName ?? step?.Table?.LogicalName;
+            return !string.IsNullOrWhiteSpace(logicalName) && requiredLookupTables.Contains(logicalName);
+        }
+
+        private HashSet<string> GetPlanLookupTablesRequiredByImportConfig(ExcelExportConfig config)
+        {
+            var requiredTables = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (config?.Columns == null)
+                return requiredTables;
+
+            foreach (var column in config.Columns)
+            {
+                var isLookupColumn = string.Equals(column.Type, "Lookup", StringComparison.OrdinalIgnoreCase);
+                var isLookupKeyField = string.Equals(column.Type, "LookupKeyField", StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(column.KeyFieldType, "Lookup", StringComparison.OrdinalIgnoreCase);
+
+                if ((isLookupColumn || isLookupKeyField)
+                    && !string.Equals(column.Resolution, "Guid", StringComparison.OrdinalIgnoreCase)
+                    && !string.IsNullOrWhiteSpace(column.RelatedTable))
+                {
+                    requiredTables.Add(column.RelatedTable);
+                }
+            }
+
+            return requiredTables;
         }
 
         private RecordCollection TryLoadExecutionPlanImportCollectionForLookupContext(

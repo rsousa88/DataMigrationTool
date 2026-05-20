@@ -137,6 +137,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
         public decimal FailedPercent { get; set; }
         public string Summary { get; set; }
         public string Error { get; set; }
+        public List<string> ErrorDetails { get; set; } = new List<string>();
     }
 
     public class ExecutionPlanStepExecutionResult
@@ -147,5 +148,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
         public decimal FailedPercent { get; set; }
         public bool HasFailures { get; set; }
         public bool ShouldStopPlan { get; set; }
+        public List<string> ErrorDetails { get; set; } = new List<string>();
     }
 }
