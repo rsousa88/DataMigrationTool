@@ -1472,6 +1472,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 var excelLogic = new Logic.ExcelLogic();
                 var lookupConfig = step.Snapshot?.ExcelConfig ?? (!string.IsNullOrWhiteSpace(path) && File.Exists(path) ? excelLogic.ReadMetadata(path) : null);
                 requiredLookupTables = GetPlanLookupTablesRequiredByImportConfig(lookupConfig);
+                AddCurrentTableForImportMatchContext(step, lookupConfig, requiredLookupTables);
             }
 
             var target = step.TargetEnvironment != null && _targetClients.TryGetValue(step.TargetEnvironment.UniqueName, out var selectedTarget)
@@ -1542,8 +1543,9 @@ namespace Dataverse.XrmTools.DataMigrationTool
                             }
                             ApplyImportMatchKeySelection(importConfig, step.Snapshot?.ImportMatchKeySelection);
                             EnsureExcelImportSettings(importConfig, BuildExcelImportSettings(step.Snapshot.ImportSettings, importConfig));
-                        },
-                        planLookupResolver);
+                    },
+                    planLookupResolver);
+                    ApplyPlanGuidMatches(collection, tableData, planLookupResolver);
                     var logic = new DataLogic(worker, _sourceClient, ActiveTargetClient);
                     var result = logic.Import(tableData, collection, step.Snapshot.ImportSettings ?? GetDefaultImportSettings(config, Enums.Action.None), step.Snapshot.Mappings, false);
                     if (result != null && config != null)
@@ -1730,6 +1732,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 var excelLogic = new Logic.ExcelLogic();
                 var lookupConfig = step.Snapshot?.ExcelConfig ?? excelLogic.ReadMetadata(path);
                 var requiredLookupTables = GetPlanLookupTablesRequiredByImportConfig(lookupConfig);
+                AddCurrentTableForImportMatchContext(step, lookupConfig, requiredLookupTables);
                 var planLookupResolver = BuildPlanLookupContextForPriorSteps(step.TargetEnvironment, step, worker, true, null, requiredLookupTables);
                 var collection = excelLogic.ImportFromExcel(
                     path,
@@ -1750,7 +1753,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         EnsureExcelImportSettings(importConfig, BuildExcelImportSettings(step.Snapshot.ImportSettings, importConfig));
                     },
                     planLookupResolver);
-                return BuildExcelImportPreview(tableData, collection, config, step.Snapshot.ImportSettings ?? GetDefaultImportSettings(config, Enums.Action.None), path);
+                ApplyPlanGuidMatches(collection, tableData, planLookupResolver);
+                return BuildExcelImportPreview(tableData, collection, config, step.Snapshot.ImportSettings ?? GetDefaultImportSettings(config, Enums.Action.None), path, planLookupResolver);
             }
 
             var json = File.ReadAllText(path);
@@ -1758,6 +1762,44 @@ namespace Dataverse.XrmTools.DataMigrationTool
             ImportFileDataChecks(collectionFromJson);
             ApplyJsonImportMatchKeySelection(collectionFromJson, tableData, step.Snapshot?.ImportMatchKeySelection);
             return BuildExcelImportPreview(tableData, collectionFromJson, null, step.Snapshot.ImportSettings ?? GetDefaultImportSettings(Enums.Action.None), path);
+        }
+
+        private void AddCurrentTableForImportMatchContext(ExecutionPlanStep step, ExcelExportConfig config, ISet<string> requiredTables)
+        {
+            if (step == null || requiredTables == null)
+                return;
+
+            var logicalName = step.Snapshot?.RecordCollection?.LogicalName ?? step.Table?.LogicalName ?? config?.Table?.LogicalName;
+            if (!string.IsNullOrWhiteSpace(logicalName))
+                requiredTables.Add(logicalName);
+        }
+
+        private void ApplyPlanGuidMatches(RecordCollection collection, TableData tableData, IPlanLookupResolver planLookupResolver)
+        {
+            if (collection?.Records == null || tableData == null || planLookupResolver == null)
+                return;
+            if (!string.Equals(collection.ImportMatchKeyMode, "Guid", StringComparison.OrdinalIgnoreCase)
+                && collection.ImportMatchKeys?.Any() == true)
+                return;
+
+            var logicalName = collection.LogicalName ?? tableData.Table?.LogicalName;
+            var primaryIdAttribute = collection.PrimaryIdAttribute ?? tableData.Table?.IdAttribute;
+            if (string.IsNullOrWhiteSpace(logicalName) || string.IsNullOrWhiteSpace(primaryIdAttribute))
+                return;
+
+            foreach (var record in collection.Records)
+            {
+                var attributes = record.Attributes?.ToList() ?? new List<RecordAttribute>();
+                if (!TryGetRecordId(record, primaryIdAttribute, out var sourceId))
+                    continue;
+
+                var targetId = planLookupResolver.ResolveBySourceId(logicalName, sourceId);
+                if (!targetId.HasValue || targetId.Value == Guid.Empty || targetId.Value == sourceId)
+                    continue;
+
+                ImportPreviewService.SetRecordPrimaryId(primaryIdAttribute, targetId.Value, attributes);
+                record.Attributes = attributes;
+            }
         }
 
         private ExecutionPlanPreviewSummary EstimateLinkedImportPreview(ExecutionPlanStep importStep, BackgroundWorker worker)

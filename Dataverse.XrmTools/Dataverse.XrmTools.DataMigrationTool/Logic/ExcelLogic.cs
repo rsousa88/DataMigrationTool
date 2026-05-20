@@ -689,6 +689,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     continue;
                 }
 
+                var originalPrimaryId = GetRecordGuid(attributes, config.Table.PrimaryIdAttribute);
+
                 if (GetMatchKeys(config).Any())
                 {
                     try
@@ -708,7 +710,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
                 EnsurePrimaryIdAttribute(config.Table.PrimaryIdAttribute, attributes);
 
-                records.Add(new Record { SourceRowNumber = row, PrimaryIdWasBlank = primaryGuidWasBlank, Attributes = attributes });
+                records.Add(new Record { SourceRowNumber = row, PrimaryIdWasBlank = primaryGuidWasBlank, OriginalPrimaryId = originalPrimaryId, Attributes = attributes });
             }
 
             return new RecordCollection
@@ -827,7 +829,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
         private void ApplyMatchKey(ExcelExportConfig config, List<RecordAttribute> attributes, CrmRepo targetRepo)
         {
-            if (targetRepo == null) throw new Exception("Target connection required for match key resolution.");
+            if (targetRepo == null && _planLookupResolver == null)
+                throw new Exception("Target connection or plan lookup context required for match key resolution.");
 
             var keyValues = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
             foreach (var key in GetMatchKeys(config))
@@ -1139,8 +1142,15 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             if (_matchKeyResolutionCache != null && _matchKeyResolutionCache.TryGetValue(cacheKey, out var cached))
                 return cached;
 
-            var target = targetRepo.FindByFieldValues(logicalName, keyValues);
-            var resolvedId = target?.Id;
+            Guid? resolvedId = null;
+            var planResolution = _planLookupResolver?.ResolveByAlternateKey(logicalName, keyValues);
+            if (planResolution?.Status == PlanLookupResolutionStatus.Ambiguous)
+                throw new Exception(planResolution.Message);
+            if (planResolution?.Status == PlanLookupResolutionStatus.Found)
+                resolvedId = planResolution.Id;
+            else if (targetRepo != null)
+                resolvedId = targetRepo.FindByFieldValues(logicalName, keyValues)?.Id;
+
             if (_matchKeyResolutionCache != null)
                 _matchKeyResolutionCache[cacheKey] = resolvedId;
 

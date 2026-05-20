@@ -281,7 +281,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 throw new OperationCanceledException();
         }
 
-        private ExcelImportPreview BuildExcelImportPreview(TableData tableData, RecordCollection collection, ExcelExportConfig config, UiSettings uiSettings, string filePath)
+        private ExcelImportPreview BuildExcelImportPreview(TableData tableData, RecordCollection collection, ExcelExportConfig config, UiSettings uiSettings, string filePath, IPlanLookupResolver planLookupResolver = null)
         {
             return ImportPreviewService.BuildPreview(new ExcelImportPreviewRequest
             {
@@ -292,8 +292,34 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 FilePath = filePath,
                 TargetName = ActiveTargetInstance?.FriendlyName ?? string.Empty,
                 MappingCount = BuildMappingsForImport(uiSettings).Count,
-                ExistingTargetIdsProvider = sourceIds => GetExistingTargetIds(tableData.Table.LogicalName, tableData.Table.IdAttribute, sourceIds, uiSettings.BatchSize)
+                ExistingTargetIdsProvider = sourceIds => GetExistingTargetIdsIncludingPlanMatches(
+                    tableData.Table.LogicalName,
+                    tableData.Table.IdAttribute,
+                    sourceIds,
+                    uiSettings.BatchSize,
+                    planLookupResolver)
             });
+        }
+
+        private ISet<Guid> GetExistingTargetIdsIncludingPlanMatches(
+            string logicalName,
+            string idAttribute,
+            IEnumerable<Guid> sourceIds,
+            int batchSize,
+            IPlanLookupResolver planLookupResolver)
+        {
+            var ids = sourceIds?.Distinct().ToList() ?? new List<Guid>();
+            var existing = GetExistingTargetIds(logicalName, idAttribute, ids, batchSize);
+            if (planLookupResolver == null) return existing;
+
+            foreach (var id in ids)
+            {
+                var planMatch = planLookupResolver.ResolveBySourceId(logicalName, id);
+                if (planMatch.HasValue && planMatch.Value != Guid.Empty)
+                    existing.Add(planMatch.Value);
+            }
+
+            return existing;
         }
 
         private void ApplyImportMatchKeySelection(ExcelExportConfig config, ExcelImportMatchKeySelection selection)

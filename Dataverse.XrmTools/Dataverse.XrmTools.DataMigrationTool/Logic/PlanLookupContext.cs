@@ -43,12 +43,15 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
     public interface IPlanLookupResolver
     {
         PlanLookupResolution ResolveByAlternateKey(string logicalName, IDictionary<string, object> keyValues);
+        Guid? ResolveBySourceId(string logicalName, Guid sourceId);
     }
 
     public class PlanLookupContext : IPlanLookupResolver
     {
         private readonly Dictionary<string, List<PlanLookupRecord>> _recordsByTable =
             new Dictionary<string, List<PlanLookupRecord>>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, Dictionary<Guid, Guid>> _targetIdsBySourceId =
+            new Dictionary<string, Dictionary<Guid, Guid>>(StringComparer.OrdinalIgnoreCase);
 
         public int RecordCount => _recordsByTable.Values.Sum(records => records.Count);
 
@@ -62,6 +65,11 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 records = new List<PlanLookupRecord>();
                 _recordsByTable[collection.LogicalName] = records;
             }
+            if (!_targetIdsBySourceId.TryGetValue(collection.LogicalName, out var targetIds))
+            {
+                targetIds = new Dictionary<Guid, Guid>();
+                _targetIdsBySourceId[collection.LogicalName] = targetIds;
+            }
 
             foreach (var record in collection.Records)
             {
@@ -71,6 +79,11 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 var actualId = importedIdMap != null && importedIdMap.TryGetValue(requestId, out var mappedId)
                     ? mappedId
                     : requestId;
+
+                targetIds[requestId] = actualId;
+                targetIds[actualId] = actualId;
+                if (record.OriginalPrimaryId.HasValue && record.OriginalPrimaryId.Value != Guid.Empty)
+                    targetIds[record.OriginalPrimaryId.Value] = actualId;
 
                 records.Add(new PlanLookupRecord
                 {
@@ -110,6 +123,17 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 return PlanLookupResolution.Found(matches[0]);
 
             return PlanLookupResolution.Ambiguous($"Plan lookup for '{logicalName}' matched {matches.Count} records for keys: {FormatKeyValues(keyValues)}");
+        }
+
+        public Guid? ResolveBySourceId(string logicalName, Guid sourceId)
+        {
+            if (string.IsNullOrWhiteSpace(logicalName) || sourceId == Guid.Empty)
+                return null;
+            if (!_targetIdsBySourceId.TryGetValue(logicalName, out var targetIds))
+                return null;
+            return targetIds.TryGetValue(sourceId, out var targetId)
+                ? targetId
+                : (Guid?)null;
         }
 
         private static bool Matches(PlanLookupRecord record, Dictionary<string, string> normalizedKeys)

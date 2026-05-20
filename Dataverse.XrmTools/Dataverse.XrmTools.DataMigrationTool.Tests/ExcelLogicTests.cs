@@ -353,6 +353,54 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
         }
 
         [Fact]
+        public void CustomMatchKeyCanResolveFromPlanContext()
+        {
+            using (var files = new TemporaryFileScope())
+            {
+                var requestId = Guid.NewGuid();
+                var actualId = Guid.NewGuid();
+                var context = new PlanLookupContext();
+                context.AddRecordCollection(new RecordCollection
+                {
+                    LogicalName = "account",
+                    PrimaryIdAttribute = "accountid",
+                    Records = new List<DmtRecord>
+                    {
+                        new DmtRecord
+                        {
+                            Attributes = new List<RecordAttribute>
+                            {
+                                new RecordAttribute { Key = "accountid", Value = requestId },
+                                new RecordAttribute { Key = "accountnumber", Value = "A-001" }
+                            }
+                        }
+                    },
+                    Count = 1
+                }, new Dictionary<Guid, Guid> { [requestId] = actualId });
+
+                var path = files.GetExcelPath();
+                var config = CreateAccountConfig();
+                config.MatchKeyMode = "Custom";
+                config.MatchKeys = new List<string> { "accountnumber" };
+                new ExcelLogic().Export(config, Enumerable.Empty<Entity>(), path);
+                SetDataRows(path, new[]
+                {
+                    new Dictionary<string, object>
+                    {
+                        ["name"] = "Existing by plan key",
+                        ["accountnumber"] = "A-001"
+                    }
+                });
+
+                var collection = new ExcelLogic().ImportFromExcel(path, config, null, null, context);
+                var record = Assert.Single(collection.Records);
+
+                Assert.Equal(actualId, record.Attributes.Single(a => a.Key == "accountid").Value);
+                Assert.Empty(collection.ImportErrors);
+            }
+        }
+
+        [Fact]
         public void LookupAlternateKeyCanResolveFromPlanContext()
         {
             using (var files = new TemporaryFileScope())

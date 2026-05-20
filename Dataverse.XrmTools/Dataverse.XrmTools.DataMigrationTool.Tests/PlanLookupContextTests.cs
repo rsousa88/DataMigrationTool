@@ -84,6 +84,31 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
             Assert.Equal(accountId, result.Id);
         }
 
+        [Fact]
+        public void ResolveBySourceId_ReturnsActualIdForOriginalPrimaryId()
+        {
+            var originalId = Guid.NewGuid();
+            var actualId = Guid.NewGuid();
+            var context = new PlanLookupContext();
+            var collection = CollectionWithRecord(actualId, "A-001");
+            collection.Records.First().OriginalPrimaryId = originalId;
+
+            context.AddRecordCollection(collection);
+
+            Assert.Equal(actualId, context.ResolveBySourceId("account", originalId));
+        }
+
+        [Fact]
+        public void ResolveBySourceId_ReturnsActualIdForActualId()
+        {
+            var actualId = Guid.NewGuid();
+            var context = new PlanLookupContext();
+
+            context.AddRecordCollection(CollectionWithRecord(actualId, "A-001"));
+
+            Assert.Equal(actualId, context.ResolveBySourceId("account", actualId));
+        }
+
         private static RecordCollection CollectionWithRecord(Guid id, string accountNumber)
         {
             return new RecordCollection
