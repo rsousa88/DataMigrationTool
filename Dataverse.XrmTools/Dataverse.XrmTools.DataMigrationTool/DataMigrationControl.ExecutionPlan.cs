@@ -1806,14 +1806,41 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 _executionPlan,
                 step,
                 action,
-                items.Select(GetExecutionResultDescription));
+                items.Select(GetExecutionResultDetail));
         }
 
-        private string GetExecutionResultDescription(ListViewItem item)
+        private string GetExecutionResultDetail(ListViewItem item)
         {
-            return item?.SubItems?.Count > 0
-                ? item.SubItems[item.SubItems.Count - 1].Text
-                : string.Empty;
+            if (item == null || item.SubItems.Count == 0)
+                return string.Empty;
+
+            var action = item.SubItems.Count > 0 ? item.SubItems[0].Text : string.Empty;
+            var id = item.SubItems.Count > 1 ? item.SubItems[1].Text : string.Empty;
+            var name = item.SubItems.Count > 2 ? item.SubItems[2].Text : string.Empty;
+            var description = item.SubItems[item.SubItems.Count - 1].Text;
+            var sourceRow = GetExecutionResultSourceRow(item);
+            if (!ExecutionPlanService.IsFailedResultDescription(description))
+                return description;
+
+            var parts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(sourceRow)) parts.Add($"Source row {sourceRow}");
+            if (!string.IsNullOrWhiteSpace(action)) parts.Add($"Action {action}");
+            if (!string.IsNullOrWhiteSpace(id)) parts.Add($"Id {id}");
+            if (!string.IsNullOrWhiteSpace(name)) parts.Add($"Name {name}");
+            parts.Add(description);
+            return string.Join(" | ", parts);
+        }
+
+        private string GetExecutionResultSourceRow(ListViewItem item)
+        {
+            var entity = item?.Tag as Entity;
+            if (entity?.FormattedValues != null
+                && entity.FormattedValues.TryGetValue(Utils.SourceRowFormattedValueKey, out var sourceRow))
+            {
+                return sourceRow;
+            }
+
+            return string.Empty;
         }
 
         private bool GetStepStopOnFatalError(ExecutionPlan plan, ExecutionPlanStep step)

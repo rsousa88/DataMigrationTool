@@ -137,6 +137,7 @@ Mappings are stored in `.dmt.json` settings files and can be reviewed from the *
 - [NEW] Added Save As to execution plan actions
 - [FIX] Execution plan actions are now grouped into global and step-specific toolbars with state-aware enablement
 - [FIX] Execution plan results now use the standard dialog style and show per-step error details with copy support
+- [FIX] Execution plan import failures now include the source row and record context for each failed record
 
 ### 2026.5.19.x
 - [NEW] Execution plan imports can resolve lookups against records imported by earlier steps in the same target environment

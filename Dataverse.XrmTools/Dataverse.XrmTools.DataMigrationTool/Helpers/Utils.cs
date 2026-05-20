@@ -27,6 +27,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
 {
     public static class Utils
     {
+        public const string SourceRowFormattedValueKey = "dmt_source_row_number";
+
         public delegate bool TryParseHandler<T>(string value, out T result);
         public static T? TryParse<T>(this string value, TryParseHandler<T> handler) where T : struct
         {
@@ -107,7 +109,10 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
                 };
                 values.AddRange(columns.Select(column => entity.Attributes.Contains(column) && entity[column] != null ? FormatListViewValue(entity[column]) : string.Empty));
 
-                return new ListViewItem(values.ToArray());
+                return new ListViewItem(values.ToArray())
+                {
+                    Tag = entity
+                };
             }
             if (value is ExecuteMultipleResponseItem)
             {
@@ -403,6 +408,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
                     LogicalName = collection.LogicalName,
                     Attributes = attributes.MapAttributes(attributeMetadata)
                 }.ToEntity<Entity>();
+                if (rec.SourceRowNumber > 0)
+                    entity.FormattedValues[SourceRowFormattedValueKey] = rec.SourceRowNumber.ToString(CultureInfo.InvariantCulture);
 
                 rec.Attributes = attributes;
                 entityList.Add(entity);
