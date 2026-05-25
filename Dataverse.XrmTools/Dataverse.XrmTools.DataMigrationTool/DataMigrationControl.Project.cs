@@ -31,11 +31,15 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void InitializeProjectPanel()
         {
-            _tsmiProject = new ToolStripMenuItem("Project");
+            _tsmiProject = new ToolStripMenuItem("Project")
+            {
+                Image = Properties.Resources.directory20_colorful,
+                ImageScaling = ToolStripItemImageScaling.None
+            };
 
-            var newItem = new ToolStripMenuItem("New...");
+            var newItem = new ToolStripMenuItem("New...") { Image = Properties.Resources.save16_colorful, ImageScaling = ToolStripItemImageScaling.None };
             newItem.Click += (s, e) => NewProject();
-            var openItem = new ToolStripMenuItem("Open...");
+            var openItem = new ToolStripMenuItem("Open...") { Image = Properties.Resources.load16_colorful, ImageScaling = ToolStripItemImageScaling.None };
             openItem.Click += (s, e) => OpenProject();
             var closeItem = new ToolStripMenuItem("Close");
             closeItem.Click += (s, e) => CloseProject();
@@ -44,6 +48,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             _tsmiProject.DropDownItems.Add(openItem);
             _tsmiProject.DropDownItems.Add(new ToolStripSeparator());
             _tsmiProject.DropDownItems.Add(closeItem);
+            _tsmiProject.DropDownItems.Add(new ToolStripSeparator());
             _tsmiProject.DropDownOpening += (s, e) => closeItem.Enabled = _project != null;
 
             _tsmiProjectName = new ToolStripLabel("No project open")

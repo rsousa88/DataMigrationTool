@@ -482,7 +482,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             BeginInvoke(new System.Action(() =>
             {
                 ShowStartupGuide();
-                ShowStartupFilesDialog();
             }));
         }
 

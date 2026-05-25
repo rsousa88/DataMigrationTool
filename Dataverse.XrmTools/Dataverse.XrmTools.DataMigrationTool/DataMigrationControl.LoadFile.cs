@@ -27,12 +27,13 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void InitializeLoadFilePanel()
         {
-            _tsmiLoadFile = new ToolStripMenuItem("Load File to Project");
+            _tsmiLoadFile = new ToolStripMenuItem("Load File to Project")
+            {
+                Image = Properties.Resources.import,
+                ImageScaling = ToolStripItemImageScaling.None
+            };
             _tsmiLoadFile.Click += (s, e) => LoadFileToProject();
-
-            var insertIdx = tsMain.Items.IndexOf(tsbShowInstructions);
-            if (insertIdx < 0) insertIdx = tsMain.Items.Count - 1;
-            tsMain.Items.Insert(insertIdx, _tsmiLoadFile);
+            _tsmiProject.DropDownItems.Add(_tsmiLoadFile);
         }
 
         #endregion

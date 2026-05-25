@@ -29,14 +29,13 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void InitializePullPanel()
         {
-            _tsmiPull = new ToolStripMenuItem("Pull to Project");
+            _tsmiPull = new ToolStripMenuItem("Pull to Project")
+            {
+                Image = Properties.Resources.database,
+                ImageScaling = ToolStripItemImageScaling.None
+            };
             _tsmiPull.Click += (s, e) => PullToProject();
-
-            // Insert after the project separator (before tsbShowInstructions)
-            var insertIdx = tsMain.Items.IndexOf(tsbShowInstructions);
-            if (insertIdx < 0) insertIdx = tsMain.Items.Count - 1;
-            tsMain.Items.Insert(insertIdx, new ToolStripSeparator());
-            tsMain.Items.Insert(insertIdx + 1, _tsmiPull);
+            _tsmiProject.DropDownItems.Add(_tsmiPull);
         }
 
         #endregion

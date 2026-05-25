@@ -24,12 +24,14 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void InitializeHistoryPanel()
         {
-            _tsmiHistory = new ToolStripMenuItem("View Run History");
+            _tsmiHistory = new ToolStripMenuItem("View Run History")
+            {
+                Image = Properties.Resources.preview,
+                ImageScaling = ToolStripItemImageScaling.None
+            };
             _tsmiHistory.Click += (s, e) => ShowRunHistory();
-
-            var insertIdx = tsMain.Items.IndexOf(tsbShowInstructions);
-            if (insertIdx < 0) insertIdx = tsMain.Items.Count - 1;
-            tsMain.Items.Insert(insertIdx, _tsmiHistory);
+            _tsmiProject.DropDownItems.Add(new ToolStripSeparator());
+            _tsmiProject.DropDownItems.Add(_tsmiHistory);
         }
 
         #endregion

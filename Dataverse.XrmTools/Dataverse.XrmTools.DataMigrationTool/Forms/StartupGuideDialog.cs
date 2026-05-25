@@ -50,30 +50,35 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                 ReadOnly = true,
                 DetectUrls = false,
                 Text =
-@"This tool now works through execution plans.
+@"DATA MIGRATION TOOL — QUICK GUIDE
 
-Typical flow
-1. Select a source table.
-2. Pick the attributes and filters you want.
-3. Configure an export or import operation.
-4. Add the operation to the execution plan.
-5. Review targets, linked steps, warnings, and preview counts.
-6. Validate the plan.
-7. Execute the validated plan.
+Project-based workflow (recommended)
+A project file (.dmtproj) stores all snapshots, ID mappings, and run history in one portable file.
 
-Important notions
-- Operations are not run immediately from the Export and Import menus. They are added to the execution plan first.
-- A plan can contain one step or many steps. Even a single import/export uses the same plan workflow.
-- You can connect multiple target environments and perform operations across them in one plan.
-- Each plan step has its own target. For example: export accounts once, then import the linked output to DEV, then import the same linked output to TEST.
-- Linked import steps depend on their export step and must stay after it.
-- Validation checks the plan before execution, including missing files, disconnected target environments, linked-step order, and preview counts where possible.
-- Execute is enabled only after validation succeeds.
-- Plans can be saved as .dmtplan.json and loaded again later.
-- Settings files capture table-specific choices such as selected attributes, filters, Excel configuration, and import options.
+1. Connect to your source environment using the Connect button.
+2. Use Project > New... to create a project file, or Project > Open... to resume one.
+3. Select a table on the left and load its attributes.
+4. Load data into the project:
+     Project > Pull to Project  — fetch records from the connected source environment.
+     Project > Load File to Project  — import an existing JSON or Excel file.
+5. Connect to a target environment using Additional Connections in XrmToolBox.
+6. Use Project > Push Snapshot to Target to push a snapshot to the selected target.
+     Source→target GUID mappings are saved automatically for subsequent runs.
+7. Use Project > View Run History to review past push results and errors.
 
-Tip
-Use the execution plan panel on the right to change step targets, reorder steps, validate, and execute."
+Execution plan workflow (advanced)
+For multi-step, multi-target migrations across environments, use the Execution Plan panel on the right.
+
+1. Select a table and configure its attributes and filter.
+2. Use Export and Import from the toolbar menus to add steps to the plan.
+3. Review steps, set targets per step, validate, then execute.
+4. Plans can be saved as .dmtplan.json and reloaded later.
+5. Individual steps can be previewed, reconfigured, or executed in isolation.
+
+Tips
+- Settings files (.dmt.json) capture per-table attribute selections, filters, and import options.
+- Snapshots in a project store a frozen copy of the data with its column type metadata.
+- ID mappings persist across runs: records created in a target are remembered so subsequent pushes update them instead of creating duplicates."
             };
 
             _hideOnStartup = new CheckBox
