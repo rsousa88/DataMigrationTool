@@ -35,7 +35,6 @@
             this.tsmiExportToExcel = new System.Windows.Forms.ToolStripMenuItem();
             this.tsmiImport = new System.Windows.Forms.ToolStripMenuItem();
             this.tsmiImportData = new System.Windows.Forms.ToolStripMenuItem();
-            this.tsmiImportSettings = new System.Windows.Forms.ToolStripMenuItem();
             this.tsmiImportFromExcel = new System.Windows.Forms.ToolStripMenuItem();
             this.tsSeparator2 = new System.Windows.Forms.ToolStripSeparator();
             this.tsmiEnvironments = new System.Windows.Forms.ToolStripMenuItem();
@@ -43,12 +42,6 @@
             this.tsSeparatorEnv = new System.Windows.Forms.ToolStripSeparator();
             this.tsmiConnectTarget = new System.Windows.Forms.ToolStripMenuItem();
             this.tsmiSwitchConnections = new System.Windows.Forms.ToolStripMenuItem();
-            this.tsmiDmtFile = new System.Windows.Forms.ToolStripMenuItem();
-            this.tsmiDmtNew = new System.Windows.Forms.ToolStripMenuItem();
-            this.tsmiDmtLoad = new System.Windows.Forms.ToolStripMenuItem();
-            this.tsmiDmtSaveAs = new System.Windows.Forms.ToolStripMenuItem();
-            this.tsSeparatorDmt = new System.Windows.Forms.ToolStripSeparator();
-            this.tsmiDmtClose = new System.Windows.Forms.ToolStripMenuItem();
             this.tsmiExecutionPlan = new System.Windows.Forms.ToolStripMenuItem();
             this.tsmiPlanNew = new System.Windows.Forms.ToolStripMenuItem();
             this.tsmiPlanLoad = new System.Windows.Forms.ToolStripMenuItem();
@@ -123,7 +116,6 @@
             this.tsmiExport,
             this.tsmiImport,
             this.tsSeparator2,
-            this.tsmiDmtFile,
             this.tsbShowInstructions,
             this.tsbAbort});
             this.tsMain.Location = new System.Drawing.Point(0, 0);
@@ -193,8 +185,7 @@
             // 
             this.tsmiImport.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.tsmiImportData,
-            this.tsmiImportFromExcel,
-            this.tsmiImportSettings});
+            this.tsmiImportFromExcel});
             this.tsmiImport.Image = global::Dataverse.XrmTools.DataMigrationTool.Properties.Resources.import;
             this.tsmiImport.Name = "tsmiImport";
             this.tsmiImport.Size = new System.Drawing.Size(75, 25);
@@ -207,14 +198,7 @@
             this.tsmiImportData.Size = new System.Drawing.Size(172, 22);
             this.tsmiImportData.Text = "From JSON";
             this.tsmiImportData.Click += new System.EventHandler(this.tsmiImportData_Click);
-            // 
-            // tsmiImportSettings
-            // 
-            this.tsmiImportSettings.Name = "tsmiImportSettings";
-            this.tsmiImportSettings.Size = new System.Drawing.Size(172, 22);
-            this.tsmiImportSettings.Text = "Legacy settings file";
-            this.tsmiImportSettings.Click += new System.EventHandler(this.tsmiImportSettings_Click);
-            // 
+            //
             // tsmiImportFromExcel
             //
             this.tsmiImportFromExcel.Name = "tsmiImportFromExcel";
@@ -263,51 +247,6 @@
             this.tsmiSwitchConnections.Size = new System.Drawing.Size(210, 22);
             this.tsmiSwitchConnections.Text = "Switch Source / Target";
             this.tsmiSwitchConnections.Click += new System.EventHandler(this.tsmiSwitchConnections_Click);
-            //
-            // tsmiDmtFile
-            //
-            this.tsmiDmtFile.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
-            this.tsmiDmtNew,
-            this.tsmiDmtLoad,
-            this.tsmiDmtSaveAs,
-            this.tsSeparatorDmt,
-            this.tsmiDmtClose});
-            this.tsmiDmtFile.Name = "tsmiDmtFile";
-            this.tsmiDmtFile.Size = new System.Drawing.Size(93, 25);
-            this.tsmiDmtFile.Text = "Settings File";
-            //
-            // tsmiDmtNew
-            //
-            this.tsmiDmtNew.Name = "tsmiDmtNew";
-            this.tsmiDmtNew.Size = new System.Drawing.Size(136, 22);
-            this.tsmiDmtNew.Text = "New...";
-            this.tsmiDmtNew.Click += new System.EventHandler(this.tsmiDmtNew_Click);
-            //
-            // tsmiDmtLoad
-            //
-            this.tsmiDmtLoad.Name = "tsmiDmtLoad";
-            this.tsmiDmtLoad.Size = new System.Drawing.Size(136, 22);
-            this.tsmiDmtLoad.Text = "Load...";
-            this.tsmiDmtLoad.Click += new System.EventHandler(this.tsmiDmtLoad_Click);
-            //
-            // tsmiDmtSaveAs
-            //
-            this.tsmiDmtSaveAs.Name = "tsmiDmtSaveAs";
-            this.tsmiDmtSaveAs.Size = new System.Drawing.Size(136, 22);
-            this.tsmiDmtSaveAs.Text = "Save As...";
-            this.tsmiDmtSaveAs.Click += new System.EventHandler(this.tsmiDmtSaveAs_Click);
-            //
-            // tsSeparatorDmt
-            //
-            this.tsSeparatorDmt.Name = "tsSeparatorDmt";
-            this.tsSeparatorDmt.Size = new System.Drawing.Size(133, 6);
-            //
-            // tsmiDmtClose
-            //
-            this.tsmiDmtClose.Name = "tsmiDmtClose";
-            this.tsmiDmtClose.Size = new System.Drawing.Size(136, 22);
-            this.tsmiDmtClose.Text = "Close file";
-            this.tsmiDmtClose.Click += new System.EventHandler(this.tsmiDmtClose_Click);
             //
             // tsmiExecutionPlan
             //
@@ -933,12 +872,6 @@
         private System.Windows.Forms.ToolStripSeparator tsSeparatorEnv;
         private System.Windows.Forms.ToolStripMenuItem tsmiConnectTarget;
         private System.Windows.Forms.ToolStripMenuItem tsmiSwitchConnections;
-        private System.Windows.Forms.ToolStripMenuItem tsmiDmtFile;
-        private System.Windows.Forms.ToolStripMenuItem tsmiDmtNew;
-        private System.Windows.Forms.ToolStripMenuItem tsmiDmtLoad;
-        private System.Windows.Forms.ToolStripMenuItem tsmiDmtSaveAs;
-        private System.Windows.Forms.ToolStripSeparator tsSeparatorDmt;
-        private System.Windows.Forms.ToolStripMenuItem tsmiDmtClose;
         private System.Windows.Forms.ToolStripMenuItem tsmiExecutionPlan;
         private System.Windows.Forms.ToolStripMenuItem tsmiPlanNew;
         private System.Windows.Forms.ToolStripMenuItem tsmiPlanLoad;
@@ -1008,7 +941,6 @@
         private System.Windows.Forms.RichTextBox rtbFilter;
         private System.Windows.Forms.ToolStripMenuItem tsmiImport;
         private System.Windows.Forms.ToolStripMenuItem tsmiImportData;
-        private System.Windows.Forms.ToolStripMenuItem tsmiImportSettings;
         private System.Windows.Forms.ToolStripMenuItem tsmiExportSettings;
         private System.Windows.Forms.Label lblApplyMappingsOn;
         private System.Windows.Forms.RadioButton rbMapOnExport;

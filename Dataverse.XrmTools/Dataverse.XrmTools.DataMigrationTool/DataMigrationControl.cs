@@ -132,12 +132,10 @@ namespace Dataverse.XrmTools.DataMigrationTool
             LogInfo("Initializing components...");
             InitializeComponent();
             tsmiEnvironments.Image = CreateEnvironmentsIcon();
-            tsmiDmtFile.Image = CreateSettingsFileIcon();
             tsmiExecutionPlan.Image = CreateExecutionPlanIcon();
             MoveImportSettingsIntoDialogs();
             InitializeDmtAutoSave();
             InitializeWorkingTips();
-            RenderDmtFileMenu();
 
             _logger = new Logger();
             _logger.OnLog += Log;
@@ -1699,7 +1697,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
             LoadAttributesList(tableData);
             LoadFilters(tableData);
-            RenderDmtFileMenu();
             SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Selected table from import file: {tableData.Table.LogicalName}"));
         }
 
@@ -1818,7 +1815,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 }
 
                 _previousTableLogicalName = table.LogicalName;
-                RenderDmtFileMenu();
                 return true;
             }
         }
@@ -1887,7 +1883,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             _currentTableSettings = CreateTableSettingsFromDmt(_dmtSettings);
             CaptureDmtSettingsFromUi();
             DmtFileService.Save(_dmtFilePath, _dmtSettings);
-            RenderDmtFileMenu();
             SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Settings file saved: {Path.GetFileName(_dmtFilePath)}"));
         }
 
@@ -1976,7 +1971,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             _dmtFilePath = filePath;
             CaptureDmtSettingsFromUi();
             DmtFileService.Save(_dmtFilePath, _dmtSettings);
-            RenderDmtFileMenu();
             SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Settings file saved: {Path.GetFileName(_dmtFilePath)}"));
         }
 
@@ -1989,7 +1983,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             _dmtFilePath = null;
             _currentTableLogicalName = table?.LogicalName;
             _currentTableSettings = table != null ? CreateSoftTableSettingsFromUi(table) : null;
-            RenderDmtFileMenu();
             SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Settings file closed"));
         }
 
@@ -2246,7 +2239,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
             CaptureDmtSettingsFromUi();
             DmtFileService.Save(_dmtFilePath, _dmtSettings);
-            RenderDmtFileMenu();
 
             var fileName = Path.GetFileName(_dmtFilePath);
             _logger?.Log(LogLevel.INFO, $"Auto-saved settings file: {fileName}");
@@ -2320,7 +2312,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (_sourceInstance != null)
                 _sourceInstance.Mappings = new List<Mapping>(_mappings);
             RenderMappingsButton();
-            RenderDmtFileMenu();
         }
 
         private TableSettings CreateTableSettingsFromDmt(DmtSettings settings)
@@ -2371,16 +2362,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (tableItem == null || string.IsNullOrWhiteSpace(tableItem.LogicalName)) return null;
 
             return _tables.FirstOrDefault(tbl => tbl.LogicalName.Equals(tableItem.LogicalName));
-        }
-
-        private void RenderDmtFileMenu()
-        {
-            if (tsmiDmtFile == null) return;
-
-            var hasFile = !string.IsNullOrWhiteSpace(_dmtFilePath);
-            tsmiDmtFile.Text = hasFile ? GetDmtFileDisplayName(_dmtFilePath) : "Settings File";
-            tsmiDmtSaveAs.Enabled = lvTables.SelectedItems.Count > 0;
-            tsmiDmtClose.Enabled = hasFile || _currentTableSettings != null;
         }
 
         private void RenderExecutionPlanMenu()
@@ -2478,27 +2459,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             return bmp;
         }
 
-        private static Image CreateSettingsFileIcon(int size = 20)
-        {
-            var bmp = new Bitmap(size, size);
-            using (var g = Graphics.FromImage(bmp))
-            {
-                g.Clear(Color.Transparent);
-                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                using (var pen = new Pen(Color.FromArgb(80, 80, 80), 1.4f))
-                using (var brush = new SolidBrush(Color.FromArgb(245, 245, 245)))
-                {
-                    var rect = new RectangleF(4, 2, 12, 16);
-                    g.FillRectangle(brush, rect);
-                    g.DrawRectangle(pen, 4, 2, 12, 16);
-                    g.DrawLine(pen, 7, 7, 13, 7);
-                    g.DrawLine(pen, 7, 10, 13, 10);
-                    g.DrawLine(pen, 7, 13, 11, 13);
-                }
-            }
-            return bmp;
-        }
-
         private void RenderMappingsButton()
         {
             btnMappings.Font = (_mappings?.Any() == true) ? new Font(btnMappings.Font.Name, btnMappings.Font.Size, FontStyle.Bold) : new Font(btnMappings.Font.Name, btnMappings.Font.Size, FontStyle.Regular);
@@ -2508,19 +2468,16 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             tsmiExportData.Text = "To JSON";
             tsmiImportData.Text = "From JSON";
-            tsmiImportSettings.Text = "Legacy settings file";
             tsmiImport.DropDownItems.Clear();
             tsmiImport.DropDownItems.AddRange(new ToolStripItem[]
             {
                 tsmiImportData,
-                tsmiImportFromExcel,
-                tsmiImportSettings
+                tsmiImportFromExcel
             });
             tsmiExportSettings.Visible = false;
             tsmiExportSettings.Enabled = false;
             tsmiExportWithSettings.Visible = false;
             tsmiExportWithSettings.Enabled = false;
-            tsmiDmtFile.Enabled = false;
             tsmiReloadTables.Enabled = false;
             gbViewSettings.Controls.Remove(cbHideInvalid);
             cbHideInvalid.Location = new Point(cbSelectAll.Right + 18, cbSelectAll.Top);
@@ -2543,7 +2500,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 tsmiConnectTarget.Enabled = enable;
                 tsmiSwitchConnections.Enabled = enable && targetReady;
                 tsmiReloadTables.Enabled = enable;
-                tsmiDmtFile.Enabled = enable;
                 gbTables.Enabled = enable;
                 tsmiImportData.Enabled = enable;
                 tsmiImportFromExcel.Enabled = enable;
@@ -2571,7 +2527,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 }
             }
 
-            RenderDmtFileMenu();
             RenderExecutionPlanMenu(false);
         }
 
@@ -2923,62 +2878,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
         }
 
-        private void tsmiDmtNew_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                CreateDmtFileForSelectedTable();
-            }
-            catch (Exception ex)
-            {
-                ManageWorkingState(false);
-                _logger.Log(LogLevel.ERROR, ex.Message);
-                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private void tsmiDmtLoad_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                LoadDmtFileForSelectedTable();
-            }
-            catch (Exception ex)
-            {
-                ManageWorkingState(false);
-                _logger.Log(LogLevel.ERROR, ex.Message);
-                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private void tsmiDmtSaveAs_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                SaveDmtFileAs();
-            }
-            catch (Exception ex)
-            {
-                ManageWorkingState(false);
-                _logger.Log(LogLevel.ERROR, ex.Message);
-                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private void tsmiDmtClose_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                CloseDmtFileSession();
-            }
-            catch (Exception ex)
-            {
-                ManageWorkingState(false);
-                _logger.Log(LogLevel.ERROR, ex.Message);
-                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
         private void tsbPreview_Click(object sender, EventArgs e)
         {
             try
@@ -3134,20 +3033,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             try
             {
                 Import();
-            }
-            catch (Exception ex)
-            {
-                ManageWorkingState(false);
-                _logger.Log(LogLevel.ERROR, ex.Message);
-                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private void tsmiImportSettings_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                LoadSettings();
             }
             catch (Exception ex)
             {
