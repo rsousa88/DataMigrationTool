@@ -146,6 +146,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
         public void DataMigrationControl_Load(object sender, EventArgs e)
         {
             _logger.Log(LogLevel.INFO, "Data Migration tool initialized");
+            InitializeTableConfigAutoSave();
             BeginInvoke(new System.Action(() =>
             {
                 InitializeProjectPanel();
@@ -709,6 +710,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         LoadAttributesList(tableData);
                         LoadFilters(tableData);
                         AutoSaveDmtSettings(false);
+                        AfterAttributesLoaded(tableData);
 
                         SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Attributes load complete"));
                     }
@@ -1772,6 +1774,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 _dmtFilePath = null;
                 _dmtSettings = null;
                 _currentTableLogicalName = table.LogicalName;
+                _currentTableConfig = null;
 
                 if (dlg.Choice == DmtFileChoice.WithoutFile)
                 {
@@ -3203,6 +3206,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 if (allAttributes) { tableData.Settings.DeselectedAttributes.Clear(); }
                 else { tableData.Settings.DeselectedAttributes = tableData.Table.AllAttributes.Select(attr => attr.LogicalName).ToList(); }
                 ScheduleDmtAutoSave();
+                ScheduleTableConfigSave();
             }
             catch (Exception ex)
             {
@@ -3234,6 +3238,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     tableData.Settings.DeselectedAttributes.Clear();
                     tableData.Settings.DeselectedAttributes.AddRange(deselected);
                     ScheduleDmtAutoSave();
+                    ScheduleTableConfigSave();
                 }
             }
             catch (Exception ex)
@@ -3345,6 +3350,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 tableData.Settings.Filter = filters;
                 SettingsHelper.SetSettings(_settings);
                 ScheduleDmtAutoSave();
+                ScheduleTableConfigSave();
             }
             catch (Exception ex)
             {

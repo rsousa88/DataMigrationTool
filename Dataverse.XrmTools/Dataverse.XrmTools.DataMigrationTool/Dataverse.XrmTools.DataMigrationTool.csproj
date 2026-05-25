@@ -90,6 +90,10 @@
       <DependentUpon>DataMigrationControl.cs</DependentUpon>
       <SubType>UserControl</SubType>
     </Compile>
+    <Compile Include="DataMigrationControl.TableConfig.cs">
+      <DependentUpon>DataMigrationControl.cs</DependentUpon>
+      <SubType>UserControl</SubType>
+    </Compile>
     <Compile Include="DataMigrationControl.ImportExport.cs">
       <DependentUpon>DataMigrationControl.cs</DependentUpon>
       <SubType>UserControl</SubType>
