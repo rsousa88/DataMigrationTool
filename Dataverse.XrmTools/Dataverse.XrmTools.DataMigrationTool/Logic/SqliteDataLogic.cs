@@ -332,6 +332,35 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
             result.Errors.AddRange(warnings);
             worker?.ReportProgress(100, $"Push complete: {result.Created} created, {result.Updated} updated, {result.Deleted} deleted.");
+
+            // Write run log
+            var stepLog = new ExecutionPlanRunStepLog
+            {
+                Index = 1,
+                Name = $"Push: {snapshotName}",
+                Operation = "Push",
+                Status = result.Errors.Any() ? "CompletedWithErrors" : "Completed",
+                TotalRecords = total,
+                FailedRecords = result.Errors.Count,
+                Summary = $"{result.Created} created, {result.Updated} updated, {result.Deleted} deleted, {result.Skipped} skipped.",
+                ErrorDetails = result.Errors
+            };
+            var runLog = new DmtRunLog
+            {
+                PlanName = $"Push: {snapshotName} → {targetEnvId}",
+                StartedOn = DateTime.UtcNow,
+                CompletedOn = DateTime.UtcNow,
+                Status = result.Errors.Any() ? "CompletedWithErrors" : "Completed",
+                Log = new ExecutionPlanRunLog
+                {
+                    PlanName = $"Push: {snapshotName}",
+                    StartedOn = DateTime.UtcNow,
+                    CompletedOn = DateTime.UtcNow,
+                    Steps = new List<ExecutionPlanRunStepLog> { stepLog }
+                }
+            };
+            try { project.SaveRunLog(runLog); } catch { /* non-critical */ }
+
             return result;
         }
 

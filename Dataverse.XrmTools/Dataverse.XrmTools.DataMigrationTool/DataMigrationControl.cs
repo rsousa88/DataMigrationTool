@@ -153,6 +153,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 InitializePullPanel();
                 InitializeLoadFilePanel();
                 InitializePushPanel();
+                InitializeHistoryPanel();
                 InitializeExecutionPlanPanel();
                 RenderExecutionPlanMenu();
                 ExecuteMethod(WhoAmI);
