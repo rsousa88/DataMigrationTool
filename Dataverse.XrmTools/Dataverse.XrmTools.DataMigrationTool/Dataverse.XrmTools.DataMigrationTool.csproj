@@ -23,6 +23,7 @@
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
+    <LangVersion>8.0</LangVersion>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>pdbonly</DebugType>
@@ -31,6 +32,7 @@
     <DefineConstants>TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
+    <LangVersion>8.0</LangVersion>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="System" />
@@ -154,6 +156,7 @@
     <Compile Include="Forms\WorkingDialog.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="Logic\SqliteProjectService.cs" />
     <Compile Include="Logic\BatchingService.cs" />
     <Compile Include="Logic\DataLogic.cs" />
     <Compile Include="Logic\DmtFileService.cs" />
@@ -166,6 +169,7 @@
     <Compile Include="Logic\MappingsLogic.cs" />
     <Compile Include="Logic\PlanLookupContext.cs" />
     <Compile Include="Logic\RecordCollectionService.cs" />
+    <Compile Include="Models\DmtProject.cs" />
     <Compile Include="Models\Attribute.cs" />
     <Compile Include="Models\CrmBulkResponse.cs" />
     <Compile Include="Models\MigrationItem.cs" />
@@ -239,6 +243,12 @@
     <PackageReference Include="ClosedXML">
       <Version>0.95.4</Version>
     </PackageReference>
+    <PackageReference Include="Microsoft.Data.Sqlite.Core">
+      <Version>8.0.4</Version>
+    </PackageReference>
+    <PackageReference Include="SQLitePCLRaw.bundle_winsqlite3">
+      <Version>2.1.6</Version>
+    </PackageReference>
     <PackageReference Include="DockPanelSuite">
       <Version>3.1.0</Version>
     </PackageReference>
@@ -282,6 +292,9 @@
   IF NOT EXIST "$(TargetDir)Plugins" mkdir "$(TargetDir)Plugins"
   COPY /Y "$(TargetPath)" "$(TargetDir)Plugins\"
   COPY /Y "$(TargetDir)$(TargetName).pdb" "$(TargetDir)Plugins\"
+  COPY /Y "$(TargetDir)Microsoft.Data.Sqlite.dll" "$(TargetDir)Plugins\"
+  COPY /Y "$(TargetDir)SQLitePCLRaw.core.dll" "$(TargetDir)Plugins\"
+  COPY /Y "$(TargetDir)SQLitePCLRaw.provider.winsqlite3.dll" "$(TargetDir)Plugins\"
 )
 </PostBuildEvent>
   </PropertyGroup>
