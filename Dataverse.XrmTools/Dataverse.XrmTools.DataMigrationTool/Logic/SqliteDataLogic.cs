@@ -85,6 +85,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
             worker?.ReportProgress(70, $"Writing {rows.Count} rows to project snapshot...");
             project.SaveSnapshot(snapshot);
+            project.CreateSnapshotTable(tableSuffix, colsInSnapshot);
             project.WriteSnapshotRecords(tableSuffix, rows, colsInSnapshot);
 
             worker?.ReportProgress(85, "Saving option-set labels...");

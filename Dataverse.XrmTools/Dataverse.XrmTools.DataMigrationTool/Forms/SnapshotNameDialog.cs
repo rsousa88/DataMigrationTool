@@ -11,7 +11,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
 
         public string SnapshotName => _nameBox.Text.Trim();
 
-        public SnapshotNameDialog(string defaultName = "")
+        public SnapshotNameDialog(string defaultName = "", string actionLabel = "Pull")
         {
             Text = "Name Snapshot";
             ClientSize = new Size(420, 90);
@@ -45,7 +45,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                 Padding = new Padding(0, 4, 0, 0)
             };
             var cancelBtn = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Width = 75 };
-            var okBtn = new Button { Text = "Pull", Width = 75 };
+            var okBtn = new Button { Text = actionLabel, Width = 75 };
             okBtn.Click += Ok_Click;
             btnPanel.Controls.AddRange(new Control[] { cancelBtn, okBtn });
             layout.Controls.Add(btnPanel, 0, 1);

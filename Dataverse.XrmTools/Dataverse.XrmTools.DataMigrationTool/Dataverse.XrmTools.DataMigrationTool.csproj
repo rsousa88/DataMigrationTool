@@ -98,6 +98,10 @@
       <DependentUpon>DataMigrationControl.cs</DependentUpon>
       <SubType>UserControl</SubType>
     </Compile>
+    <Compile Include="DataMigrationControl.LoadFile.cs">
+      <DependentUpon>DataMigrationControl.cs</DependentUpon>
+      <SubType>UserControl</SubType>
+    </Compile>
     <Compile Include="DataMigrationControl.ImportExport.cs">
       <DependentUpon>DataMigrationControl.cs</DependentUpon>
       <SubType>UserControl</SubType>
@@ -176,6 +180,7 @@
     </Compile>
     <Compile Include="Logic\SqliteProjectService.cs" />
     <Compile Include="Logic\SqliteDataLogic.cs" />
+    <Compile Include="Logic\SqliteFileAdapter.cs" />
     <Compile Include="Logic\BatchingService.cs" />
     <Compile Include="Logic\DataLogic.cs" />
     <Compile Include="Logic\DmtFileService.cs" />

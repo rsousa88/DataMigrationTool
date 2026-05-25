@@ -2,12 +2,33 @@
 using System;
 using System.Collections.Generic;
 
+// Microsoft
+using Microsoft.Xrm.Sdk;
+
 // DataMigrationTool
 using Dataverse.XrmTools.DataMigrationTool.AppSettings;
+using Dataverse.XrmTools.DataMigrationTool.Logic;
 using Dataverse.XrmTools.DataMigrationTool.Models;
 
 namespace Dataverse.XrmTools.DataMigrationTool.Models
 {
+    // Holds the live state of the open project: service, environments, connected clients.
+    public class ProjectContext
+    {
+        public string FilePath { get; set; }
+        public string ProjectName { get; set; }
+        public SqliteProjectService Service { get; set; }
+        public DmtProjectEnvironment SourceEnvironment { get; set; }
+
+        // True when the connected source org does not match the project's locked source.
+        public bool IsSourceMismatch { get; set; }
+
+        // envId → live client; populated as target orgs connect.
+        public Dictionary<string, IOrganizationService> TargetClients { get; } =
+            new Dictionary<string, IOrganizationService>(StringComparer.OrdinalIgnoreCase);
+    }
+
+
     public class DmtProjectEnvironment
     {
         public string Id { get; set; }

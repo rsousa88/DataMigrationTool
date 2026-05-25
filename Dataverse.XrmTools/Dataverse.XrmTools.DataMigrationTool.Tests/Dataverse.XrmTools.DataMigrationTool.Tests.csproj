@@ -40,6 +40,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="SqliteProjectServiceTests.cs" />
+    <Compile Include="SqliteFileAdapterTests.cs" />
     <Compile Include="BatchingServiceTests.cs" />
     <Compile Include="CleanupRegressionTests.cs" />
     <Compile Include="DmtFileServiceTests.cs" />
