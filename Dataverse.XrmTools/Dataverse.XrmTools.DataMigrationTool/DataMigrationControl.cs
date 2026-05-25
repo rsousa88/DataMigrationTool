@@ -148,6 +148,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             _logger.Log(LogLevel.INFO, "Data Migration tool initialized");
             BeginInvoke(new System.Action(() =>
             {
+                InitializeProjectPanel();
                 InitializeExecutionPlanPanel();
                 RenderExecutionPlanMenu();
                 ExecuteMethod(WhoAmI);
@@ -196,6 +197,10 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
                     _sourceClient = client;
                     _sourceInstance = instance;
+
+                    BindProjectSource(client);
+                    RenderProjectBanner();
+                    RenderProjectName();
 
                     // load source instance mappings
                     _logger.Log(LogLevel.INFO, $"Loading mappings...");
@@ -286,6 +291,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     }
 
                     RegisterTargetConnection(client, instance, makeDefault: true);
+                    RegisterProjectTarget(client);
 
                     // filter mappings by target instance
                     var tgtMappings = _mappings.Where(map => map.TargetInstanceName.Equals(_targetInstance.FriendlyName));

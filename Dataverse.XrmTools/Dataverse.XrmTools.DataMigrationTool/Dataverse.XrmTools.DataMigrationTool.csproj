@@ -86,6 +86,10 @@
       <DependentUpon>DataMigrationControl.cs</DependentUpon>
       <SubType>UserControl</SubType>
     </Compile>
+    <Compile Include="DataMigrationControl.Project.cs">
+      <DependentUpon>DataMigrationControl.cs</DependentUpon>
+      <SubType>UserControl</SubType>
+    </Compile>
     <Compile Include="DataMigrationControl.ImportExport.cs">
       <DependentUpon>DataMigrationControl.cs</DependentUpon>
       <SubType>UserControl</SubType>
@@ -139,6 +143,9 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Forms\ExecutionPlanDialog.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\NewProjectDialog.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Forms\ExecutionPlanFileDialog.cs">
