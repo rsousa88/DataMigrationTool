@@ -150,6 +150,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             BeginInvoke(new System.Action(() =>
             {
                 InitializeProjectPanel();
+                InitializePullPanel();
                 InitializeExecutionPlanPanel();
                 RenderExecutionPlanMenu();
                 ExecuteMethod(WhoAmI);
