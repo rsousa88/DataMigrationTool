@@ -131,6 +131,10 @@ Mappings are stored in `.dmt.json` settings files and can be reviewed from the *
 
 ## Release Notes
 
+### 2026.5.25.x
+- [NEW] Execution plan steps can now be cloned to another target environment from the plan panel or step context menu
+- [FIX] Duplicating linked import steps now preserves the source export link and captured configuration while resetting validation for the cloned step
+
 ### 2026.5.20.x
 - [NEW] Execution plan steps can now be executed manually from the selected step actions
 - [NEW] Execution plan step actions are available from a right-click context menu

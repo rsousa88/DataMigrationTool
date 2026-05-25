@@ -344,6 +344,33 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
         }
 
         [Fact]
+        public void CloneStepForEnvironment_PreservesConfigurationWithNewIdAndTarget()
+        {
+            var source = Step("import-dev", "ImportFromExcel");
+            source.Name = "Import Accounts";
+            source.TargetEnvironment = new DmtEnvironmentInfo { UniqueName = "dev", FriendlyName = "DEV" };
+            source.Input.Mode = "FromStepOutput";
+            source.Input.SourceStepId = "export-1";
+            source.Snapshot.SelectedAttributes.Add("name");
+            source.Snapshot.Mappings.Add(new Mapping { AttributeLogicalName = "ownerid", TargetInstanceName = "DEV" });
+            source.Validation.Status = "Ready";
+            source.Validation.Preview = new ExecutionPlanPreviewSummary { Rows = 10, Creates = 4, Source = "Captured preview" };
+            var target = new DmtEnvironmentInfo { UniqueName = "test", FriendlyName = "TEST" };
+
+            var clone = ExecutionPlanService.CloneStepForEnvironment(source, target);
+            clone.Snapshot.Mappings[0].TargetInstanceName = "Changed";
+
+            Assert.NotEqual(source.Id, clone.Id);
+            Assert.Equal("Import Accounts - TEST", clone.Name);
+            Assert.Equal("test", clone.TargetEnvironment.UniqueName);
+            Assert.Equal("FromStepOutput", clone.Input.Mode);
+            Assert.Equal("export-1", clone.Input.SourceStepId);
+            Assert.Equal("Unknown", clone.Validation.Status);
+            Assert.True(clone.Validation.Preview.IsStale);
+            Assert.Equal("DEV", source.Snapshot.Mappings[0].TargetInstanceName);
+        }
+
+        [Fact]
         public void CreateBaseStep_CapturesTableTargetAndSettingsProvenance()
         {
             var tableData = new TableData

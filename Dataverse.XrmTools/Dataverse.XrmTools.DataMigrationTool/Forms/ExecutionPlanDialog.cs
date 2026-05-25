@@ -4,9 +4,6 @@ using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
 
-// Newtonsoft
-using Newtonsoft.Json;
-
 // DataMigrationTool
 using Dataverse.XrmTools.DataMigrationTool.Models;
 using Dataverse.XrmTools.DataMigrationTool.Logic;
@@ -286,14 +283,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             if (_steps.SelectedItems.Count == 0) return;
             var index = _steps.SelectedItems[0].Index;
             var step = _plan.Steps[index];
-            var clone = JsonConvert.DeserializeObject<ExecutionPlanStep>(JsonConvert.SerializeObject(step));
-            clone.Id = Guid.NewGuid().ToString("D");
-            clone.Name = $"{step.Name} copy";
-            if (clone.Input != null && string.Equals(clone.Input.Mode, "FromStepOutput", StringComparison.OrdinalIgnoreCase))
-            {
-                clone.Input.Mode = "File";
-                clone.Input.SourceStepId = null;
-            }
+            var clone = ExecutionPlanService.CloneStepForEnvironment(step);
             _plan.Steps.Insert(index + 1, clone);
             ValidatePlan();
             _steps.Items[index + 1].Selected = true;

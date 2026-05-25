@@ -350,6 +350,46 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 .ToList();
         }
 
+        public static ExecutionPlanStep CloneStepForEnvironment(ExecutionPlanStep source, DmtEnvironmentInfo targetEnvironment = null)
+        {
+            if (source == null) throw new ArgumentNullException(nameof(source));
+
+            var clone = JsonConvert.DeserializeObject<ExecutionPlanStep>(JsonConvert.SerializeObject(source));
+            clone.Id = Guid.NewGuid().ToString("D");
+            clone.TargetEnvironment = CloneEnvironment(targetEnvironment ?? source.TargetEnvironment);
+            clone.Name = BuildClonedStepName(source.Name, clone.TargetEnvironment);
+            clone.Validation = new ExecutionPlanValidation();
+            if (source.Validation?.Preview != null)
+            {
+                clone.Validation.Preview = JsonConvert.DeserializeObject<ExecutionPlanPreviewSummary>(
+                    JsonConvert.SerializeObject(source.Validation.Preview));
+                clone.Validation.Preview.IsStale = true;
+                if (string.IsNullOrWhiteSpace(clone.Validation.Preview.Source))
+                    clone.Validation.Preview.Source = "Cloned preview";
+            }
+
+            return clone;
+        }
+
+        private static DmtEnvironmentInfo CloneEnvironment(DmtEnvironmentInfo environment)
+        {
+            if (environment == null) return null;
+            return new DmtEnvironmentInfo
+            {
+                UniqueName = environment.UniqueName,
+                FriendlyName = environment.FriendlyName
+            };
+        }
+
+        private static string BuildClonedStepName(string sourceName, DmtEnvironmentInfo targetEnvironment)
+        {
+            var name = string.IsNullOrWhiteSpace(sourceName) ? "Cloned step" : sourceName.Trim();
+            var targetName = targetEnvironment?.FriendlyName ?? targetEnvironment?.UniqueName;
+            return string.IsNullOrWhiteSpace(targetName)
+                ? $"{name} copy"
+                : $"{name} - {targetName}";
+        }
+
         public static ExecutionPlanStep CreateBaseStep(string operation, TableData tableData, DmtEnvironmentInfo activeTargetEnvironment, string settingsFilePath)
         {
             if (tableData?.Table == null) throw new ArgumentNullException(nameof(tableData));

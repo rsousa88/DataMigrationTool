@@ -106,6 +106,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private ToolStripButton _executionPlanPreviewStepButton;
         private ToolStripButton _executionPlanConfigureStepButton;
         private ToolStripButton _executionPlanExecuteStepButton;
+        private ToolStripButton _executionPlanCloneStepButton;
         private ToolStripButton _executionPlanMoveStepUpButton;
         private ToolStripButton _executionPlanMoveStepDownButton;
         private ToolStripButton _executionPlanRemoveStepButton;

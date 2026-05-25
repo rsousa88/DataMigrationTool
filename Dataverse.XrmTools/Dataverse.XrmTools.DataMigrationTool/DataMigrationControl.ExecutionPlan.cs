@@ -309,6 +309,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             _executionPlanConfigureStepButton = AddExecutionPlanToolStripButton(stepActions, "Configure", (s, e) => ReconfigureSelectedExecutionPlanStep());
             _executionPlanExecuteStepButton = AddExecutionPlanToolStripButton(stepActions, "Execute Step", (s, e) => ExecuteSelectedExecutionPlanStep());
             stepActions.Items.Add(new ToolStripSeparator());
+            _executionPlanCloneStepButton = AddExecutionPlanToolStripButton(stepActions, "Clone", (s, e) => CloneSelectedExecutionPlanStep());
             _executionPlanMoveStepUpButton = AddExecutionPlanToolStripButton(stepActions, "Move Up", (s, e) => MoveSelectedExecutionPlanStep(-1));
             _executionPlanMoveStepDownButton = AddExecutionPlanToolStripButton(stepActions, "Move Down", (s, e) => MoveSelectedExecutionPlanStep(1));
             _executionPlanRemoveStepButton = AddExecutionPlanToolStripButton(stepActions, "Remove", (s, e) => RemoveSelectedExecutionPlanStep());
@@ -408,6 +409,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             menu.Items.Add("Configure", null, (s, e) => ReconfigureSelectedExecutionPlanStep());
             menu.Items.Add("Execute Step", null, (s, e) => ExecuteSelectedExecutionPlanStep());
             menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add("Clone", null, (s, e) => CloneSelectedExecutionPlanStep());
             menu.Items.Add("Move Up", null, (s, e) => MoveSelectedExecutionPlanStep(-1));
             menu.Items.Add("Move Down", null, (s, e) => MoveSelectedExecutionPlanStep(1));
             menu.Items.Add("Remove", null, (s, e) => RemoveSelectedExecutionPlanStep());
@@ -820,6 +822,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (_executionPlanPreviewStepButton != null) _executionPlanPreviewStepButton.Enabled = canPreviewStep;
             if (_executionPlanConfigureStepButton != null) _executionPlanConfigureStepButton.Enabled = canPreviewStep && (selectedStep.Operation ?? string.Empty).StartsWith("Import", StringComparison.OrdinalIgnoreCase);
             if (_executionPlanExecuteStepButton != null) _executionPlanExecuteStepButton.Enabled = canExecuteStep;
+            if (_executionPlanCloneStepButton != null) _executionPlanCloneStepButton.Enabled = hasSelectedStep;
             if (_executionPlanMoveStepUpButton != null) _executionPlanMoveStepUpButton.Enabled = canMoveUp;
             if (_executionPlanMoveStepDownButton != null) _executionPlanMoveStepDownButton.Enabled = canMoveDown;
             if (_executionPlanRemoveStepButton != null) _executionPlanRemoveStepButton.Enabled = hasSelectedStep;
@@ -829,6 +832,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 SetContextMenuItemEnabled("Preview", canPreviewStep);
                 SetContextMenuItemEnabled("Configure", _executionPlanConfigureStepButton?.Enabled == true);
                 SetContextMenuItemEnabled("Execute Step", canExecuteStep);
+                SetContextMenuItemEnabled("Clone", hasSelectedStep);
                 SetContextMenuItemEnabled("Move Up", canMoveUp);
                 SetContextMenuItemEnabled("Move Down", canMoveDown);
                 SetContextMenuItemEnabled("Remove", hasSelectedStep);
@@ -980,6 +984,33 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (!canMove)
                 MessageBox.Show(reason, "Execution Plan", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return canMove;
+        }
+
+        private void CloneSelectedExecutionPlanStep()
+        {
+            if (_executionPlan?.Steps == null || _executionPlanSteps.SelectedItems.Count == 0) return;
+
+            var index = _executionPlanSteps.SelectedItems[0].Index;
+            var step = _executionPlan.Steps[index];
+            var targetEnvironment = step.TargetEnvironment;
+            if (!IsExportStep(step))
+            {
+                targetEnvironment = SelectOperationTargetEnvironment("Clone step target");
+                if (targetEnvironment == null) return;
+            }
+
+            var clone = ExecutionPlanService.CloneStepForEnvironment(step, targetEnvironment);
+            RefreshExecutionPlanStepMappingsForTarget(clone);
+            _executionPlan.Steps.Insert(index + 1, clone);
+            ExecutionPlanFileService.ValidatePlan(_executionPlan);
+            _executionPlanValidatedForExecution = false;
+            AutoSaveExecutionPlan(true);
+            if (index + 1 < _executionPlanSteps.Items.Count)
+            {
+                _executionPlanSteps.Items[index + 1].Selected = true;
+                _executionPlanSteps.Items[index + 1].Focused = true;
+            }
+            SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Cloned '{step.Name}' as '{clone.Name}'"));
         }
 
         private void RemoveSelectedExecutionPlanStep()
