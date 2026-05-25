@@ -327,9 +327,6 @@
   IF NOT EXIST "$(TargetDir)Plugins" mkdir "$(TargetDir)Plugins"
   COPY /Y "$(TargetPath)" "$(TargetDir)Plugins\"
   COPY /Y "$(TargetDir)$(TargetName).pdb" "$(TargetDir)Plugins\"
-  COPY /Y "$(TargetDir)Microsoft.Data.Sqlite.dll" "$(TargetDir)Plugins\"
-  COPY /Y "$(TargetDir)SQLitePCLRaw.core.dll" "$(TargetDir)Plugins\"
-  COPY /Y "$(TargetDir)SQLitePCLRaw.provider.winsqlite3.dll" "$(TargetDir)Plugins\"
 )
 </PostBuildEvent>
   </PropertyGroup>
