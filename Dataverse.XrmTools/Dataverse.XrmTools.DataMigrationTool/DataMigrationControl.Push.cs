@@ -28,11 +28,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void InitializePushPanel()
         {
-            _tsmiPush = new ToolStripMenuItem("Push Snapshot to Target")
-            {
-                Image = Properties.Resources.export,
-                ImageScaling = ToolStripItemImageScaling.None
-            };
+            _tsmiPush = new ToolStripMenuItem("Push Snapshot to Target");
             _tsmiPush.Click += (s, e) => PushSnapshot();
             _tsmiProject.DropDownItems.Add(_tsmiPush);
         }

@@ -27,11 +27,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void InitializeLoadFilePanel()
         {
-            _tsmiLoadFile = new ToolStripMenuItem("Load File to Project")
-            {
-                Image = Properties.Resources.import,
-                ImageScaling = ToolStripItemImageScaling.None
-            };
+            _tsmiLoadFile = new ToolStripMenuItem("Load File to Project");
             _tsmiLoadFile.Click += (s, e) => LoadFileToProject();
             _tsmiProject.DropDownItems.Add(_tsmiLoadFile);
         }

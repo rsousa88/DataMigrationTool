@@ -24,11 +24,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void InitializeHistoryPanel()
         {
-            _tsmiHistory = new ToolStripMenuItem("View Run History")
-            {
-                Image = Properties.Resources.preview,
-                ImageScaling = ToolStripItemImageScaling.None
-            };
+            _tsmiHistory = new ToolStripMenuItem("View Run History");
             _tsmiHistory.Click += (s, e) => ShowRunHistory();
             _tsmiProject.DropDownItems.Add(new ToolStripSeparator());
             _tsmiProject.DropDownItems.Add(_tsmiHistory);

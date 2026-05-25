@@ -482,6 +482,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             BeginInvoke(new System.Action(() =>
             {
                 ShowStartupGuide();
+                ShowStartupProjectDialog();
             }));
         }
 
@@ -631,30 +632,56 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
         }
 
-        private void ShowStartupFilesDialog()
+        private void ShowStartupProjectDialog()
         {
             if (_startupFilesDialogShown || _tables == null || !_tables.Any()) return;
             if (_project != null) return;
-            if (_dmtSettings != null || !string.IsNullOrWhiteSpace(_dmtFilePath)) return;
 
             _startupFilesDialogShown = true;
-            using (var dlg = new DmtSettingsFileDialog(
-                _tables,
-                _sourceClient?.ConnectedOrgUniqueName,
-                _sourceClient?.ConnectedOrgFriendlyName,
-                table => _settings.GetTableSettings(_tables, table.LogicalName)))
+
+            using (var dlg = new Form())
             {
-                if (dlg.ShowDialog(ParentForm) != DialogResult.OK) return;
+                dlg.Text = "Open a project";
+                dlg.FormBorderStyle = FormBorderStyle.FixedDialog;
+                dlg.StartPosition = FormStartPosition.CenterParent;
+                dlg.ClientSize = new System.Drawing.Size(340, 100);
+                dlg.ShowIcon = false;
+                dlg.ShowInTaskbar = false;
+                dlg.MinimizeBox = false;
+                dlg.MaximizeBox = false;
 
-                if (dlg.Choice == DmtFileChoice.NewFile || dlg.Choice == DmtFileChoice.ExistingFile)
+                var lbl = new System.Windows.Forms.Label
                 {
-                    ApplyDmtFileAndSelectTable(dlg.FilePath, dlg.LoadedSettings);
-                }
+                    Text = "Open or create a project file (.dmtproj) to get started.",
+                    AutoSize = false,
+                    Dock = DockStyle.Top,
+                    Height = 36,
+                    TextAlign = System.Drawing.ContentAlignment.MiddleCenter,
+                    Padding = new Padding(8, 6, 8, 0)
+                };
 
-                if (dlg.PlanChoice == ExecutionPlanFileChoice.NewFile)
-                    CreateExecutionPlan(dlg.PlanFilePath);
-                else if (dlg.PlanChoice == ExecutionPlanFileChoice.ExistingFile)
-                    LoadExecutionPlan(dlg.PlanFilePath);
+                var btnNew = new Button { Text = "New Project", Width = 100, Height = 26, DialogResult = DialogResult.Yes };
+                var btnOpen = new Button { Text = "Open Project", Width = 100, Height = 26, DialogResult = DialogResult.OK };
+                var btnSkip = new Button { Text = "Skip", Width = 60, Height = 26, DialogResult = DialogResult.Cancel };
+
+                var panel = new FlowLayoutPanel
+                {
+                    Dock = DockStyle.Fill,
+                    FlowDirection = FlowDirection.LeftToRight,
+                    Padding = new Padding(16, 4, 0, 0),
+                    WrapContents = false
+                };
+                panel.Controls.AddRange(new Control[] { btnNew, btnOpen, btnSkip });
+
+                dlg.Controls.Add(panel);
+                dlg.Controls.Add(lbl);
+                dlg.CancelButton = btnSkip;
+
+                var result = dlg.ShowDialog(ParentForm);
+                if (result == DialogResult.Yes)
+                    NewProject();
+                else if (result == DialogResult.OK)
+                    OpenProject();
             }
         }
 

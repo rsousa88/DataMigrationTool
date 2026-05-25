@@ -6,11 +6,11 @@
 [Pp]ackages
 TestResults/
 
-/TODO.md
-/DEV-NOTES.md
-/PLAN-*.md
+TODO.md
+DEV-NOTES.md
+PLAN-*.md
 
 .claude/
 CLAUDE.md
-Dataverse.XrmTools/Dataverse.XrmTools.DataMigrationTool/PLAN-SETTINGS.md
-Dataverse.XrmTools/Dataverse.XrmTools.DataMigrationTool/DEV-NOTES.md
+
+debug/

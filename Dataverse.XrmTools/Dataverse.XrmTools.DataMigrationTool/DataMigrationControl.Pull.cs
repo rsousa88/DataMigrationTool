@@ -29,11 +29,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void InitializePullPanel()
         {
-            _tsmiPull = new ToolStripMenuItem("Pull to Project")
-            {
-                Image = Properties.Resources.database,
-                ImageScaling = ToolStripItemImageScaling.None
-            };
+            _tsmiPull = new ToolStripMenuItem("Pull to Project");
             _tsmiPull.Click += (s, e) => PullToProject();
             _tsmiProject.DropDownItems.Add(_tsmiPull);
         }

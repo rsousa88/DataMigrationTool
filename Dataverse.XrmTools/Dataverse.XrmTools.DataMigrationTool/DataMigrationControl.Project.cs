@@ -33,13 +33,12 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             _tsmiProject = new ToolStripMenuItem("Project")
             {
-                Image = Properties.Resources.directory20_colorful,
-                ImageScaling = ToolStripItemImageScaling.None
+                Image = Properties.Resources.database
             };
 
-            var newItem = new ToolStripMenuItem("New...") { Image = Properties.Resources.save16_colorful, ImageScaling = ToolStripItemImageScaling.None };
+            var newItem = new ToolStripMenuItem("New...");
             newItem.Click += (s, e) => NewProject();
-            var openItem = new ToolStripMenuItem("Open...") { Image = Properties.Resources.load16_colorful, ImageScaling = ToolStripItemImageScaling.None };
+            var openItem = new ToolStripMenuItem("Open...");
             openItem.Click += (s, e) => OpenProject();
             var closeItem = new ToolStripMenuItem("Close");
             closeItem.Click += (s, e) => CloseProject();
