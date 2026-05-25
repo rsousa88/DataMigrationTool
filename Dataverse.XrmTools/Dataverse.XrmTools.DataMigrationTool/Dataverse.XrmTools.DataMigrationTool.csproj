@@ -256,6 +256,7 @@
     </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>
+    <Content Include="XrmToolBox.exe.config" />
     <Content Include="LICENSE.txt" />
     <Content Include="Resources\connect16_colorful.png" />
     <Content Include="Resources\database.png" />
@@ -327,6 +328,7 @@
   IF NOT EXIST "$(TargetDir)Plugins" mkdir "$(TargetDir)Plugins"
   COPY /Y "$(TargetPath)" "$(TargetDir)Plugins\"
   COPY /Y "$(TargetDir)$(TargetName).pdb" "$(TargetDir)Plugins\"
+  COPY /Y "$(ProjectDir)XrmToolBox.exe.config" "$(TargetDir)XrmToolBox.exe.config"
 )
 </PostBuildEvent>
   </PropertyGroup>

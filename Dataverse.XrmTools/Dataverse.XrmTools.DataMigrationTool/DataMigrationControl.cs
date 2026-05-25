@@ -635,6 +635,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private void ShowStartupFilesDialog()
         {
             if (_startupFilesDialogShown || _tables == null || !_tables.Any()) return;
+            if (_project != null) return;
             if (_dmtSettings != null || !string.IsNullOrWhiteSpace(_dmtFilePath)) return;
 
             _startupFilesDialogShown = true;
