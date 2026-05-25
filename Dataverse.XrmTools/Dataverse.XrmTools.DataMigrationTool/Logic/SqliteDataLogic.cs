@@ -8,10 +8,13 @@ using System.Xml;
 // Microsoft
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Metadata;
+using Microsoft.Xrm.Sdk.Query;
 
 // DataMigrationTool
+using Dataverse.XrmTools.DataMigrationTool.AppSettings;
 using Dataverse.XrmTools.DataMigrationTool.Models;
 using Dataverse.XrmTools.DataMigrationTool.Repositories;
+using DmtAction = Dataverse.XrmTools.DataMigrationTool.Enums.Action;
 
 namespace Dataverse.XrmTools.DataMigrationTool.Logic
 {
@@ -94,6 +97,359 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
             worker?.ReportProgress(100, "Pull complete.");
             return snapshot;
+        }
+
+        // ─── Push ──────────────────────────────────────────────────────────────
+
+        public class PushResult
+        {
+            public int Created { get; set; }
+            public int Updated { get; set; }
+            public int Deleted { get; set; }
+            public int Skipped { get; set; }
+            public List<string> Errors { get; } = new List<string>();
+        }
+
+        public static PushResult Push(
+            SqliteProjectService project,
+            string snapshotName,
+            string sourceEnvId,
+            string targetEnvId,
+            IOrganizationService targetClient,
+            UiSettings settings,
+            BackgroundWorker worker)
+        {
+            var result = new PushResult();
+
+            var snapshot = project.GetSnapshot(snapshotName)
+                ?? throw new InvalidOperationException($"Snapshot '{snapshotName}' not found in project.");
+
+            var (tableConfig, _, primaryIdAttr, _) = project.GetTableConfig(snapshot.TableLogicalName);
+            if (string.IsNullOrEmpty(primaryIdAttr))
+                throw new InvalidOperationException($"No table config found for '{snapshot.TableLogicalName}'. Load the table attributes first.");
+
+            var cols = snapshot.ColumnConfig;
+            var matchKeyMode = snapshot.LoadMatchKeyMode ?? "Guid";
+            var matchKeyFields = snapshot.LoadMatchKeyFields ?? new List<string>();
+
+            // Load user/team/BU mappings for substitution
+            var mappings = project.GetMappings(sourceEnvId, targetEnvId) ?? new List<Mapping>();
+
+            // Read all rows
+            var allRows = project.ReadSnapshotRecords(snapshot.TableSuffix, cols).ToList();
+            var total = allRows.Count;
+            if (total == 0)
+            {
+                worker?.ReportProgress(100, "Snapshot is empty — nothing to push.");
+                return result;
+            }
+
+            worker?.ReportProgress(5, $"Pushing {total} records to target...");
+            var targetRepo = new CrmRepo(targetClient, worker);
+            var batchSize = tableConfig?.BatchSize > 0 ? tableConfig.BatchSize : 25;
+
+            // Partition rows into operation buckets
+            var toCreate  = new List<(Dictionary<string, object> row, string sourceId, bool isNew)>();
+            var toUpdate  = new List<(Dictionary<string, object> row, string sourceId, Guid targetId)>();
+            var toDelete  = new List<(string sourceId, Guid targetId)>();
+            var warnings  = new List<string>();
+
+            bool doCreate = settings == null || (settings.Action & DmtAction.Create) != 0;
+            bool doUpdate = settings == null || (settings.Action & DmtAction.Update) != 0;
+            bool doDelete = settings != null  && (settings.Action & DmtAction.Delete) != 0;
+
+            for (var idx = 0; idx < total; idx++)
+            {
+                if (idx % 50 == 0)
+                    worker?.ReportProgress(5 + (int)(40.0 * idx / total),
+                        $"Analysing record {idx + 1} of {total}...");
+
+                var row = allRows[idx];
+                var sourceId = row.TryGetValue("_source_id", out var sid) ? sid?.ToString() : null;
+                var isNew = row.TryGetValue("_is_new", out var isn) && isn is long l && l == 1L;
+
+                if (doDelete)
+                {
+                    // Delete mode: resolve target GUID and queue for deletion
+                    if (!string.IsNullOrEmpty(sourceId))
+                    {
+                        var targetIdStr = project.ResolveTargetId(snapshot.TableLogicalName, sourceEnvId, sourceId, targetEnvId);
+                        if (!string.IsNullOrEmpty(targetIdStr) && Guid.TryParse(targetIdStr, out var targetIdDel))
+                            toDelete.Add((sourceId, targetIdDel));
+                        else
+                            warnings.Add($"Delete: no target mapping for source {sourceId} — skipped.");
+                    }
+                    continue;
+                }
+
+                if (isNew)
+                {
+                    if (doCreate)
+                        toCreate.Add((row, sourceId, true));
+                    continue;
+                }
+
+                if (string.IsNullOrEmpty(sourceId)) { result.Skipped++; continue; }
+
+                // Check _id_mappings first
+                var existingStr = string.IsNullOrEmpty(sourceId) ? null
+                    : project.ResolveTargetId(snapshot.TableLogicalName, sourceEnvId, sourceId, targetEnvId);
+                var existingGuid = !string.IsNullOrEmpty(existingStr) && Guid.TryParse(existingStr, out var eg) ? eg : (Guid?)null;
+
+                if (existingGuid.HasValue)
+                {
+                    if (doUpdate)
+                        toUpdate.Add((row, sourceId, existingGuid.Value));
+                    else
+                        result.Skipped++;
+                }
+                else if (matchKeyMode == "Guid" && Guid.TryParse(sourceId, out var srcGuidDirect))
+                {
+                    // Try the source GUID directly as target GUID (optimistic)
+                    if (doCreate)
+                        toCreate.Add((row, sourceId, false));
+                }
+                else
+                {
+                    // Query target by match key fields
+                    if (matchKeyFields?.Any() == true)
+                    {
+                        var keyValues = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var kf in matchKeyFields)
+                        {
+                            if (row.TryGetValue(kf, out var kv) && kv != null)
+                                keyValues[kf] = kv;
+                        }
+                        if (keyValues.Any())
+                        {
+                            var found = targetRepo.FindByFieldValues(snapshot.TableLogicalName, keyValues);
+                            if (found != null)
+                            {
+                                project.SaveIdMapping(snapshot.TableLogicalName, sourceEnvId, sourceId, targetEnvId, found.Id.ToString("D"));
+                                if (doUpdate)
+                                    toUpdate.Add((row, sourceId, found.Id));
+                                else
+                                    result.Skipped++;
+                            }
+                            else if (doCreate)
+                                toCreate.Add((row, sourceId, false));
+                            else
+                                result.Skipped++;
+                        }
+                        else if (doCreate)
+                            toCreate.Add((row, sourceId, false));
+                    }
+                    else if (doCreate)
+                        toCreate.Add((row, sourceId, false));
+                }
+            }
+
+            // Execute Creates
+            var createIdx = 0;
+            for (var i = 0; i < toCreate.Count; i += batchSize)
+            {
+                var batch = toCreate.Skip(i).Take(batchSize).ToList();
+                var entities = batch.Select(t =>
+                {
+                    var entity = RowToEntity(t.row, cols, snapshot.TableLogicalName, primaryIdAttr,
+                        mappings, project, sourceEnvId, targetEnvId);
+                    // If using GUID mode and source has a real GUID, try to preserve it
+                    if (!t.isNew && matchKeyMode == "Guid"
+                        && Guid.TryParse(t.sourceId, out var g))
+                        entity.Id = g;
+                    else
+                        entity.Id = Guid.Empty; // Let Dataverse assign
+                    return entity;
+                }).ToList();
+
+                worker?.ReportProgress(45 + (int)(25.0 * createIdx / Math.Max(1, toCreate.Count)),
+                    $"Creating records {i + 1}–{Math.Min(i + batchSize, toCreate.Count)} of {toCreate.Count}...");
+
+                var responses = targetRepo.CreateRecords(entities).ToList();
+                for (var j = 0; j < responses.Count; j++)
+                {
+                    var resp = responses[j];
+                    if (resp.Success)
+                    {
+                        result.Created++;
+                        var srcId = batch[j].sourceId;
+                        if (!string.IsNullOrEmpty(srcId))
+                            project.SaveIdMapping(snapshot.TableLogicalName, sourceEnvId, srcId, targetEnvId, resp.ResponseId.ToString("D"));
+                    }
+                    else
+                    {
+                        result.Errors.Add($"Create failed: {resp.Message}");
+                    }
+                }
+                createIdx += batch.Count;
+            }
+
+            // Execute Updates
+            var updateIdx = 0;
+            for (var i = 0; i < toUpdate.Count; i += batchSize)
+            {
+                var batch = toUpdate.Skip(i).Take(batchSize).ToList();
+                var entities = batch.Select(t =>
+                {
+                    var entity = RowToEntity(t.row, cols, snapshot.TableLogicalName, primaryIdAttr,
+                        mappings, project, sourceEnvId, targetEnvId);
+                    entity.Id = t.targetId;
+                    return entity;
+                }).ToList();
+
+                worker?.ReportProgress(70 + (int)(20.0 * updateIdx / Math.Max(1, toUpdate.Count)),
+                    $"Updating records {i + 1}–{Math.Min(i + batchSize, toUpdate.Count)} of {toUpdate.Count}...");
+
+                var responses = targetRepo.UpdateRecords(entities).ToList();
+                foreach (var resp in responses)
+                {
+                    if (resp.Success) result.Updated++;
+                    else result.Errors.Add($"Update failed: {resp.Message}");
+                }
+                updateIdx += batch.Count;
+            }
+
+            // Execute Deletes
+            if (toDelete.Any())
+            {
+                worker?.ReportProgress(90, $"Deleting {toDelete.Count} records...");
+                var deleteEntities = toDelete.Select(t => new Entity(snapshot.TableLogicalName) { Id = t.targetId }).ToList();
+                var responses = targetRepo.DeleteRecords(deleteEntities).ToList();
+                for (var j = 0; j < responses.Count; j++)
+                {
+                    var resp = responses[j];
+                    if (resp.Success)
+                    {
+                        result.Deleted++;
+                        project.RemoveIdMapping(snapshot.TableLogicalName, sourceEnvId, toDelete[j].sourceId, targetEnvId);
+                    }
+                    else
+                    {
+                        result.Errors.Add($"Delete failed: {resp.Message}");
+                    }
+                }
+            }
+
+            result.Errors.AddRange(warnings);
+            worker?.ReportProgress(100, $"Push complete: {result.Created} created, {result.Updated} updated, {result.Deleted} deleted.");
+            return result;
+        }
+
+        private static Entity RowToEntity(
+            Dictionary<string, object> row,
+            List<DataTableColumnConfig> cols,
+            string tableLogicalName,
+            string primaryIdAttr,
+            List<Mapping> mappings,
+            SqliteProjectService project,
+            string sourceEnvId,
+            string targetEnvId)
+        {
+            var entity = new Entity(tableLogicalName);
+            var mappingIndex = mappings?.ToDictionary(
+                m => (m.TableLogicalName, m.AttributeLogicalName, m.SourceId),
+                m => m.TargetId) ?? new Dictionary<(string, string, Guid), Guid>();
+
+            foreach (var col in cols)
+            {
+                if (string.Equals(col.LogicalName, primaryIdAttr, StringComparison.OrdinalIgnoreCase))
+                    continue; // Set by caller, not from row data
+
+                if (!row.TryGetValue(col.LogicalName, out var raw) || raw == null)
+                    continue;
+
+                var value = ConvertRowValue(raw, col, tableLogicalName, mappings, project, sourceEnvId, targetEnvId);
+                if (value != null)
+                    entity[col.LogicalName] = value;
+            }
+            return entity;
+        }
+
+        private static object ConvertRowValue(
+            object raw,
+            DataTableColumnConfig col,
+            string tableLogicalName,
+            List<Mapping> mappings,
+            SqliteProjectService project,
+            string sourceEnvId,
+            string targetEnvId)
+        {
+            var type = col.Type ?? string.Empty;
+
+            switch (type)
+            {
+                case "Lookup":
+                case "Owner":
+                case "Customer":
+                {
+                    if (!Guid.TryParse(raw.ToString(), out var srcGuid)) return null;
+
+                    // Apply user/team/BU mapping first
+                    var mapped = mappings?.FirstOrDefault(m =>
+                        string.Equals(m.TableLogicalName, col.RelatedTable, StringComparison.OrdinalIgnoreCase)
+                        && m.SourceId == srcGuid);
+                    if (mapped != null)
+                        return new EntityReference(col.RelatedTable, mapped.TargetId);
+
+                    // Resolve via _id_mappings
+                    var targetIdStr2 = project.ResolveTargetId(col.RelatedTable ?? tableLogicalName, sourceEnvId, srcGuid.ToString("D"), targetEnvId);
+                    if (!string.IsNullOrEmpty(targetIdStr2) && Guid.TryParse(targetIdStr2, out var resolvedId))
+                        return new EntityReference(col.RelatedTable, resolvedId);
+
+                    // Fall back to source GUID (may exist in target already)
+                    return new EntityReference(col.RelatedTable, srcGuid);
+                }
+
+                case "Uniqueidentifier":
+                    return Guid.TryParse(raw.ToString(), out var ug) ? ug : (object)null;
+
+                case "String":
+                case "Memo":
+                case "EntityName":
+                    return raw.ToString();
+
+                case "Integer":
+                case "BigInt":
+                    return raw is long li ? (int)li : int.TryParse(raw.ToString(), out var iv) ? iv : (object)null;
+
+                case "Boolean":
+                    if (raw is long lb) return lb != 0L;
+                    if (raw is bool bb) return bb;
+                    return null;
+
+                case "Decimal":
+                    return raw is double dd ? (decimal)dd : decimal.TryParse(raw.ToString(), out var dv) ? dv : (object)null;
+
+                case "Double":
+                    return raw is double dbl ? dbl : double.TryParse(raw.ToString(), out var dbv) ? dbv : (object)null;
+
+                case "Money":
+                    return raw is double dm ? new Money((decimal)dm)
+                        : decimal.TryParse(raw.ToString(), out var mv) ? new Money(mv) : (object)null;
+
+                case "DateTime":
+                    return DateTime.TryParse(raw.ToString(), null,
+                        System.Globalization.DateTimeStyles.RoundtripKind, out var dt) ? dt : (object)null;
+
+                case "Picklist":
+                case "State":
+                case "Status":
+                    return raw is long lo ? new OptionSetValue((int)lo)
+                        : int.TryParse(raw.ToString(), out var ov) ? new OptionSetValue(ov) : (object)null;
+
+                case "MultiSelectPicklist":
+                {
+                    var parts = raw.ToString().Split(new[] { ',', '|' }, StringSplitOptions.RemoveEmptyEntries);
+                    var values = parts.Select(p => int.TryParse(p.Trim(), out var pv) ? (int?)pv : null)
+                                      .Where(v => v.HasValue)
+                                      .Select(v => new OptionSetValue(v.Value));
+                    var col2 = new OptionSetValueCollection(values.ToList());
+                    return col2;
+                }
+
+                default:
+                    return raw.ToString();
+            }
         }
 
         // ─── Helpers ───────────────────────────────────────────────────────────

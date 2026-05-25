@@ -102,6 +102,10 @@
       <DependentUpon>DataMigrationControl.cs</DependentUpon>
       <SubType>UserControl</SubType>
     </Compile>
+    <Compile Include="DataMigrationControl.Push.cs">
+      <DependentUpon>DataMigrationControl.cs</DependentUpon>
+      <SubType>UserControl</SubType>
+    </Compile>
     <Compile Include="DataMigrationControl.ImportExport.cs">
       <DependentUpon>DataMigrationControl.cs</DependentUpon>
       <SubType>UserControl</SubType>
@@ -161,6 +165,9 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Forms\SnapshotNameDialog.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\PickItemDialog.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Forms\ExecutionPlanFileDialog.cs">
