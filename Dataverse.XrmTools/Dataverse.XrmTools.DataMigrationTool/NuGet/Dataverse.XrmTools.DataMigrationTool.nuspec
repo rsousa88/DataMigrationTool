@@ -23,6 +23,11 @@
     <summary>Migrate data between Dataverse instances</summary>
 	<releaseNotes>
 		2026.5.25.x
+		- [NEW] SQLite-backed project files (.dmtproj) — all table configs, snapshots, ID mappings, and run history stored in a single portable file
+		- [NEW] Pull from Source — fetch records from Dataverse directly into a named project snapshot
+		- [NEW] Load File to Project — import JSON or Excel files into a project snapshot (preserves column type metadata)
+		- [NEW] Push Snapshot to Target — push any project snapshot to a connected target environment with automatic _id_mappings persistence and user/team/BU substitution
+		- [NEW] View Run History — inspect push operation logs with per-step summaries and error details
 		- [NEW] Execution plan steps can now be cloned to another target environment from the plan panel or step context menu
 		- [FIX] Duplicating linked import steps now preserves the source export link and captured configuration while resetting validation for the cloned step
 
@@ -64,5 +69,8 @@
 	<file src="..\bin\Release\DocumentFormat.OpenXml.dll" target="lib\net48\Plugins\DocumentFormat.OpenXml.dll" />
 	<file src="..\bin\Release\ExcelNumberFormat.dll" target="lib\net48\Plugins\ExcelNumberFormat.dll" />
 	<file src="..\bin\Release\System.IO.Packaging.dll" target="lib\net48\Plugins\System.IO.Packaging.dll" />
+	<file src="..\bin\Release\Microsoft.Data.Sqlite.dll" target="lib\net48\Plugins\Microsoft.Data.Sqlite.dll" />
+	<file src="..\bin\Release\SQLitePCLRaw.core.dll" target="lib\net48\Plugins\SQLitePCLRaw.core.dll" />
+	<file src="..\bin\Release\SQLitePCLRaw.provider.winsqlite3.dll" target="lib\net48\Plugins\SQLitePCLRaw.provider.winsqlite3.dll" />
   </files>
 </package>
