@@ -31,7 +31,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             _tsmiPull = new ToolStripMenuItem("Pull to Project");
             _tsmiPull.Click += (s, e) => PullToProject();
-            _tsmiProject.DropDownItems.Add(_tsmiPull);
+            _tsmiData.DropDownItems.Add(_tsmiPull);
         }
 
         #endregion
@@ -105,6 +105,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         }
 
                         var snapshot = args.Result as DmtSnapshot;
+                        RefreshInlineSnapshotList();
                         SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs(
                             $"Pulled {snapshot?.RowCount ?? 0} {tableLogicalName} records → snapshot '{snapshot?.Name}'"));
                     },

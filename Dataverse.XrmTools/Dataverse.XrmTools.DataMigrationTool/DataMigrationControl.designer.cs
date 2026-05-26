@@ -30,12 +30,8 @@
             this.tsbPreview = new System.Windows.Forms.ToolStripButton();
             this.tsmiExport = new System.Windows.Forms.ToolStripMenuItem();
             this.tsmiExportData = new System.Windows.Forms.ToolStripMenuItem();
-            this.tsmiExportSettings = new System.Windows.Forms.ToolStripMenuItem();
             this.tsmiExportWithSettings = new System.Windows.Forms.ToolStripMenuItem();
             this.tsmiExportToExcel = new System.Windows.Forms.ToolStripMenuItem();
-            this.tsmiImport = new System.Windows.Forms.ToolStripMenuItem();
-            this.tsmiImportData = new System.Windows.Forms.ToolStripMenuItem();
-            this.tsmiImportFromExcel = new System.Windows.Forms.ToolStripMenuItem();
             this.tsSeparator2 = new System.Windows.Forms.ToolStripSeparator();
             this.tsmiEnvironments = new System.Windows.Forms.ToolStripMenuItem();
             this.tsmiReloadTables = new System.Windows.Forms.ToolStripMenuItem();
@@ -114,7 +110,6 @@
             this.tsSeparator1,
             this.tsbPreview,
             this.tsmiExport,
-            this.tsmiImport,
             this.tsSeparator2,
             this.tsbShowInstructions,
             this.tsbAbort});
@@ -157,15 +152,7 @@
             this.tsmiExportData.Size = new System.Drawing.Size(197, 22);
             this.tsmiExportData.Text = "To JSON";
             this.tsmiExportData.Click += new System.EventHandler(this.tsmiExportData_Click);
-            // 
-            // tsmiExportSettings
-            // 
-            this.tsmiExportSettings.Enabled = false;
-            this.tsmiExportSettings.Name = "tsmiExportSettings";
-            this.tsmiExportSettings.Size = new System.Drawing.Size(197, 22);
-            this.tsmiExportSettings.Text = "Table Settings";
-            this.tsmiExportSettings.Click += new System.EventHandler(this.tsmiExportSettings_Click);
-            // 
+            //
             // tsmiExportWithSettings
             // 
             this.tsmiExportWithSettings.Enabled = false;
@@ -180,30 +167,6 @@
             this.tsmiExportToExcel.Name = "tsmiExportToExcel";
             this.tsmiExportToExcel.Text = "To Excel";
             this.tsmiExportToExcel.Click += new System.EventHandler(this.tsmiExportToExcel_Click);
-            //
-            // tsmiImport
-            // 
-            this.tsmiImport.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
-            this.tsmiImportData,
-            this.tsmiImportFromExcel});
-            this.tsmiImport.Image = global::Dataverse.XrmTools.DataMigrationTool.Properties.Resources.import;
-            this.tsmiImport.Name = "tsmiImport";
-            this.tsmiImport.Size = new System.Drawing.Size(75, 25);
-            this.tsmiImport.Text = "Import";
-            // 
-            // tsmiImportData
-            // 
-            this.tsmiImportData.Enabled = false;
-            this.tsmiImportData.Name = "tsmiImportData";
-            this.tsmiImportData.Size = new System.Drawing.Size(172, 22);
-            this.tsmiImportData.Text = "From JSON";
-            this.tsmiImportData.Click += new System.EventHandler(this.tsmiImportData_Click);
-            //
-            // tsmiImportFromExcel
-            //
-            this.tsmiImportFromExcel.Name = "tsmiImportFromExcel";
-            this.tsmiImportFromExcel.Text = "From Excel";
-            this.tsmiImportFromExcel.Click += new System.EventHandler(this.tsmiImportFromExcel_Click);
             //
             // tsSeparator2
             //
@@ -865,7 +828,6 @@
         private System.Windows.Forms.ToolStripMenuItem tsmiExportData;
         private System.Windows.Forms.ToolStripMenuItem tsmiExportWithSettings;
         private System.Windows.Forms.ToolStripMenuItem tsmiExportToExcel;
-        private System.Windows.Forms.ToolStripMenuItem tsmiImportFromExcel;
         private System.Windows.Forms.ToolStripSeparator tsSeparator2;
         private System.Windows.Forms.ToolStripMenuItem tsmiEnvironments;
         private System.Windows.Forms.ToolStripMenuItem tsmiReloadTables;
@@ -939,9 +901,6 @@
         private System.Windows.Forms.Button btnFetchXmlBuilder;
         private System.Windows.Forms.Button btnSql4Cds;
         private System.Windows.Forms.RichTextBox rtbFilter;
-        private System.Windows.Forms.ToolStripMenuItem tsmiImport;
-        private System.Windows.Forms.ToolStripMenuItem tsmiImportData;
-        private System.Windows.Forms.ToolStripMenuItem tsmiExportSettings;
         private System.Windows.Forms.Label lblApplyMappingsOn;
         private System.Windows.Forms.RadioButton rbMapOnExport;
         private System.Windows.Forms.RadioButton rbMapOnImport;

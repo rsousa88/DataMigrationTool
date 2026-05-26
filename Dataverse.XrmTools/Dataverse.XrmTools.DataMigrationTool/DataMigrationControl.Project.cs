@@ -23,6 +23,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
         #region Project Fields
         private ProjectContext _project;
         private ToolStripMenuItem _tsmiProject;
+        private ToolStripMenuItem _tsmiData;
+        private ToolStripMenuItem _tsmiDeploy;
         private ToolStripLabel _tsmiProjectName;
         private Panel _projectMismatchBanner;
         #endregion
@@ -87,6 +89,37 @@ namespace Dataverse.XrmTools.DataMigrationTool
             Controls.SetChildIndex(_projectMismatchBanner, Controls.IndexOf(pnlMain) + 1);
         }
 
+        private void InitializeDataPanel()
+        {
+            _tsmiData = new ToolStripMenuItem("Data")
+            {
+                Image = Properties.Resources.import
+            };
+
+            InitializePullPanel();
+            InitializeLoadFilePanel();
+            _tsmiData.DropDownItems.Add(new ToolStripSeparator());
+            InitializeViewDataPanel();
+
+            int insertIdx = tsMain.Items.IndexOf(_tsmiProjectName) + 2;
+            tsMain.Items.Insert(insertIdx, _tsmiData);
+        }
+
+        private void InitializeDeployPanel()
+        {
+            _tsmiDeploy = new ToolStripMenuItem("Deploy")
+            {
+                Image = Properties.Resources.export
+            };
+
+            InitializePushPanel();
+            _tsmiDeploy.DropDownItems.Add(new ToolStripSeparator());
+            InitializeHistoryPanel();
+
+            int insertIdx = tsMain.Items.IndexOf(_tsmiData) + 1;
+            tsMain.Items.Insert(insertIdx, _tsmiDeploy);
+        }
+
         #endregion
 
         #region Project Operations
@@ -114,6 +147,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     BindProjectSource(_sourceClient);
                     RenderProjectBanner();
                     RenderProjectName();
+                    RefreshInlineSnapshotList();
 
                     SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Project created: {dlg.ProjectName}"));
                 }
@@ -157,6 +191,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 BindProjectSource(_sourceClient);
                 RenderProjectBanner();
                 RenderProjectName();
+                RefreshInlineSnapshotList();
 
                 SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Project opened: {_project.ProjectName}"));
             }
@@ -178,6 +213,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (_projectMismatchBanner != null)
                 _projectMismatchBanner.Visible = false;
             RenderProjectName();
+            RefreshInlineSnapshotList();
 
             if (!silent)
                 SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Project closed: {name}"));

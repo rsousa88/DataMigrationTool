@@ -29,7 +29,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             _tsmiLoadFile = new ToolStripMenuItem("Load File to Project");
             _tsmiLoadFile.Click += (s, e) => LoadFileToProject();
-            _tsmiProject.DropDownItems.Add(_tsmiLoadFile);
+            _tsmiData.DropDownItems.Add(_tsmiLoadFile);
         }
 
         #endregion
@@ -58,8 +58,9 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
             var ext = Path.GetExtension(filePath).ToLowerInvariant();
             var defaultName = Path.GetFileNameWithoutExtension(filePath);
+            var existingSnapshots = _project.Service.GetSnapshots();
 
-            using (var dlg = new SnapshotNameDialog(defaultName, "Load"))
+            using (var dlg = new SnapshotNameDialog(defaultName, "Load", existingSnapshots))
             {
                 if (dlg.ShowDialog(ParentForm) != DialogResult.OK) return;
 
@@ -89,6 +90,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         }
 
                         var snapshot = args.Result as DmtSnapshot;
+                        RefreshInlineSnapshotList();
                         SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs(
                             $"Loaded {snapshot?.RowCount ?? 0} records → snapshot '{snapshot?.Name}'"));
                     },

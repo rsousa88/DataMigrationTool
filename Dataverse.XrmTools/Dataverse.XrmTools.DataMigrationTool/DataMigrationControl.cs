@@ -148,14 +148,35 @@ namespace Dataverse.XrmTools.DataMigrationTool
             BeginInvoke(new System.Action(() =>
             {
                 InitializeProjectPanel();
-                InitializePullPanel();
-                InitializeLoadFilePanel();
-                InitializePushPanel();
-                InitializeHistoryPanel();
+                InitializeDataPanel();
+                InitializeDeployPanel();
                 InitializeExecutionPlanPanel();
+                RearrangeToolbar();
                 RenderExecutionPlanMenu();
                 ExecuteMethod(WhoAmI);
             }));
+        }
+
+        private void RearrangeToolbar()
+        {
+            _tsmiData.Text = "Import";
+
+            tsMain.SuspendLayout();
+            tsMain.Items.Clear();
+            tsMain.Items.Add(tsmiEnvironments);
+            tsMain.Items.Add(new ToolStripSeparator());
+            tsMain.Items.Add(_tsmiProject);
+            tsMain.Items.Add(_tsmiProjectName);
+            tsMain.Items.Add(new ToolStripSeparator());
+            tsMain.Items.Add(tsbPreview);
+            tsMain.Items.Add(tsmiExport);
+            tsMain.Items.Add(new ToolStripSeparator());
+            tsMain.Items.Add(_tsmiData);
+            tsMain.Items.Add(_tsmiDeploy);
+            tsMain.Items.Add(new ToolStripSeparator());
+            tsMain.Items.Add(tsbShowInstructions);
+            tsMain.Items.Add(tsbAbort);
+            tsMain.ResumeLayout();
         }
 
         #region Interface Methods
@@ -681,6 +702,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 else if (result == DialogResult.OK)
                     OpenProject();
             }
+
         }
 
         private void LoadAttributes()
@@ -1784,39 +1806,13 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
             AutoSaveDmtSettings();
 
-            var previous = _previousTableLogicalName;
-            var existingSettings = _settings.GetTableSettings(_tables, table.LogicalName);
-            using (var dlg = new DmtSettingsFileDialog(
-                table,
-                _sourceClient?.ConnectedOrgUniqueName,
-                _sourceClient?.ConnectedOrgFriendlyName,
-                existingSettings))
-            {
-                var result = dlg.ShowDialog(ParentForm);
-                if (result != DialogResult.OK || dlg.Choice == DmtFileChoice.Cancel)
-                {
-                    RestorePreviousTableSelection(previous);
-                    return false;
-                }
-
-                _dmtFilePath = null;
-                _dmtSettings = null;
-                _currentTableLogicalName = table.LogicalName;
-                _currentTableConfig = null;
-
-                if (dlg.Choice == DmtFileChoice.WithoutFile)
-                {
-                    _currentTableSettings = CreateSoftTableSettings(table);
-                }
-                else
-                {
-                    _dmtFilePath = dlg.FilePath;
-                    ApplyDmtSettingsToCurrentTable(dlg.LoadedSettings);
-                }
-
-                _previousTableLogicalName = table.LogicalName;
-                return true;
-            }
+            _dmtFilePath = null;
+            _dmtSettings = null;
+            _currentTableLogicalName = table.LogicalName;
+            _currentTableConfig = null;
+            _currentTableSettings = CreateSoftTableSettings(table);
+            _previousTableLogicalName = table.LogicalName;
+            return true;
         }
 
         private void RestorePreviousTableSelection(string logicalName)
@@ -2467,15 +2463,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private void MoveImportSettingsIntoDialogs()
         {
             tsmiExportData.Text = "To JSON";
-            tsmiImportData.Text = "From JSON";
-            tsmiImport.DropDownItems.Clear();
-            tsmiImport.DropDownItems.AddRange(new ToolStripItem[]
-            {
-                tsmiImportData,
-                tsmiImportFromExcel
-            });
-            tsmiExportSettings.Visible = false;
-            tsmiExportSettings.Enabled = false;
             tsmiExportWithSettings.Visible = false;
             tsmiExportWithSettings.Enabled = false;
             tsmiReloadTables.Enabled = false;
@@ -2501,9 +2488,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 tsmiSwitchConnections.Enabled = enable && targetReady;
                 tsmiReloadTables.Enabled = enable;
                 gbTables.Enabled = enable;
-                tsmiImportData.Enabled = enable;
-                tsmiImportFromExcel.Enabled = enable;
-
                 if (targetReady) // source and target connection is available
                 {
                     gbMappingSettings.Enabled = false;
@@ -2518,8 +2502,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     tsbPreview.Enabled = enable;
                     tsmiExport.Enabled = enable;
                     tsmiExportData.Enabled = enable;
-                    tsmiExportSettings.Enabled = false;
-                    tsmiExportSettings.Visible = false;
                     tsmiExportWithSettings.Enabled = false;
                     tsmiExportWithSettings.Visible = false;
                     tsmiExportToExcel.Enabled = enable;
@@ -3028,39 +3010,11 @@ namespace Dataverse.XrmTools.DataMigrationTool
             tsmiExportWithSettings.Enabled = false;
         }
 
-        private void tsmiImportData_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                Import();
-            }
-            catch (Exception ex)
-            {
-                ManageWorkingState(false);
-                _logger.Log(LogLevel.ERROR, ex.Message);
-                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
         private void tsmiExportToExcel_Click(object sender, EventArgs e)
         {
             try
             {
                 ExportToExcel();
-            }
-            catch (Exception ex)
-            {
-                ManageWorkingState(false);
-                _logger.Log(LogLevel.ERROR, ex.Message);
-                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private void tsmiImportFromExcel_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                ImportFromExcel();
             }
             catch (Exception ex)
             {

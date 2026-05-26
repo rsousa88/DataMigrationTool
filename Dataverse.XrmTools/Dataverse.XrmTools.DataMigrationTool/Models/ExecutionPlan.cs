@@ -46,9 +46,10 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
 
     public class ExecutionPlanStepInput
     {
-        public string Mode { get; set; } = "File";
+        public string Mode { get; set; } = "File";      // "File" | "FromStepOutput" | "Snapshot"
         public string Path { get; set; }
         public string SourceStepId { get; set; }
+        public string SnapshotName { get; set; }        // used when Mode = "Snapshot"
     }
 
     public class ExecutionPlanStepOutput
@@ -74,6 +75,14 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
         public ExcelImportMatchKeySelection ImportMatchKeySelection { get; set; }
         public UiSettings ImportSettings { get; set; }
         public UiSettings ExportSettings { get; set; }
+        public List<PushLookupMatchKey> LookupMatchKeys { get; set; }
+    }
+
+    public class PushLookupMatchKey
+    {
+        public string LogicalName { get; set; }
+        public string Mode { get; set; }         // "Guid" | "Custom"
+        public List<string> Fields { get; set; } = new List<string>();
     }
 
     public class ExecutionPlanFailurePolicy

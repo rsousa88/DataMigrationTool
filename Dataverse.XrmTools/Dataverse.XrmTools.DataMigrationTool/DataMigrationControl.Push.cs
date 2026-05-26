@@ -1,15 +1,14 @@
 // System
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Windows.Forms;
 
 // XrmToolBox
-using XrmToolBox.Extensibility;
 using XrmToolBox.Extensibility.Args;
 
 // DataMigrationTool
 using Dataverse.XrmTools.DataMigrationTool.Enums;
+using Dataverse.XrmTools.DataMigrationTool.Forms;
 using Dataverse.XrmTools.DataMigrationTool.Logic;
 using Dataverse.XrmTools.DataMigrationTool.Models;
 using DmtAction = Dataverse.XrmTools.DataMigrationTool.Enums.Action;
@@ -28,30 +27,20 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void InitializePushPanel()
         {
-            _tsmiPush = new ToolStripMenuItem("Push Snapshot to Target");
-            _tsmiPush.Click += (s, e) => PushSnapshot();
-            _tsmiProject.DropDownItems.Add(_tsmiPush);
+            _tsmiPush = new ToolStripMenuItem("Add Snapshot to Plan");
+            _tsmiPush.Click += (s, e) => AddPushSnapshotStepToExecutionPlan();
+            _tsmiDeploy.DropDownItems.Add(_tsmiPush);
         }
 
         #endregion
 
         #region Push Operations
 
-        private void PushSnapshot()
+        private void AddPushSnapshotStepToExecutionPlan()
         {
             if (_project?.Service == null)
             {
                 MessageBox.Show(this, "Open or create a project first.", "No Project", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
-            if (_project.IsSourceMismatch)
-            {
-                MessageBox.Show(this, "Source mismatch — push is blocked until you connect the project's original source environment.", "Source Mismatch", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-            if (_project.TargetClients == null || !_project.TargetClients.Any())
-            {
-                MessageBox.Show(this, "Connect to a target environment first (use 'Additional Connection' in XrmToolBox).", "No Target", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
@@ -62,73 +51,76 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 return;
             }
 
-            // Pick snapshot
-            string snapshotName;
-            using (var dlg = new Forms.PickItemDialog("Select Snapshot to Push",
-                snapshots.Select(s => s.Name).OrderBy(n => n).ToList()))
+            DmtSnapshot snapshot;
+            using (var dlg = new Forms.PickSnapshotDialog("Select Snapshot", snapshots))
             {
                 if (dlg.ShowDialog(ParentForm) != DialogResult.OK) return;
-                snapshotName = dlg.SelectedItem;
+                snapshot = dlg.SelectedSnapshot;
             }
 
-            // Pick target environment
-            string targetEnvId;
-            using (var dlg = new Forms.PickItemDialog("Select Target Environment",
-                _project.TargetClients.Keys.OrderBy(k => k).ToList()))
-            {
-                if (dlg.ShowDialog(ParentForm) != DialogResult.OK) return;
-                targetEnvId = dlg.SelectedItem;
-            }
+            AddSnapshotToPlan(snapshot);
+        }
 
-            if (!_project.TargetClients.TryGetValue(targetEnvId, out var targetClient))
+        internal void AddSnapshotToPlan(DmtSnapshot snapshot)
+        {
+            if (snapshot == null) return;
+
+            var targets = GetLoadedTargetEnvironments();
+            if (targets == null || !targets.Any())
             {
-                MessageBox.Show(this, $"Target environment '{targetEnvId}' is not connected.", "Not Connected", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(this, "Connect to a target environment first (use 'Additional Connection' in XrmToolBox).", "No Target", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
-            var sourceEnvId = _project.SourceEnvironment?.Id ?? string.Empty;
-            var settings = new UiSettings { Action = DmtAction.Create | DmtAction.Update };
-
-            ManageWorkingState(true, $"Pushing '{snapshotName}' to {targetEnvId}...");
-
-            WorkAsync(new WorkAsyncInfo
+            DmtEnvironmentInfo targetEnv;
+            if (targets.Count == 1)
             {
-                Work = (worker, args) =>
+                var t = targets[0];
+                targetEnv = new DmtEnvironmentInfo { UniqueName = t.UniqueName, FriendlyName = t.FriendlyName };
+            }
+            else
+            {
+                var targetNames = targets.Select(t => string.IsNullOrWhiteSpace(t.FriendlyName) ? t.UniqueName : t.FriendlyName).ToList();
+                using (var dlg = new PickItemDialog("Select Target Environment", targetNames))
                 {
-                    args.Result = SqliteDataLogic.Push(
-                        _project.Service,
-                        snapshotName,
-                        sourceEnvId,
-                        targetEnvId,
-                        targetClient,
-                        settings,
-                        worker);
-                },
-                PostWorkCallBack = args =>
+                    if (dlg.ShowDialog(ParentForm) != DialogResult.OK) return;
+                    var chosen = targets.FirstOrDefault(t =>
+                        string.Equals(t.FriendlyName, dlg.SelectedItem, StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(t.UniqueName, dlg.SelectedItem, StringComparison.OrdinalIgnoreCase));
+                    if (chosen == null) return;
+                    targetEnv = new DmtEnvironmentInfo { UniqueName = chosen.UniqueName, FriendlyName = chosen.FriendlyName };
+                }
+            }
+
+            if (!EnsureExecutionPlanLoaded()) return;
+
+            var step = new ExecutionPlanStep
+            {
+                Operation = "PushFromSnapshot",
+                Name = $"Push {snapshot.TableLogicalName} (#{snapshot.SortOrder} {snapshot.Name})",
+                Enabled = true,
+                Table = new DmtTableInfo { LogicalName = snapshot.TableLogicalName },
+                TargetEnvironment = targetEnv,
+                Input = new ExecutionPlanStepInput
                 {
-                    ManageWorkingState(false);
-                    if (args.Error != null)
-                    {
-                        _logger.Log(LogLevel.ERROR, args.Error.Message);
-                        MessageBox.Show(this, $"Push failed: {args.Error.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        return;
-                    }
-
-                    var result = args.Result as SqliteDataLogic.PushResult;
-                    var msg = $"Push complete: {result?.Created ?? 0} created, {result?.Updated ?? 0} updated, {result?.Deleted ?? 0} deleted.";
-                    if (result?.Errors?.Any() == true)
-                        msg += $" {result.Errors.Count} error(s).";
-
-                    SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs(msg));
-
-                    if (result?.Errors?.Any() == true)
-                        MessageBox.Show(this,
-                            $"{msg}\n\nFirst error: {result.Errors[0]}",
-                            "Push Completed With Errors",
-                            MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    Mode = "Snapshot",
+                    SnapshotName = snapshot.Name
                 },
-                ProgressChanged = ReportWorkProgress
-            });
+                Snapshot = new ExecutionPlanStepSnapshot
+                {
+                    ImportSettings = new UiSettings { Action = DmtAction.Create | DmtAction.Update }
+                }
+            };
+
+            OpenPushStepConfigDialog(step, snapshot, configuredStep =>
+            {
+                _executionPlan.Steps.Add(configuredStep);
+                ExecutionPlanFileService.ValidatePlan(_executionPlan);
+                _executionPlanValidatedForExecution = false;
+                AutoSaveExecutionPlan(true);
+                RenderExecutionPlanPanel();
+                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Added '{configuredStep.Name}' to execution plan"));
+            }, "Configure & Add");
         }
 
         #endregion

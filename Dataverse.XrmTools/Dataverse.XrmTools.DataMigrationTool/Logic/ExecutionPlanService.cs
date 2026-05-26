@@ -27,10 +27,11 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
         {
             switch (operation)
             {
-                case "ExportToJson": return "Export JSON";
-                case "ExportToExcel": return "Export Excel";
-                case "ImportFromJson": return "Import JSON";
-                case "ImportFromExcel": return "Import Excel";
+                case "ExportToJson":      return "Export JSON";
+                case "ExportToExcel":     return "Export Excel";
+                case "ImportFromJson":    return "Import JSON";
+                case "ImportFromExcel":   return "Import Excel";
+                case "PushFromSnapshot":  return "Push Snapshot";
                 default: return operation;
             }
         }
@@ -38,6 +39,11 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
         public static bool IsExportStep(ExecutionPlanStep step)
         {
             return (step?.Operation ?? string.Empty).StartsWith("Export", StringComparison.OrdinalIgnoreCase);
+        }
+
+        public static bool IsPushSnapshotStep(ExecutionPlanStep step)
+        {
+            return string.Equals(step?.Operation, "PushFromSnapshot", StringComparison.OrdinalIgnoreCase);
         }
 
         public static int GetStepNumber(ExecutionPlan plan, string stepId)
@@ -50,6 +56,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
         {
             if (string.Equals(step?.Input?.Mode, "FromStepOutput", StringComparison.OrdinalIgnoreCase))
                 return $"From Step {GetStepNumber(plan, step.Input.SourceStepId)}";
+            if (string.Equals(step?.Input?.Mode, "Snapshot", StringComparison.OrdinalIgnoreCase))
+                return $"Snapshot: {step.Input.SnapshotName}";
             if (!string.IsNullOrWhiteSpace(step?.Output?.PathTemplate))
                 return step.Output.PathTemplate;
             return step?.Input?.Path ?? string.Empty;

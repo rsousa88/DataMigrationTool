@@ -22,6 +22,7 @@ using Dataverse.XrmTools.DataMigrationTool.Forms;
 using Dataverse.XrmTools.DataMigrationTool.Helpers;
 using Dataverse.XrmTools.DataMigrationTool.Logic;
 using Dataverse.XrmTools.DataMigrationTool.Models;
+using Dataverse.XrmTools.DataMigrationTool.Repositories;
 
 namespace Dataverse.XrmTools.DataMigrationTool
 {
@@ -321,13 +322,32 @@ namespace Dataverse.XrmTools.DataMigrationTool
             layout.Controls.Add(stepActions, 0, 4);
             _executionPlanGroup.Controls.Add(layout);
 
-            _executionPlanSplitContainer.Panel2.Controls.Add(_executionPlanGroup);
+            _rightSplitContainer = new SplitContainer
+            {
+                Dock = DockStyle.Fill,
+                Orientation = Orientation.Horizontal,
+                SplitterWidth = 5,
+                Panel1MinSize = 1,
+                Panel2MinSize = 1,
+                FixedPanel = FixedPanel.None
+            };
+            var snapshotPanel = InitializeSnapshotPanel();
+            _rightSplitContainer.Panel1.Controls.Add(snapshotPanel);
+            _rightSplitContainer.Panel2.Controls.Add(_executionPlanGroup);
+            _executionPlanSplitContainer.Panel2.Controls.Add(_rightSplitContainer);
             pnlMain.ResumeLayout();
             System.Action applySplitter = () =>
             {
-                if (_executionPlanSplitContainer == null || _executionPlanSplitContainer.Width <= 0) return;
-                SetExecutionPlanPanelWidthRatio(0.30m);
-                ResizeExecutionPlanColumns();
+                if (_executionPlanSplitContainer?.Width > 0)
+                {
+                    SetExecutionPlanPanelWidthRatio(0.50m);
+                    ResizeExecutionPlanColumns();
+                }
+                if (_rightSplitContainer?.Height > 0)
+                {
+                    var half = (_rightSplitContainer.Height - _rightSplitContainer.SplitterWidth) / 2;
+                    try { _rightSplitContainer.SplitterDistance = Math.Max(_rightSplitContainer.Panel1MinSize, half); } catch { }
+                }
             };
             if (IsHandleCreated)
                 BeginInvoke(applySplitter);
@@ -819,8 +839,12 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (_executionPlanValidateButton != null) _executionPlanValidateButton.Enabled = hasPlan;
             if (_executionPlanExecuteButton != null) _executionPlanExecuteButton.Enabled = CanExecuteValidatedExecutionPlan();
 
+            var canConfigure = !_working && _executionPlan != null && hasSelectedStep &&
+                ((canPreviewStep && (selectedStep.Operation ?? string.Empty).StartsWith("Import", StringComparison.OrdinalIgnoreCase)) ||
+                 ExecutionPlanService.IsPushSnapshotStep(selectedStep));
+
             if (_executionPlanPreviewStepButton != null) _executionPlanPreviewStepButton.Enabled = canPreviewStep;
-            if (_executionPlanConfigureStepButton != null) _executionPlanConfigureStepButton.Enabled = canPreviewStep && (selectedStep.Operation ?? string.Empty).StartsWith("Import", StringComparison.OrdinalIgnoreCase);
+            if (_executionPlanConfigureStepButton != null) _executionPlanConfigureStepButton.Enabled = canConfigure;
             if (_executionPlanExecuteStepButton != null) _executionPlanExecuteStepButton.Enabled = canExecuteStep;
             if (_executionPlanCloneStepButton != null) _executionPlanCloneStepButton.Enabled = hasSelectedStep;
             if (_executionPlanMoveStepUpButton != null) _executionPlanMoveStepUpButton.Enabled = canMoveUp;
@@ -830,7 +854,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (_executionPlanStepContextMenu != null)
             {
                 SetContextMenuItemEnabled("Preview", canPreviewStep);
-                SetContextMenuItemEnabled("Configure", _executionPlanConfigureStepButton?.Enabled == true);
+                SetContextMenuItemEnabled("Configure", canConfigure);
                 SetContextMenuItemEnabled("Execute Step", canExecuteStep);
                 SetContextMenuItemEnabled("Clone", hasSelectedStep);
                 SetContextMenuItemEnabled("Move Up", canMoveUp);
@@ -852,8 +876,17 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             if (_executionPlan == null || step == null || _working)
                 return false;
+            if (!_executionPlanValidatedForExecution)
+                return false;
             if (string.Equals(step.Validation?.Status, "Error", StringComparison.OrdinalIgnoreCase))
                 return false;
+
+            if (ExecutionPlanService.IsPushSnapshotStep(step))
+                return _project?.Service != null
+                    && !string.IsNullOrWhiteSpace(step.Input?.SnapshotName)
+                    && _project.Service.HasSnapshot(step.Input.SnapshotName)
+                    && ExecutionPlanService.TryValidateTargetConnection(step, _targetClients.Keys, _targetClient != null, out _);
+
             if (!ExecutionPlanService.TryValidateTargetConnection(step, _targetClients.Keys, _targetClient != null, out _))
                 return false;
             if ((step.Operation ?? string.Empty).StartsWith("Import", StringComparison.OrdinalIgnoreCase))
@@ -870,6 +903,11 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             if (_executionPlan == null || step == null || _working)
                 return false;
+
+            // Push-from-snapshot steps don't have a preview
+            if (ExecutionPlanService.IsPushSnapshotStep(step))
+                return false;
+
             if (!ExecutionPlanService.TryValidateTargetConnection(step, _targetClients.Keys, _targetClient != null, out _))
                 return false;
             if ((step.Operation ?? string.Empty).StartsWith("Import", StringComparison.OrdinalIgnoreCase))
@@ -1115,6 +1153,21 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (step == null)
             {
                 MessageBox.Show("Select a step to configure.", "Execution Plan", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (ExecutionPlanService.IsPushSnapshotStep(step))
+            {
+                DmtSnapshot snapshot = null;
+                if (_project?.Service != null && !string.IsNullOrWhiteSpace(step.Input?.SnapshotName))
+                    snapshot = _project.Service.GetSnapshot(step.Input.SnapshotName);
+                OpenPushStepConfigDialog(step, snapshot, _ =>
+                {
+                    _executionPlanValidatedForExecution = false;
+                    ExecutionPlanFileService.ValidatePlan(_executionPlan);
+                    AutoSaveExecutionPlan(true);
+                    RenderExecutionPlanPanel();
+                }, "Apply");
                 return;
             }
 
@@ -1520,6 +1573,9 @@ namespace Dataverse.XrmTools.DataMigrationTool
             BackgroundWorker worker,
             Dictionary<string, PlanLookupContext> runtimeLookupContexts)
         {
+            if (string.Equals(step.Operation, "PushFromSnapshot", StringComparison.OrdinalIgnoreCase))
+                return ExecutePushFromSnapshotStep(step, worker);
+
             var tableData = BuildTableDataForExecutionStep(step);
             var path = ResolveExecutionStepPath(step, stepIndex);
 
@@ -1593,6 +1649,36 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
         }
 
+        private ExecutionPlanStepExecutionResult ExecutePushFromSnapshotStep(ExecutionPlanStep step, BackgroundWorker worker)
+        {
+            if (_project?.Service == null)
+                throw new InvalidOperationException("No project open. Push from snapshot requires an open project.");
+
+            var snapshotName = step.Input?.SnapshotName;
+            if (string.IsNullOrWhiteSpace(snapshotName))
+                throw new InvalidOperationException("Push step has no snapshot name.");
+
+            var sourceEnvId = _project.SourceEnvironment?.Id ?? string.Empty;
+            var targetEnvId = step.TargetEnvironment?.UniqueName ?? string.Empty;
+            var settings = step.Snapshot?.ImportSettings ?? new UiSettings { Action = Enums.Action.Create | Enums.Action.Update };
+
+            var result = SqliteDataLogic.Push(_project.Service, snapshotName, sourceEnvId, targetEnvId, ActiveTargetClient, settings, worker, step.Snapshot?.ImportMatchKeySelection, step.Snapshot?.LookupMatchKeys);
+
+            var summary = $"{step.Name}: {result?.Created ?? 0} created, {result?.Updated ?? 0} updated, {result?.Skipped ?? 0} skipped";
+            if (result?.Errors?.Any() == true)
+                summary += $", {result.Errors.Count} error(s)";
+
+            var errors = result?.Errors ?? new System.Collections.Generic.List<string>();
+            return new ExecutionPlanStepExecutionResult
+            {
+                Summary = summary,
+                TotalRecords = (result?.Created ?? 0) + (result?.Updated ?? 0) + (result?.Skipped ?? 0),
+                FailedRecords = errors.Count,
+                HasFailures = errors.Count > 0,
+                ErrorDetails = errors
+            };
+        }
+
         private void ValidateExecutionPlanInternal(ExecutionPlan plan, BackgroundWorker worker, bool includePreviewCounts)
         {
             if (plan == null) return;
@@ -1612,6 +1698,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     {
                         if (!TrySetExecutionTargetOverride(step, out var targetError))
                             AddExecutionPlanValidationMessage(step, "Error", targetError);
+                        else if (ExecutionPlanService.IsPushSnapshotStep(step))
+                            ValidatePushFromSnapshotStep(step);
                         else
                         {
                             ValidateExecutionPlanStepSnapshot(step);
@@ -1698,6 +1786,84 @@ namespace Dataverse.XrmTools.DataMigrationTool
             {
                 AddExecutionPlanValidationMessage(step, "Error", $"Table validation failed: {ex.Message}");
             }
+        }
+
+        private void ValidatePushFromSnapshotStep(ExecutionPlanStep step)
+        {
+            if (string.IsNullOrWhiteSpace(step.Input?.SnapshotName))
+            {
+                AddExecutionPlanValidationMessage(step, "Error", "Push step has no snapshot name configured.");
+                return;
+            }
+
+            if (_project?.Service == null || !_project.Service.HasSnapshot(step.Input.SnapshotName))
+            {
+                AddExecutionPlanValidationMessage(step, "Error", $"Snapshot '{step.Input.SnapshotName}' was not found in the open project.");
+                return;
+            }
+
+            if (step.Snapshot?.ImportSettings == null)
+                AddExecutionPlanValidationMessage(step, "Warning", "Push step has not been configured. Using defaults: Create + Update with GUID match key. Run 'Configure' to set import actions and match key.");
+        }
+
+        private void OpenPushStepConfigDialog(ExecutionPlanStep step, DmtSnapshot snapshot,
+            System.Action<ExecutionPlanStep> onConfigured, string acceptButtonText = "Add to Plan")
+        {
+            ManageWorkingState(true, "Loading snapshot configuration...");
+            WorkAsync(new WorkAsyncInfo
+            {
+                AsyncArgument = new { step, snapshot },
+                IsCancelable = false,
+                Work = (worker, evt) =>
+                {
+                    dynamic args = evt.Argument;
+                    var snap = args.snapshot as DmtSnapshot;
+                    var configStep = args.step as ExecutionPlanStep;
+                    var altKeys = new List<ExcelImportAlternateKeyOption>();
+
+                    if (snap != null && TrySetExecutionTargetOverride(configStep, out _))
+                    {
+                        try
+                        {
+                            var repo = new CrmRepo(ActiveTargetClient);
+                            var keys = repo.GetAlternateKeys(snap.TableLogicalName);
+                            var availableFields = snap.ColumnConfig?.Select(c => c.LogicalName) ?? Enumerable.Empty<string>();
+                            altKeys = ImportPreviewService.GetAvailableImportAlternateKeys(keys, availableFields);
+                        }
+                        catch { }
+                        finally { ClearExecutionTargetOverride(); }
+                    }
+
+                    SqliteDataLogic.PushPreview preview = null;
+                    if (snap != null && _project?.Service != null)
+                    {
+                        try
+                        {
+                            var sourceEnvId = _project.SourceEnvironment?.Id ?? string.Empty;
+                            var targetEnvId = configStep?.TargetEnvironment?.UniqueName ?? string.Empty;
+                            preview = SqliteDataLogic.PreviewPush(_project.Service, snap.Name, sourceEnvId, targetEnvId,
+                                configStep?.Snapshot?.ImportSettings, configStep?.Snapshot?.ImportMatchKeySelection);
+                        }
+                        catch { }
+                    }
+
+                    evt.Result = new { altKeys, preview };
+                },
+                PostWorkCallBack = evt =>
+                {
+                    ManageWorkingState(false);
+                    dynamic result = evt.Result;
+                    var altKeys = result?.altKeys as List<ExcelImportAlternateKeyOption> ?? new List<ExcelImportAlternateKeyOption>();
+                    var preview = result?.preview as SqliteDataLogic.PushPreview;
+
+                    using (var dlg = new PushStepConfigDialog(step, snapshot, altKeys, preview, acceptButtonText))
+                    {
+                        if (dlg.ShowDialog(ParentForm) != DialogResult.OK) return;
+                    }
+
+                    onConfigured(step);
+                }
+            });
         }
 
         private void RefreshExecutionPlanImportPreview(ExecutionPlanStep step, int stepIndex, BackgroundWorker worker, bool fullPreview = false)

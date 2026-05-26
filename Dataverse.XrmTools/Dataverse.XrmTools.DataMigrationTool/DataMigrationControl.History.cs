@@ -26,8 +26,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             _tsmiHistory = new ToolStripMenuItem("View Run History");
             _tsmiHistory.Click += (s, e) => ShowRunHistory();
-            _tsmiProject.DropDownItems.Add(new ToolStripSeparator());
-            _tsmiProject.DropDownItems.Add(_tsmiHistory);
+            _tsmiDeploy.DropDownItems.Add(_tsmiHistory);
         }
 
         #endregion

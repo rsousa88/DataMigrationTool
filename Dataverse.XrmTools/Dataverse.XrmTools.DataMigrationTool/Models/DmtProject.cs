@@ -96,6 +96,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
         public string Source { get; set; }               // "Pull" | "Excel" | "JSON"
         public string LoadMatchKeyMode { get; set; }
         public List<string> LoadMatchKeyFields { get; set; } = new List<string>();
+        public int SortOrder { get; set; }               // display order (#) — assigned once at creation
 
         // Frozen at creation — not updated when DataTableConfig.AllColumns is refreshed
         public List<DataTableColumnConfig> ColumnConfig { get; set; } = new List<DataTableColumnConfig>();

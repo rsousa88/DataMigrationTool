@@ -241,8 +241,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             foreach (var cell in headerRow.CellsUsed())
                 headerMap[cell.GetString()] = cell.Address.ColumnNumber;
 
-            // Skip rows 1 (headers) and 2 (hints)
-            const int firstDataRow = 3;
+            var firstDataRow = DetectFirstDataRow(sheet, headerMap, primaryIdAttr);
             var colIndex = columns.ToDictionary(c => c.LogicalName, c => c, StringComparer.OrdinalIgnoreCase);
             var rows = new List<Dictionary<string, object>>();
             var total = Math.Max(0, lastRow - firstDataRow + 1);
@@ -278,6 +277,16 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             }
 
             return rows;
+        }
+
+        private static int DetectFirstDataRow(IXLWorksheet sheet, Dictionary<string, int> headerMap, string primaryIdAttr)
+        {
+            if (!string.IsNullOrEmpty(primaryIdAttr) && headerMap.TryGetValue(primaryIdAttr, out var idCol))
+            {
+                var row2Value = sheet.Cell(2, idCol).GetString();
+                if (Guid.TryParse(row2Value, out _)) return 2;
+            }
+            return 3;
         }
 
         private static object ParseCellValue(string raw, DataTableColumnConfig col)

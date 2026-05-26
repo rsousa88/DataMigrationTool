@@ -23,7 +23,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
         private SqliteConnection _connection;
         private bool _disposed;
 
-        private const int CurrentSchemaVersion = 1;
+        private const int CurrentSchemaVersion = 2;
         private static readonly string[] ReservedColumnNames = { "_row_id", "_source_id", "_is_new" };
 
         private static readonly JsonSerializerSettings _json = new JsonSerializerSettings
@@ -170,7 +170,8 @@ CREATE TABLE IF NOT EXISTS _snapshots (
     source                TEXT NOT NULL,
     load_match_key_mode   TEXT,
     load_match_key_fields TEXT,
-    column_config_json    TEXT NOT NULL
+    column_config_json    TEXT NOT NULL,
+    sort_order            INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS _optionset_values (
@@ -240,8 +241,21 @@ CREATE TABLE IF NOT EXISTS _run_logs (
 
         private void RunMigrations(int fromVersion)
         {
-            // No migrations yet — this is schema version 1.
-            // Future migrations: add sequential if-blocks here.
+            if (fromVersion < 2)
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = "ALTER TABLE _snapshots ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;";
+                cmd.ExecuteNonQuery();
+
+                // Backfill sort_order by rowid order (preserves original insertion order)
+                cmd.CommandText = @"
+WITH ranked AS (
+    SELECT id, ROW_NUMBER() OVER (ORDER BY rowid) AS rn FROM _snapshots
+)
+UPDATE _snapshots SET sort_order = (SELECT rn FROM ranked WHERE ranked.id = _snapshots.id);";
+                cmd.ExecuteNonQuery();
+            }
+
             SetProjectValue("version", CurrentSchemaVersion.ToString());
         }
 
@@ -379,11 +393,18 @@ VALUES(@ln, @dn, @pid, @pn, @cfg);";
 
         public void SaveSnapshot(DmtSnapshot snapshot)
         {
+            if (snapshot.SortOrder <= 0)
+            {
+                using var maxCmd = _connection.CreateCommand();
+                maxCmd.CommandText = "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM _snapshots;";
+                snapshot.SortOrder = (int)(long)maxCmd.ExecuteScalar();
+            }
+
             using var cmd = _connection.CreateCommand();
             cmd.CommandText = @"
 INSERT OR REPLACE INTO _snapshots(id, name, table_suffix, table_logical_name, source_env_id,
-    created_on, updated_on, row_count, source, load_match_key_mode, load_match_key_fields, column_config_json)
-VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @lmkm, @lmkf, @ccj);";
+    created_on, updated_on, row_count, source, load_match_key_mode, load_match_key_fields, column_config_json, sort_order)
+VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @lmkm, @lmkf, @ccj, @so);";
             cmd.Parameters.AddWithValue("@id",   snapshot.Id);
             cmd.Parameters.AddWithValue("@name", snapshot.Name);
             cmd.Parameters.AddWithValue("@suffix", snapshot.TableSuffix);
@@ -399,13 +420,14 @@ VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @lmkm, @lmkf, @ccj
                     ? JsonConvert.SerializeObject(snapshot.LoadMatchKeyFields, _json)
                     : (object)DBNull.Value);
             cmd.Parameters.AddWithValue("@ccj", JsonConvert.SerializeObject(snapshot.ColumnConfig, _json));
+            cmd.Parameters.AddWithValue("@so",   snapshot.SortOrder);
             cmd.ExecuteNonQuery();
         }
 
         public DmtSnapshot GetSnapshot(string name)
         {
             using var cmd = _connection.CreateCommand();
-            cmd.CommandText = "SELECT id,name,table_suffix,table_logical_name,source_env_id,created_on,updated_on,row_count,source,load_match_key_mode,load_match_key_fields,column_config_json FROM _snapshots WHERE name=@name;";
+            cmd.CommandText = "SELECT id,name,table_suffix,table_logical_name,source_env_id,created_on,updated_on,row_count,source,load_match_key_mode,load_match_key_fields,column_config_json,sort_order FROM _snapshots WHERE name=@name;";
             cmd.Parameters.AddWithValue("@name", name);
             using var reader = cmd.ExecuteReader();
             return reader.Read() ? ReadSnapshot(reader) : null;
@@ -414,7 +436,7 @@ VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @lmkm, @lmkf, @ccj
         public List<DmtSnapshot> GetSnapshots()
         {
             using var cmd = _connection.CreateCommand();
-            cmd.CommandText = "SELECT id,name,table_suffix,table_logical_name,source_env_id,created_on,updated_on,row_count,source,load_match_key_mode,load_match_key_fields,column_config_json FROM _snapshots ORDER BY name;";
+            cmd.CommandText = "SELECT id,name,table_suffix,table_logical_name,source_env_id,created_on,updated_on,row_count,source,load_match_key_mode,load_match_key_fields,column_config_json,sort_order FROM _snapshots ORDER BY sort_order;";
             var result = new List<DmtSnapshot>();
             using var reader = cmd.ExecuteReader();
             while (reader.Read()) result.Add(ReadSnapshot(reader));
@@ -479,7 +501,8 @@ VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @lmkm, @lmkf, @ccj
                 LoadMatchKeyFields = fieldsJson != null
                     ? JsonConvert.DeserializeObject<List<string>>(fieldsJson)
                     : new List<string>(),
-                ColumnConfig       = JsonConvert.DeserializeObject<List<DataTableColumnConfig>>(r.GetString(11))
+                ColumnConfig       = JsonConvert.DeserializeObject<List<DataTableColumnConfig>>(r.GetString(11)),
+                SortOrder          = r.IsDBNull(12) ? 0 : (int)r.GetInt64(12)
             };
         }
 
@@ -620,7 +643,7 @@ VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @lmkm, @lmkf, @ccj
             string tableSuffix,
             List<DataTableColumnConfig> columns,
             int offset = 0,
-            int limit = 500)
+            int limit = -1)  // -1 = no limit (SQLite LIMIT -1 = all rows)
         {
             var colSelect = string.Join(", ", columns.Select(c => $"[{c.LogicalName}]"));
             var sql = $"SELECT _row_id, _source_id, _is_new{(colSelect.Length > 0 ? ", " + colSelect : "")} " +
@@ -628,7 +651,7 @@ VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @lmkm, @lmkf, @ccj
 
             using var cmd = _connection.CreateCommand();
             cmd.CommandText = sql;
-            cmd.Parameters.AddWithValue("@limit", limit);
+            cmd.Parameters.AddWithValue("@limit", limit < 0 ? -1 : limit);
             cmd.Parameters.AddWithValue("@offset", offset);
 
             var result = new List<Dictionary<string, object>>();

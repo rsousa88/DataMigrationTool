@@ -110,6 +110,109 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             public List<string> Errors { get; } = new List<string>();
         }
 
+        public class PushPreview
+        {
+            public int TotalRows { get; set; }
+            public int CreateCount { get; set; }
+            public int UpdateCount { get; set; }
+            public int DeleteCount { get; set; }
+            public int WarningCount { get; set; }
+            public List<PushPreviewItem> Items { get; set; } = new List<PushPreviewItem>();
+        }
+
+        public class PushPreviewItem
+        {
+            public int RowNumber { get; set; }
+            public string SourceId { get; set; }
+            public string Operation { get; set; }  // "Create" | "Update" | "Delete" | "Skip"
+            public string Warnings { get; set; }
+        }
+
+        public static PushPreview PreviewPush(
+            SqliteProjectService project,
+            string snapshotName,
+            string sourceEnvId,
+            string targetEnvId,
+            UiSettings settings,
+            ExcelImportMatchKeySelection matchKeyOverride = null)
+        {
+            var preview = new PushPreview();
+
+            var snapshot = project.GetSnapshot(snapshotName);
+            if (snapshot == null) return preview;
+
+            var cols = snapshot.ColumnConfig;
+            var lookupCols = cols.Where(c => c.Type == "Lookup" || c.Type == "Owner" || c.Type == "Customer").ToList();
+
+            bool doCreate = settings == null || (settings.Action & DmtAction.Create) != 0;
+            bool doUpdate = settings == null || (settings.Action & DmtAction.Update) != 0;
+            bool doDelete = settings != null && (settings.Action & DmtAction.Delete) != 0;
+
+            var allRows = project.ReadSnapshotRecords(snapshot.TableSuffix, cols).ToList();
+            preview.TotalRows = allRows.Count;
+
+            for (var idx = 0; idx < allRows.Count; idx++)
+            {
+                var row = allRows[idx];
+                var sourceId = row.TryGetValue("_source_id", out var sid) ? sid?.ToString() : null;
+                var isNew = row.TryGetValue("_is_new", out var isn) && isn is long l && l == 1L;
+
+                var warnings = new List<string>();
+
+                // Check lookup resolvability
+                foreach (var col in lookupCols)
+                {
+                    if (!row.TryGetValue(col.LogicalName, out var lv) || lv == null) continue;
+                    var srcGuidStr = lv.ToString();
+                    if (!Guid.TryParse(srcGuidStr, out _)) continue;
+                    var targetResolved = project.ResolveTargetId(col.RelatedTable ?? snapshot.TableLogicalName, sourceEnvId, srcGuidStr, targetEnvId);
+                    if (string.IsNullOrEmpty(targetResolved))
+                        warnings.Add($"Lookup '{col.LogicalName}' → {col.RelatedTable}: no ID mapping (source GUID will be used as fallback)");
+                }
+
+                string operation;
+                if (isNew)
+                {
+                    operation = doCreate ? "Create" : "Skip";
+                }
+                else if (string.IsNullOrEmpty(sourceId))
+                {
+                    operation = "Skip";
+                }
+                else
+                {
+                    var existingStr = project.ResolveTargetId(snapshot.TableLogicalName, sourceEnvId, sourceId, targetEnvId);
+                    var hasMapping = !string.IsNullOrEmpty(existingStr);
+
+                    if (doDelete)
+                        operation = hasMapping ? "Delete" : "Skip";
+                    else if (hasMapping)
+                        operation = doUpdate ? "Update" : "Skip";
+                    else
+                        operation = doCreate ? "Create" : "Skip";
+                }
+
+                var item = new PushPreviewItem
+                {
+                    RowNumber = idx + 1,
+                    SourceId = sourceId,
+                    Operation = operation,
+                    Warnings = warnings.Any() ? string.Join("; ", warnings) : string.Empty
+                };
+                preview.Items.Add(item);
+
+                switch (operation)
+                {
+                    case "Create": preview.CreateCount++; break;
+                    case "Update": preview.UpdateCount++; break;
+                    case "Delete": preview.DeleteCount++; break;
+                }
+                if (warnings.Any()) preview.WarningCount++;
+            }
+
+            return preview;
+        }
+
         public static PushResult Push(
             SqliteProjectService project,
             string snapshotName,
@@ -117,7 +220,9 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             string targetEnvId,
             IOrganizationService targetClient,
             UiSettings settings,
-            BackgroundWorker worker)
+            BackgroundWorker worker,
+            ExcelImportMatchKeySelection matchKeyOverride = null,
+            List<PushLookupMatchKey> lookupMatchKeys = null)
         {
             var result = new PushResult();
 
@@ -129,8 +234,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 throw new InvalidOperationException($"No table config found for '{snapshot.TableLogicalName}'. Load the table attributes first.");
 
             var cols = snapshot.ColumnConfig;
-            var matchKeyMode = snapshot.LoadMatchKeyMode ?? "Guid";
-            var matchKeyFields = snapshot.LoadMatchKeyFields ?? new List<string>();
+            var matchKeyMode = matchKeyOverride?.Mode ?? snapshot.LoadMatchKeyMode ?? "Guid";
+            var matchKeyFields = matchKeyOverride?.Fields ?? snapshot.LoadMatchKeyFields ?? new List<string>();
 
             // Load user/team/BU mappings for substitution
             var mappings = project.GetMappings(sourceEnvId, targetEnvId) ?? new List<Mapping>();
@@ -252,7 +357,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 var entities = batch.Select(t =>
                 {
                     var entity = RowToEntity(t.row, cols, snapshot.TableLogicalName, primaryIdAttr,
-                        mappings, project, sourceEnvId, targetEnvId);
+                        mappings, project, sourceEnvId, targetEnvId, targetRepo, lookupMatchKeys);
                     // If using GUID mode and source has a real GUID, try to preserve it
                     if (!t.isNew && matchKeyMode == "Guid"
                         && Guid.TryParse(t.sourceId, out var g))
@@ -292,7 +397,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 var entities = batch.Select(t =>
                 {
                     var entity = RowToEntity(t.row, cols, snapshot.TableLogicalName, primaryIdAttr,
-                        mappings, project, sourceEnvId, targetEnvId);
+                        mappings, project, sourceEnvId, targetEnvId, targetRepo, lookupMatchKeys);
                     entity.Id = t.targetId;
                     return entity;
                 }).ToList();
@@ -372,12 +477,11 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             List<Mapping> mappings,
             SqliteProjectService project,
             string sourceEnvId,
-            string targetEnvId)
+            string targetEnvId,
+            CrmRepo targetRepo = null,
+            List<PushLookupMatchKey> lookupMatchKeys = null)
         {
             var entity = new Entity(tableLogicalName);
-            var mappingIndex = mappings?.ToDictionary(
-                m => (m.TableLogicalName, m.AttributeLogicalName, m.SourceId),
-                m => m.TargetId) ?? new Dictionary<(string, string, Guid), Guid>();
 
             foreach (var col in cols)
             {
@@ -387,7 +491,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 if (!row.TryGetValue(col.LogicalName, out var raw) || raw == null)
                     continue;
 
-                var value = ConvertRowValue(raw, col, tableLogicalName, mappings, project, sourceEnvId, targetEnvId);
+                var value = ConvertRowValue(raw, col, tableLogicalName, mappings, project, sourceEnvId, targetEnvId, targetRepo, lookupMatchKeys);
                 if (value != null)
                     entity[col.LogicalName] = value;
             }
@@ -401,7 +505,9 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             List<Mapping> mappings,
             SqliteProjectService project,
             string sourceEnvId,
-            string targetEnvId)
+            string targetEnvId,
+            CrmRepo targetRepo = null,
+            List<PushLookupMatchKey> lookupMatchKeys = null)
         {
             var type = col.Type ?? string.Empty;
 
@@ -421,9 +527,16 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                         return new EntityReference(col.RelatedTable, mapped.TargetId);
 
                     // Resolve via _id_mappings
-                    var targetIdStr2 = project.ResolveTargetId(col.RelatedTable ?? tableLogicalName, sourceEnvId, srcGuid.ToString("D"), targetEnvId);
-                    if (!string.IsNullOrEmpty(targetIdStr2) && Guid.TryParse(targetIdStr2, out var resolvedId))
+                    var relatedTable = col.RelatedTable ?? tableLogicalName;
+                    var targetIdStr = project.ResolveTargetId(relatedTable, sourceEnvId, srcGuid.ToString("D"), targetEnvId);
+                    if (!string.IsNullOrEmpty(targetIdStr) && Guid.TryParse(targetIdStr, out var resolvedId))
                         return new EntityReference(col.RelatedTable, resolvedId);
+
+                    // Check per-lookup match key override
+                    var lookupKey = lookupMatchKeys?.FirstOrDefault(k =>
+                        string.Equals(k.LogicalName, col.LogicalName, StringComparison.OrdinalIgnoreCase));
+                    if (string.Equals(lookupKey?.Mode, "Skip", StringComparison.OrdinalIgnoreCase))
+                        return null; // intentionally omit the field when no mapping found
 
                     // Fall back to source GUID (may exist in target already)
                     return new EntityReference(col.RelatedTable, srcGuid);
