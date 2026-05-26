@@ -335,6 +335,21 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
         }
 
         [Fact]
+        public void ReplaceSnapshotData_RollsBackSnapshotMetadata_WhenTableCreateFails()
+        {
+            var snapshot = MakeSnapshot("bad-snapshot", "account", "env-001",
+                new List<DataTableColumnConfig>
+                {
+                    new DataTableColumnConfig { LogicalName = "_source_id", SqliteType = "TEXT" }
+                });
+
+            Assert.Throws<InvalidOperationException>(() =>
+                _svc.ReplaceSnapshotData(snapshot, snapshot.ColumnConfig, Enumerable.Empty<Dictionary<string, object>>()));
+
+            Assert.Null(_svc.GetSnapshot("bad-snapshot"));
+        }
+
+        [Fact]
         public void ReadSnapshotRecords_Pagination_ReturnsCorrectWindow()
         {
             var columns = new List<DataTableColumnConfig>
@@ -508,6 +523,27 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
         // ─── Plan steps ────────────────────────────────────────────────────────
 
         [Fact]
+        public void ReplacePlan_ReplacesStaleSteps()
+        {
+            var plan = new DmtPlan { Id = "plan-1", Name = "P1" };
+            _svc.SavePlan(plan);
+            _svc.SavePlanStep(new DmtPlanStep { Id = "old-step", PlanId = "plan-1", Operation = "Pull", SortOrder = 0 });
+
+            plan.Name = "Updated P1";
+            _svc.ReplacePlan(plan, new[]
+            {
+                new DmtPlanStep { Id = "new-step", PlanId = "plan-1", Operation = "PushFromSnapshot", SortOrder = 0, SnapshotName = "accounts" }
+            });
+
+            var plans = _svc.GetPlans();
+            var steps = _svc.GetPlanSteps("plan-1");
+            Assert.Equal("Updated P1", Assert.Single(plans).Name);
+            var step = Assert.Single(steps);
+            Assert.Equal("new-step", step.Id);
+            Assert.Equal("accounts", step.SnapshotName);
+        }
+
+        [Fact]
         public void SavePlanStep_GetPlanSteps_RoundTrip()
         {
             var plan = new DmtPlan { Id = "plan-1", Name = "P1" };
@@ -636,6 +672,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
         [InlineData("Integer",  "INTEGER")]
         [InlineData("BigInt",   "INTEGER")]
         [InlineData("Boolean",  "INTEGER")]
+        [InlineData("OptionSet", "INTEGER")]
         [InlineData("Picklist", "INTEGER")]
         [InlineData("State",    "INTEGER")]
         [InlineData("Status",   "INTEGER")]

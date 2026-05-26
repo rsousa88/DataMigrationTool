@@ -216,7 +216,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
 
             var runLog = ExecutionPlanService.CreateRunLog(
                 plan,
-                @"C:\plans\plan.dmtplan.json",
+                @"C:\projects\migration.dmtproj",
                 new DmtEnvironmentInfo { UniqueName = "source", FriendlyName = "Source" },
                 new DmtEnvironmentInfo { UniqueName = "default", FriendlyName = "Default" },
                 new[] { export.TargetEnvironment },
@@ -392,6 +392,50 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
             Assert.Equal("accountid", step.Table.PrimaryIdAttribute);
             Assert.Equal(target, step.TargetEnvironment);
             Assert.Equal(@"C:\plans\account.dmt.json", step.SettingsProvenance.SettingsFilePath);
+        }
+
+        [Fact]
+        public void ProjectPlanConversion_RoundTripsStepsWithoutDmtPlanFile()
+        {
+            var export = Step("export-1", "ExportToExcel");
+            export.Name = "Export Accounts";
+            export.Output.PathTemplate = @"exports\accounts.xlsx";
+            export.Snapshot.SelectedAttributes.Add("name");
+            export.Snapshot.ExportSettings = new UiSettings { BatchSize = 50 };
+
+            var import = Step("import-1", "ImportFromExcel");
+            import.TargetEnvironment = new DmtEnvironmentInfo { UniqueName = "test-env", FriendlyName = "TEST" };
+            import.Input.Mode = "FromStepOutput";
+            import.Input.SourceStepId = export.Id;
+            import.Snapshot.ImportMatchKeySelection = new ExcelImportMatchKeySelection
+            {
+                Mode = "Custom",
+                Fields = new List<string> { "accountnumber" }
+            };
+            import.Snapshot.Mappings.Add(new Mapping { AttributeLogicalName = "ownerid", TargetInstanceName = "TEST" });
+
+            var plan = Plan(export, import);
+            plan.Name = "Project Plan";
+            plan.Defaults.MaxFailedRecords = 3;
+            var planRow = ExecutionPlanService.ToProjectPlan(plan, "plan-1");
+            var stepRows = ExecutionPlanService.ToProjectPlanSteps(plan, planRow.Id, "source-env");
+
+            var loaded = ExecutionPlanService.FromProjectPlan(
+                planRow,
+                stepRows,
+                new DmtEnvironmentInfo { UniqueName = "source-env", FriendlyName = "Source" },
+                new[] { new DmtEnvironmentInfo { UniqueName = "test-env", FriendlyName = "TEST" } });
+
+            Assert.Equal("Project Plan", loaded.Name);
+            Assert.Equal(3, loaded.Defaults.MaxFailedRecords);
+            Assert.Equal(2, loaded.Steps.Count);
+            Assert.Equal(@"exports\accounts.xlsx", loaded.Steps[0].Output.PathTemplate);
+            Assert.Equal("name", Assert.Single(loaded.Steps[0].Snapshot.SelectedAttributes));
+            Assert.Equal("FromStepOutput", loaded.Steps[1].Input.Mode);
+            Assert.Equal("export-1", loaded.Steps[1].Input.SourceStepId);
+            Assert.Equal("test-env", loaded.Steps[1].TargetEnvironment.UniqueName);
+            Assert.Equal("accountnumber", Assert.Single(loaded.Steps[1].Snapshot.ImportMatchKeySelection.Fields));
+            Assert.Equal("TEST", Assert.Single(loaded.Steps[1].Snapshot.Mappings).TargetInstanceName);
         }
 
         private static ExecutionPlan Plan(params ExecutionPlanStep[] steps)

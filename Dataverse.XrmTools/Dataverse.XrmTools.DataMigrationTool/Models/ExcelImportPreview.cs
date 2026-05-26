@@ -42,6 +42,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
     public class ExcelImportAlternateKeyOption
     {
         public string Name { get; set; }
+        public string DisplayName { get; set; }
         public List<string> Fields { get; set; } = new List<string>();
     }
 

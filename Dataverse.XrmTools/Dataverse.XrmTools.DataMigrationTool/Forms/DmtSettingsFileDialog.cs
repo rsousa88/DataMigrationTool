@@ -21,16 +21,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         private readonly string _orgFriendlyName;
         private readonly Func<Table, TableSettings> _existingSettingsProvider;
         private readonly List<Table> _tables;
-        private readonly bool _showExecutionPlanSection;
         private Label _settingsStatus;
-        private Label _planStatus;
 
         public DmtFileChoice Choice { get; private set; } = DmtFileChoice.Cancel;
         public string FilePath { get; private set; }
         public DmtSettings LoadedSettings { get; private set; }
         public Table SelectedTable { get; private set; }
-        public ExecutionPlanFileChoice PlanChoice { get; private set; } = ExecutionPlanFileChoice.Cancel;
-        public string PlanFilePath { get; private set; }
 
         public DmtSettingsFileDialog(Table table, string orgUniqueName, string orgFriendlyName, TableSettings existingAppDataSettings)
             : this(new[] { table }, orgUniqueName, orgFriendlyName, _ => existingAppDataSettings, false)
@@ -39,11 +35,11 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         }
 
         public DmtSettingsFileDialog(IEnumerable<Table> tables, string orgUniqueName, string orgFriendlyName, Func<Table, TableSettings> existingSettingsProvider)
-            : this(tables, orgUniqueName, orgFriendlyName, existingSettingsProvider, true)
+            : this(tables, orgUniqueName, orgFriendlyName, existingSettingsProvider, false)
         {
         }
 
-        private DmtSettingsFileDialog(IEnumerable<Table> tables, string orgUniqueName, string orgFriendlyName, Func<Table, TableSettings> existingSettingsProvider, bool showExecutionPlanSection)
+        private DmtSettingsFileDialog(IEnumerable<Table> tables, string orgUniqueName, string orgFriendlyName, Func<Table, TableSettings> existingSettingsProvider, bool unused = false)
         {
             _tables = (tables ?? Enumerable.Empty<Table>())
                 .Where(t => t != null && !string.IsNullOrWhiteSpace(t.LogicalName))
@@ -52,38 +48,33 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             _orgUniqueName = orgUniqueName;
             _orgFriendlyName = orgFriendlyName;
             _existingSettingsProvider = existingSettingsProvider;
-            _showExecutionPlanSection = showExecutionPlanSection;
-            SelectedTable = showExecutionPlanSection ? null : _tables.FirstOrDefault();
+            SelectedTable = _tables.FirstOrDefault();
 
             BuildUi();
         }
 
         private void BuildUi()
         {
-            Text = _showExecutionPlanSection ? "Workspace Files" : "Settings File";
+            Text = "Settings File";
             FormBorderStyle = FormBorderStyle.FixedDialog;
             StartPosition = FormStartPosition.CenterParent;
             MinimizeBox = false;
             MaximizeBox = false;
-            ClientSize = _showExecutionPlanSection ? new Size(520, 320) : new Size(520, 180);
+            ClientSize = new Size(520, 180);
             BackColor = SystemColors.Window;
 
             var pnl = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
                 Padding = new Padding(16, 12, 16, 12),
-                RowCount = _showExecutionPlanSection ? 3 : 3,
+                RowCount = 2,
                 ColumnCount = 1
             };
             pnl.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            if (_showExecutionPlanSection)
-                pnl.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             pnl.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
 
             pnl.Controls.Add(BuildSettingsSection(), 0, 0);
-            if (_showExecutionPlanSection)
-                pnl.Controls.Add(BuildPlanSection(), 0, 1);
-            pnl.Controls.Add(BuildFooter(), 0, _showExecutionPlanSection ? 2 : 1);
+            pnl.Controls.Add(BuildFooter(), 0, 1);
             Controls.Add(pnl);
 
             KeyPreview = true;
@@ -92,7 +83,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                 if (e.KeyCode == Keys.Escape)
                 {
                     Choice = DmtFileChoice.Cancel;
-                    PlanChoice = ExecutionPlanFileChoice.Cancel;
                     Close();
                 }
             };
@@ -138,45 +128,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             return group;
         }
 
-        private Control BuildPlanSection()
-        {
-            var group = new GroupBox
-            {
-                Text = "Execution Plan",
-                Dock = DockStyle.Top,
-                Height = 112,
-                Padding = new Padding(8),
-                Margin = new Padding(0, 8, 0, 0)
-            };
-
-            var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1 };
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
-            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-
-            var buttons = BuildButtonRow();
-            AddRowButton(buttons, 0, "Create...", "Create a new .dmtplan.json execution plan", HandleNewPlan);
-            AddRowButton(buttons, 1, "Load...", "Load an existing .dmtplan.json execution plan", HandleLoadPlan);
-            AddRowButton(buttons, 2, "No plan", "Continue without an execution plan", (s, e) =>
-            {
-                PlanChoice = ExecutionPlanFileChoice.Cancel;
-                PlanFilePath = null;
-                _planStatus.Text = "No execution plan";
-            });
-
-            _planStatus = new Label
-            {
-                Text = "No execution plan selected",
-                Dock = DockStyle.Fill,
-                AutoEllipsis = true,
-                TextAlign = ContentAlignment.MiddleLeft
-            };
-
-            layout.Controls.Add(buttons, 0, 0);
-            layout.Controls.Add(_planStatus, 0, 1);
-            group.Controls.Add(layout);
-            return group;
-        }
-
         private Control BuildFooter()
         {
             var footer = new FlowLayoutPanel
@@ -201,7 +152,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             btnCancel.Click += (s, e) =>
             {
                 Choice = DmtFileChoice.Cancel;
-                PlanChoice = ExecutionPlanFileChoice.Cancel;
                 Close();
             };
             footer.Controls.Add(btnCancel);
@@ -318,40 +268,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                     _settingsStatus.Text = $"Loaded: {Path.GetFileName(dlg.FileName)}";
                     return;
                 }
-            }
-        }
-
-        private void HandleNewPlan(object sender, EventArgs e)
-        {
-            using (var dlg = new SaveFileDialog
-            {
-                Title = "Create execution plan",
-                Filter = "DMT Execution Plan (*.dmtplan.json)|*.dmtplan.json",
-                DefaultExt = "dmtplan.json",
-                FileName = "migration-plan"
-            })
-            {
-                if (dlg.ShowDialog(this) != DialogResult.OK) return;
-
-                PlanChoice = ExecutionPlanFileChoice.NewFile;
-                PlanFilePath = dlg.FileName;
-                _planStatus.Text = $"Created: {Path.GetFileName(dlg.FileName)}";
-            }
-        }
-
-        private void HandleLoadPlan(object sender, EventArgs e)
-        {
-            using (var dlg = new OpenFileDialog
-            {
-                Title = "Load execution plan",
-                Filter = "DMT Execution Plan (*.dmtplan.json)|*.dmtplan.json"
-            })
-            {
-                if (dlg.ShowDialog(this) != DialogResult.OK) return;
-
-                PlanChoice = ExecutionPlanFileChoice.ExistingFile;
-                PlanFilePath = dlg.FileName;
-                _planStatus.Text = $"Loaded: {Path.GetFileName(dlg.FileName)}";
             }
         }
 

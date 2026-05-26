@@ -43,6 +43,11 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 MessageBox.Show(this, "Open or create a project first.", "No Project", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
+            if (_sourceClient == null || _project.IsSourceMismatch)
+            {
+                MessageBox.Show(this, "Connect the project's source environment before loading files to a project.", "Source Required", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
 
             string filePath;
             using (var ofd = new OpenFileDialog
@@ -75,9 +80,9 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     Work = (worker, args) =>
                     {
                         if (ext == ".json")
-                            args.Result = SqliteFileAdapter.LoadFromJson(_project.Service, filePath, snapshotName, sourceEnvId, config, worker);
+                            args.Result = SqliteFileAdapter.LoadFromJson(_project.Service, filePath, snapshotName, sourceEnvId, config, _sourceClient, worker);
                         else
-                            args.Result = SqliteFileAdapter.LoadFromExcel(_project.Service, filePath, snapshotName, sourceEnvId, config, worker);
+                            args.Result = SqliteFileAdapter.LoadFromExcel(_project.Service, filePath, snapshotName, sourceEnvId, config, _sourceClient, worker);
                     },
                     PostWorkCallBack = args =>
                     {

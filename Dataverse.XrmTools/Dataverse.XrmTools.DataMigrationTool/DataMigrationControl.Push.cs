@@ -115,12 +115,12 @@ namespace Dataverse.XrmTools.DataMigrationTool
             OpenPushStepConfigDialog(step, snapshot, configuredStep =>
             {
                 _executionPlan.Steps.Add(configuredStep);
-                ExecutionPlanFileService.ValidatePlan(_executionPlan);
+                ExecutionPlanService.ValidatePlan(_executionPlan);
                 _executionPlanValidatedForExecution = false;
                 AutoSaveExecutionPlan(true);
                 RenderExecutionPlanPanel();
                 SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Added '{configuredStep.Name}' to execution plan"));
-            }, "Configure & Add");
+            }, "Add to Plan");
         }
 
         #endregion

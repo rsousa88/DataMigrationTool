@@ -28,6 +28,9 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private int _inlineDataCurrentPage;
         private int _inlineDataTotalRows;
         private const int InlinePageSize = 500;
+        private bool _fittingSnapshotColumns;
+        private ToolStripButton _snapMoveUpBtn;
+        private ToolStripButton _snapMoveDownBtn;
 
         #endregion
 
@@ -65,8 +68,15 @@ namespace Dataverse.XrmTools.DataMigrationTool
             pullBtn.Click += (s, e) => PullToProject();
             var loadBtn = new ToolStripButton("Load File") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true };
             loadBtn.Click += (s, e) => LoadFileToProject();
+            _snapMoveUpBtn = new ToolStripButton("↑") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, Enabled = false, ToolTipText = "Move snapshot up" };
+            _snapMoveUpBtn.Click += (s, e) => MoveInlineSnapshot(-1);
+            _snapMoveDownBtn = new ToolStripButton("↓") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, Enabled = false, ToolTipText = "Move snapshot down" };
+            _snapMoveDownBtn.Click += (s, e) => MoveInlineSnapshot(1);
             headerStrip.Items.Add(pullBtn);
             headerStrip.Items.Add(loadBtn);
+            headerStrip.Items.Add(new ToolStripSeparator());
+            headerStrip.Items.Add(_snapMoveUpBtn);
+            headerStrip.Items.Add(_snapMoveDownBtn);
             outerLayout.Controls.Add(headerStrip, 0, 0);
 
             var snapSplit = new SplitContainer
@@ -102,6 +112,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             _inlineSnapList.Columns.Add("Table", 90);
             _inlineSnapList.Columns.Add("Rows", 48, HorizontalAlignment.Right);
             _inlineSnapList.Columns.Add("Src", 36);
+            _inlineSnapList.Resize += (s, e) => FitSnapshotListColumns();
             _inlineSnapList.SelectedIndexChanged += InlineSnapList_SelectionChanged;
             _inlineSnapList.MouseDown += (s, e) =>
             {
@@ -202,6 +213,35 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         #region Snapshots Operations
 
+        private void FitSnapshotListColumns()
+        {
+            if (_fittingSnapshotColumns) return;
+            if (_inlineSnapList == null || _inlineSnapList.Columns.Count == 0) return;
+            _fittingSnapshotColumns = true;
+            try
+            {
+                int count = _inlineSnapList.Columns.Count;
+                for (int i = 0; i < count; i++)
+                {
+                    _inlineSnapList.AutoResizeColumn(i, ColumnHeaderAutoResizeStyle.ColumnContent);
+                    int contentWidth = _inlineSnapList.Columns[i].Width;
+                    _inlineSnapList.AutoResizeColumn(i, ColumnHeaderAutoResizeStyle.HeaderSize);
+                    if (contentWidth > _inlineSnapList.Columns[i].Width)
+                        _inlineSnapList.Columns[i].Width = contentWidth;
+                }
+                int usedByOthers = 0;
+                for (int i = 0; i < count - 1; i++)
+                    usedByOthers += _inlineSnapList.Columns[i].Width;
+                int available = _inlineSnapList.ClientSize.Width - usedByOthers;
+                if (available > _inlineSnapList.Columns[count - 1].Width)
+                    _inlineSnapList.Columns[count - 1].Width = available;
+            }
+            finally
+            {
+                _fittingSnapshotColumns = false;
+            }
+        }
+
         internal void RefreshInlineSnapshotList()
         {
             if (_inlineSnapList == null) return;
@@ -222,6 +262,9 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 item.Tag = s;
                 _inlineSnapList.Items.Add(item);
             }
+
+            FitSnapshotListColumns();
+            UpdateSnapshotMoveButtons();
         }
 
         private DmtSnapshot GetInlineContextSnapshot()
@@ -286,8 +329,68 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
         }
 
+        private void UpdateSnapshotMoveButtons()
+        {
+            if (_snapMoveUpBtn == null || _snapMoveDownBtn == null) return;
+            var count = _inlineSnapList?.Items.Count ?? 0;
+            if (count <= 1 || _inlineSnapList.SelectedItems.Count == 0)
+            {
+                _snapMoveUpBtn.Enabled = false;
+                _snapMoveDownBtn.Enabled = false;
+                return;
+            }
+            var idx = _inlineSnapList.SelectedItems[0].Index;
+            _snapMoveUpBtn.Enabled = idx > 0;
+            _snapMoveDownBtn.Enabled = idx < count - 1;
+        }
+
+        private void MoveInlineSnapshot(int direction)
+        {
+            if (_project?.Service == null || _inlineSnapList.SelectedItems.Count == 0) return;
+
+            var snapshots = _project.Service.GetSnapshots().ToList();
+            var selected = _inlineSnapList.SelectedItems[0].Tag as DmtSnapshot;
+            if (selected == null) return;
+
+            var idx = snapshots.FindIndex(s => s.Id == selected.Id);
+            if (idx < 0) return;
+
+            var swapIdx = idx + direction;
+            if (swapIdx < 0 || swapIdx >= snapshots.Count) return;
+
+            var a = snapshots[idx];
+            var b = snapshots[swapIdx];
+            var tempOrder = a.SortOrder;
+            a.SortOrder = b.SortOrder;
+            b.SortOrder = tempOrder;
+
+            try
+            {
+                _project.Service.SaveSnapshot(a);
+                _project.Service.SaveSnapshot(b);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, $"Move failed: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            RefreshInlineSnapshotList();
+
+            foreach (ListViewItem item in _inlineSnapList.Items)
+            {
+                if ((item.Tag as DmtSnapshot)?.Id == selected.Id)
+                {
+                    item.Selected = true;
+                    item.EnsureVisible();
+                    break;
+                }
+            }
+        }
+
         private void InlineSnapList_SelectionChanged(object sender, EventArgs e)
         {
+            UpdateSnapshotMoveButtons();
             if (_inlineSnapList.SelectedItems.Count == 0) { ClearInlineDataGrid(); return; }
             var snap = _inlineSnapList.SelectedItems[0].Tag as DmtSnapshot;
             if (snap == null) return;
@@ -303,6 +406,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void BuildInlineGridColumns(DmtSnapshot snap)
         {
+            _inlineDataGrid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
             _inlineDataGrid.Columns.Clear();
             AddInlineGridColumn("_source_id", "Source ID", 230);
             AddInlineGridColumn("_is_new", "New?", 42);
@@ -363,6 +467,20 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 _inlineDataGrid.Rows.Add(cells.ToArray());
             }
             _inlineDataGrid.ResumeLayout();
+            if (_inlineDataGrid.Rows.Count > 0)
+            {
+                _inlineDataGrid.AutoResizeColumns(DataGridViewAutoSizeColumnsMode.DisplayedCells);
+                var colCount = _inlineDataGrid.Columns.Count;
+                if (colCount > 0)
+                {
+                    int usedByOthers = 0;
+                    for (int i = 0; i < colCount - 1; i++)
+                        usedByOthers += _inlineDataGrid.Columns[i].Width;
+                    int available = _inlineDataGrid.ClientSize.Width - usedByOthers;
+                    if (available > _inlineDataGrid.Columns[colCount - 1].Width)
+                        _inlineDataGrid.Columns[colCount - 1].Width = available;
+                }
+            }
 
             _inlineDataCurrentPage = page;
             var totalPages = (int)Math.Ceiling(_inlineDataTotalRows / (double)InlinePageSize);

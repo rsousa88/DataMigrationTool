@@ -72,7 +72,7 @@ For multi-step, multi-target migrations across environments, use the Execution P
 1. Select a table and configure its attributes and filter.
 2. Use Export and Import from the toolbar menus to add steps to the plan.
 3. Review steps, set targets per step, validate, then execute.
-4. Plans can be saved as .dmtplan.json and reloaded later.
+4. Plans are saved in the open project and reloaded from the same .dmtproj file.
 5. Individual steps can be previewed, reconfigured, or executed in isolation.
 
 Tips

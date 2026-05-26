@@ -295,16 +295,20 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
         public static List<ExcelImportAlternateKeyOption> GetAvailableImportAlternateKeys(IEnumerable<EntityKeyMetadata> keys, IEnumerable<string> availableFields)
         {
-            var availableColumns = new HashSet<string>(availableFields ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+            // null availableFields = no filter; empty list = all keys filtered out
+            HashSet<string> availableColumns = availableFields != null
+                ? new HashSet<string>(availableFields, StringComparer.OrdinalIgnoreCase)
+                : null;
 
             return keys?
                 .Where(key => key.KeyAttributes?.Any() == true)
                 .Select(key => new ExcelImportAlternateKeyOption
                 {
                     Name = key.LogicalName,
+                    DisplayName = key.DisplayName?.UserLocalizedLabel?.Label ?? key.LogicalName,
                     Fields = key.KeyAttributes.ToList()
                 })
-                .Where(key => key.Fields.All(availableColumns.Contains))
+                .Where(key => availableColumns == null || key.Fields.All(availableColumns.Contains))
                 .OrderBy(key => key.Name)
                 .ToList() ?? new List<ExcelImportAlternateKeyOption>();
         }

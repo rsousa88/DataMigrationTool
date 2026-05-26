@@ -248,6 +248,45 @@ namespace Dataverse.XrmTools.DataMigrationTool.Repositories
             return FindByFieldValues(logicalName, new Dictionary<string, object> { { field, value } });
         }
 
+        public Dictionary<string, Guid> FindExistingIdsBySingleFieldValues(string logicalName, string field, IEnumerable<object> values)
+        {
+            ThrowIfCancelled();
+            var result = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
+            var distinctValues = (values ?? Enumerable.Empty<object>())
+                .Where(v => v != null)
+                .GroupBy(v => FormatMatchValue(v), StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.First())
+                .ToList();
+
+            const int chunkSize = 500;
+            for (var i = 0; i < distinctValues.Count; i += chunkSize)
+            {
+                var chunk = distinctValues.Skip(i).Take(chunkSize).ToArray();
+                if (!chunk.Any()) continue;
+
+                var query = new QueryExpression(logicalName)
+                {
+                    ColumnSet = new ColumnSet(field),
+                    Criteria = new FilterExpression(LogicalOperator.And)
+                };
+                query.Criteria.Conditions.Add(new ConditionExpression(field, ConditionOperator.In, chunk));
+
+                ThrowIfCancelled();
+                var response = _service.Execute(new RetrieveMultipleRequest { Query = query }) as RetrieveMultipleResponse;
+                ThrowIfCancelled();
+
+                foreach (var entity in response?.EntityCollection?.Entities ?? Enumerable.Empty<Entity>())
+                {
+                    if (entity == null || !entity.Attributes.Contains(field) || entity[field] == null) continue;
+                    var key = FormatMatchValue(entity[field]);
+                    if (!result.ContainsKey(key))
+                        result[key] = entity.Id;
+                }
+            }
+
+            return result;
+        }
+
         public Entity FindByFieldValues(string logicalName, Dictionary<string, object> fieldValues)
         {
             ThrowIfCancelled();
@@ -278,6 +317,18 @@ namespace Dataverse.XrmTools.DataMigrationTool.Repositories
         private string FormatFieldValues(Dictionary<string, object> fieldValues)
         {
             return string.Join(", ", fieldValues.Select(kv => $"{kv.Key} = '{kv.Value}'"));
+        }
+
+        private static string FormatMatchValue(object value)
+        {
+            if (value == null) return string.Empty;
+            if (value is AliasedValue av) return FormatMatchValue(av.Value);
+            if (value is OptionSetValue osv) return osv.Value.ToString();
+            if (value is EntityReference er) return er.Id.ToString("D");
+            if (value is Money money) return money.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (value is DateTime dt) return dt.ToString("O");
+            if (value is IFormattable formattable) return formattable.ToString(null, System.Globalization.CultureInfo.InvariantCulture);
+            return value.ToString();
         }
 
         private void ThrowIfCancelled()

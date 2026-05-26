@@ -41,13 +41,13 @@
   <ItemGroup>
     <Compile Include="SqliteProjectServiceTests.cs" />
     <Compile Include="SqliteFileAdapterTests.cs" />
+    <Compile Include="SqliteDataLogicTests.cs" />
     <Compile Include="BatchingServiceTests.cs" />
     <Compile Include="CleanupRegressionTests.cs" />
     <Compile Include="DmtFileServiceTests.cs" />
     <Compile Include="ExcelLogicTests.cs" />
     <Compile Include="ExecutionResultServiceTests.cs" />
     <Compile Include="ExecutionPlanServiceTests.cs" />
-    <Compile Include="ExecutionPlanFileServiceTests.cs" />
     <Compile Include="ImportPreviewServiceTests.cs" />
     <Compile Include="ImportWorkflowServiceTests.cs" />
     <Compile Include="ListViewComparerTests.cs" />

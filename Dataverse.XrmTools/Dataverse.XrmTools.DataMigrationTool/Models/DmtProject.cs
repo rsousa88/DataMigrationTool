@@ -136,9 +136,17 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
     // Serialised as _plan_steps.snapshot_json — frozen at step creation
     public class DmtPlanStepSnapshot
     {
+        public DmtTableInfo Table { get; set; }
+        public DmtEnvironmentInfo TargetEnvironment { get; set; }
+        public ExecutionPlanStepInput Input { get; set; }
+        public ExecutionPlanStepOutput Output { get; set; }
+        public ExecutionPlanSettingsProvenance SettingsProvenance { get; set; }
         public List<string> SelectedAttributes { get; set; } = new List<string>();
         public string Filter { get; set; }
+        public List<Mapping> Mappings { get; set; } = new List<Mapping>();
         public ExcelExportConfig ExcelConfig { get; set; }
+        public RecordCollection RecordCollection { get; set; }
+        public ExcelImportMatchKeySelection ImportMatchKeySelection { get; set; }
 
         // LoadFile steps only
         public string LoadMatchKeyMode { get; set; }
@@ -151,6 +159,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
         public string PushMatchAlternateKeyName { get; set; }
 
         public UiSettings ImportSettings { get; set; }
+        public UiSettings ExportSettings { get; set; }
+        public List<PushLookupMatchKey> LookupMatchKeys { get; set; }
     }
 
     // Row in _id_mappings

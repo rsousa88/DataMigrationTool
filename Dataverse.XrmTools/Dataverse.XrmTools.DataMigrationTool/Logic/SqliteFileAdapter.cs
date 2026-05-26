@@ -8,12 +8,16 @@ using System.Linq;
 // ClosedXML
 using ClosedXML.Excel;
 
+// Microsoft
+using Microsoft.Xrm.Sdk;
+
 // Newtonsoft
 using Newtonsoft.Json;
 
 // DataMigrationTool
 using Dataverse.XrmTools.DataMigrationTool.Enums;
 using Dataverse.XrmTools.DataMigrationTool.Models;
+using Dataverse.XrmTools.DataMigrationTool.Repositories;
 
 namespace Dataverse.XrmTools.DataMigrationTool.Logic
 {
@@ -37,6 +41,18 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             DataTableConfig config,
             BackgroundWorker worker)
         {
+            return LoadFromJson(project, filePath, snapshotName, sourceEnvId, config, null, worker);
+        }
+
+        public static DmtSnapshot LoadFromJson(
+            SqliteProjectService project,
+            string filePath,
+            string snapshotName,
+            string sourceEnvId,
+            DataTableConfig config,
+            IOrganizationService sourceClient,
+            BackgroundWorker worker)
+        {
             worker?.ReportProgress(5, "Reading JSON file...");
             var json = File.ReadAllText(filePath);
             var collection = JsonConvert.DeserializeObject<RecordCollection>(json, _json);
@@ -52,6 +68,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
             worker?.ReportProgress(20, $"Converting {collection.Count} records...");
             var rows = ConvertJsonCollection(collection, columns, primaryIdAttr);
+            ResolveSourceIdentity(rows, columns, tableLogicalName, primaryIdAttr, config, sourceClient, worker);
 
             return WriteSnapshot(project, rows, columns, snapshotName, tableLogicalName,
                 primaryIdAttr, sourceEnvId, "JSON", config, worker);
@@ -65,6 +82,18 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             string snapshotName,
             string sourceEnvId,
             DataTableConfig config,
+            BackgroundWorker worker)
+        {
+            return LoadFromExcel(project, filePath, snapshotName, sourceEnvId, config, null, worker);
+        }
+
+        public static DmtSnapshot LoadFromExcel(
+            SqliteProjectService project,
+            string filePath,
+            string snapshotName,
+            string sourceEnvId,
+            DataTableConfig config,
+            IOrganizationService sourceClient,
             BackgroundWorker worker)
         {
             worker?.ReportProgress(5, "Reading Excel file...");
@@ -81,6 +110,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 var tableLogicalName = excelConfig.Table?.LogicalName
                     ?? throw new InvalidOperationException("Excel metadata is missing table information.");
                 var primaryIdAttr = excelConfig.Table.PrimaryIdAttribute;
+                var effectiveConfig = BuildConfigFromExcel(config, excelConfig);
 
                 var columns = BuildColumnsFromExcelConfig(excelConfig);
 
@@ -90,9 +120,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 var dataSheet = wb.Worksheet(DataSheetName);
                 worker?.ReportProgress(20, "Parsing Excel rows...");
                 var rows = ReadExcelRows(dataSheet, excelConfig, columns, primaryIdAttr, worker);
+                ResolveSourceIdentity(rows, columns, tableLogicalName, primaryIdAttr, effectiveConfig, sourceClient, worker);
 
-                return WriteSnapshot(project, rows, columns, snapshotName, tableLogicalName,
-                    primaryIdAttr, sourceEnvId, "Excel", config, worker);
+                var snapshot = WriteSnapshot(project, rows, columns, snapshotName, tableLogicalName,
+                    primaryIdAttr, sourceEnvId, "Excel", effectiveConfig, worker);
+                SaveExcelOptionSetValues(project, tableLogicalName, excelConfig);
+                return snapshot;
             }
         }
 
@@ -125,7 +158,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             }
             else
             {
-                tableSuffix = SqliteProjectService.SanitizeSnapshotName(snapshotName);
+                tableSuffix = project.ResolveTableSuffix(snapshotName);
                 snapshot = new DmtSnapshot
                 {
                     Name = snapshotName,
@@ -141,15 +174,92 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             }
 
             worker?.ReportProgress(70, $"Writing {rows.Count} rows to project snapshot...");
-            project.SaveSnapshot(snapshot);
-            project.CreateSnapshotTable(tableSuffix, columns);
-            project.WriteSnapshotRecords(tableSuffix, rows, columns);
+            snapshot.TableSuffix = tableSuffix;
+            project.ReplaceSnapshotData(snapshot, columns, rows);
 
             worker?.ReportProgress(100, "Load complete.");
             return snapshot;
         }
 
         // ─── JSON conversion ───────────────────────────────────────────────────
+
+        public static void ExportToJson(
+            SqliteProjectService project,
+            string snapshotName,
+            string filePath,
+            BackgroundWorker worker = null)
+        {
+            var snapshot = project.GetSnapshot(snapshotName)
+                ?? throw new InvalidOperationException($"Snapshot '{snapshotName}' not found.");
+            var primaryIdAttr = GetPrimaryIdAttribute(project, snapshot);
+            var rows = project.ReadSnapshotRecords(snapshot.TableSuffix, snapshot.ColumnConfig).ToList();
+
+            worker?.ReportProgress(20, $"Exporting {rows.Count} rows to JSON...");
+            var collection = new RecordCollection
+            {
+                LogicalName = snapshot.TableLogicalName,
+                PrimaryIdAttribute = primaryIdAttr,
+                Count = rows.Count,
+                ImportMatchKeyMode = snapshot.LoadMatchKeyMode,
+                ImportMatchKeys = snapshot.LoadMatchKeyFields != null ? new List<string>(snapshot.LoadMatchKeyFields) : new List<string>(),
+                Records = rows.Select((row, index) => new Record
+                {
+                    SourceRowNumber = index + 1,
+                    Attributes = snapshot.ColumnConfig.Select(col => new RecordAttribute
+                    {
+                        Key = col.LogicalName,
+                        Type = ToRecordAttributeType(col),
+                        Value = row.TryGetValue(col.LogicalName, out var value) ? value : null
+                    }).ToList()
+                }).ToList()
+            };
+
+            File.WriteAllText(filePath, JsonConvert.SerializeObject(collection, Formatting.Indented, _json));
+            worker?.ReportProgress(100, "JSON export complete.");
+        }
+
+        public static void ExportToExcel(
+            SqliteProjectService project,
+            string snapshotName,
+            string filePath,
+            BackgroundWorker worker = null)
+        {
+            var snapshot = project.GetSnapshot(snapshotName)
+                ?? throw new InvalidOperationException($"Snapshot '{snapshotName}' not found.");
+            var primaryIdAttr = GetPrimaryIdAttribute(project, snapshot);
+            var rows = project.ReadSnapshotRecords(snapshot.TableSuffix, snapshot.ColumnConfig).ToList();
+            var excelConfig = BuildExcelExportConfig(snapshot, primaryIdAttr);
+
+            worker?.ReportProgress(20, $"Exporting {rows.Count} rows to Excel...");
+            using (var wb = new XLWorkbook())
+            {
+                var meta = wb.AddWorksheet(MetaSheetName);
+                meta.Cell("A1").SetValue(JsonConvert.SerializeObject(excelConfig, _json));
+                meta.Visibility = XLWorksheetVisibility.Hidden;
+
+                var data = wb.AddWorksheet(DataSheetName);
+                for (var i = 0; i < snapshot.ColumnConfig.Count; i++)
+                {
+                    var col = snapshot.ColumnConfig[i];
+                    data.Cell(1, i + 1).SetValue(col.LogicalName);
+                    data.Cell(2, i + 1).SetValue(string.IsNullOrWhiteSpace(col.DisplayName) ? col.LogicalName : $"({col.DisplayName})");
+                }
+
+                for (var r = 0; r < rows.Count; r++)
+                {
+                    var row = rows[r];
+                    for (var c = 0; c < snapshot.ColumnConfig.Count; c++)
+                    {
+                        var col = snapshot.ColumnConfig[c];
+                        row.TryGetValue(col.LogicalName, out var value);
+                        data.Cell(r + 3, c + 1).SetValue(value?.ToString() ?? string.Empty);
+                    }
+                }
+
+                wb.SaveAs(filePath);
+            }
+            worker?.ReportProgress(100, "Excel export complete.");
+        }
 
         private static List<Dictionary<string, object>> ConvertJsonCollection(
             RecordCollection collection,
@@ -243,6 +353,10 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
             var firstDataRow = DetectFirstDataRow(sheet, headerMap, primaryIdAttr);
             var colIndex = columns.ToDictionary(c => c.LogicalName, c => c, StringComparer.OrdinalIgnoreCase);
+            var excelColumns = (excelConfig.Columns ?? new List<ExcelColumnConfig>())
+                .Where(c => !string.IsNullOrWhiteSpace(c.LogicalName))
+                .GroupBy(c => c.LogicalName, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
             var rows = new List<Dictionary<string, object>>();
             var total = Math.Max(0, lastRow - firstDataRow + 1);
 
@@ -263,11 +377,19 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                         continue;
                     }
                     var cellVal = sheet.Cell(r, colNum).GetString();
-                    row[col.LogicalName] = ParseCellValue(cellVal, col);
+                    excelColumns.TryGetValue(col.LogicalName, out var excelColumn);
+                    row[col.LogicalName] = ParseCellValue(cellVal, col, excelColumn);
 
                     if (string.Equals(col.LogicalName, primaryIdAttr, StringComparison.OrdinalIgnoreCase)
                         && !string.IsNullOrWhiteSpace(cellVal))
                         sourceId = cellVal;
+                }
+
+                foreach (var helper in (excelConfig.Columns ?? new List<ExcelColumnConfig>())
+                    .Where(c => c.Type == "LookupKeyField"))
+                {
+                    if (headerMap.TryGetValue(helper.LogicalName, out var helperColNum))
+                        row[helper.LogicalName] = sheet.Cell(r, helperColNum).GetString();
                 }
 
                 if (!string.IsNullOrEmpty(sourceId))
@@ -289,9 +411,27 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             return 3;
         }
 
-        private static object ParseCellValue(string raw, DataTableColumnConfig col)
+        private static object ParseCellValue(string raw, DataTableColumnConfig col, ExcelColumnConfig excelColumn = null)
         {
             if (string.IsNullOrWhiteSpace(raw)) return null;
+
+            if (excelColumn?.Options?.Any() == true
+                && (string.Equals(excelColumn.ExportMode, "Label", StringComparison.OrdinalIgnoreCase)
+                    || !long.TryParse(raw, out _)))
+            {
+                if (col.IsMultiSelect || string.Equals(col.Type, "MultiSelectPicklist", StringComparison.OrdinalIgnoreCase))
+                {
+                    var values = raw.Split(new[] { ',', '|' }, StringSplitOptions.RemoveEmptyEntries)
+                        .Select(label => FindOptionValue(excelColumn.Options, label.Trim()))
+                        .Where(value => value.HasValue)
+                        .Select(value => value.Value.ToString());
+                    return string.Join(",", values);
+                }
+
+                var optionValue = FindOptionValue(excelColumn.Options, raw.Trim());
+                if (optionValue.HasValue) return (long)optionValue.Value;
+            }
+
             switch (col.SqliteType)
             {
                 case "INTEGER":
@@ -321,10 +461,231 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     SqliteType = SqliteProjectService.GetSqliteType(typeCode),
                     RelatedTable = c.RelatedTable,
                     Resolution = c.Resolution,
+                    AlternateKeyFields = c.AlternateKeyFields != null ? new List<string>(c.AlternateKeyFields) : new List<string>(),
                     IsMultiSelect = c.Type == "MultiSelectPicklist"
                 });
             }
             return cols;
+        }
+
+        private static void ResolveSourceIdentity(
+            List<Dictionary<string, object>> rows,
+            List<DataTableColumnConfig> columns,
+            string tableLogicalName,
+            string primaryIdAttr,
+            DataTableConfig config,
+            IOrganizationService sourceClient,
+            BackgroundWorker worker)
+        {
+            if (rows == null) return;
+
+            var repo = sourceClient == null ? null : new CrmRepo(sourceClient, worker);
+            for (var i = 0; i < rows.Count; i++)
+            {
+                var row = rows[i];
+                ResolveLookupValues(row, columns, tableLogicalName, repo);
+
+                var sourceId = ResolveMainSourceId(row, tableLogicalName, primaryIdAttr, config, repo);
+                if (string.IsNullOrWhiteSpace(sourceId))
+                {
+                    sourceId = Guid.NewGuid().ToString("D");
+                    row["_is_new"] = true;
+                }
+                row["_source_id"] = sourceId;
+            }
+        }
+
+        private static string ResolveMainSourceId(
+            Dictionary<string, object> row,
+            string tableLogicalName,
+            string primaryIdAttr,
+            DataTableConfig config,
+            CrmRepo repo)
+        {
+            var mode = config?.LoadMatchKeyMode ?? "Guid";
+            if (string.Equals(mode, "Guid", StringComparison.OrdinalIgnoreCase))
+            {
+                var candidate = GetValue(row, primaryIdAttr) ?? GetValue(row, "_source_id");
+                return Guid.TryParse(candidate, out var id) ? id.ToString("D") : null;
+            }
+
+            var fields = config?.LoadMatchKeyFields?.Where(f => !string.IsNullOrWhiteSpace(f)).ToList()
+                ?? new List<string>();
+            if (!fields.Any() || repo == null) return null;
+
+            var keyValues = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            foreach (var field in fields)
+            {
+                if (row.TryGetValue(field, out var value) && value != null && !string.IsNullOrWhiteSpace(value.ToString()))
+                    keyValues[field] = value;
+            }
+
+            if (!keyValues.Any()) return null;
+            var found = repo.FindByFieldValues(tableLogicalName, keyValues);
+            return found?.Id.ToString("D");
+        }
+
+        private static void ResolveLookupValues(
+            Dictionary<string, object> row,
+            List<DataTableColumnConfig> columns,
+            string tableLogicalName,
+            CrmRepo repo)
+        {
+            if (repo == null) return;
+
+            foreach (var col in columns.Where(c => c.Type == "Lookup" || c.Type == "Owner" || c.Type == "Customer"))
+            {
+                if (!row.TryGetValue(col.LogicalName, out var raw) || raw == null || string.IsNullOrWhiteSpace(raw.ToString()))
+                    continue;
+
+                if (Guid.TryParse(raw.ToString(), out var lookupId))
+                {
+                    row[col.LogicalName] = lookupId.ToString("D");
+                    continue;
+                }
+
+                var fields = col.AlternateKeyFields?.Where(f => !string.IsNullOrWhiteSpace(f)).ToList()
+                    ?? new List<string>();
+                if (!fields.Any() && string.Equals(col.Resolution, "Name", StringComparison.OrdinalIgnoreCase))
+                    fields.Add("name");
+                if (!fields.Any()) continue;
+
+                var keyValues = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+                if (fields.Count == 1 && !row.ContainsKey(fields[0]))
+                {
+                    keyValues[fields[0]] = raw.ToString();
+                }
+                else
+                {
+                    foreach (var field in fields)
+                    {
+                        if (row.TryGetValue(field, out var value) && value != null && !string.IsNullOrWhiteSpace(value.ToString()))
+                            keyValues[field] = value;
+                    }
+                }
+
+                if (!keyValues.Any()) continue;
+                var found = repo.FindByFieldValues(col.RelatedTable ?? tableLogicalName, keyValues);
+                if (found != null)
+                    row[col.LogicalName] = found.Id.ToString("D");
+            }
+        }
+
+        private static string GetValue(Dictionary<string, object> row, string key)
+        {
+            return !string.IsNullOrWhiteSpace(key) && row.TryGetValue(key, out var value) ? value?.ToString() : null;
+        }
+
+        private static int? FindOptionValue(List<OptionConfig> options, string label)
+        {
+            if (options == null || string.IsNullOrWhiteSpace(label)) return null;
+            var option = options.FirstOrDefault(o => string.Equals(o.Label, label, StringComparison.OrdinalIgnoreCase));
+            return option?.Value;
+        }
+
+        private static void SaveExcelOptionSetValues(SqliteProjectService project, string tableLogicalName, ExcelExportConfig config)
+        {
+            foreach (var column in config?.Columns ?? new List<ExcelColumnConfig>())
+            {
+                if (column.Options?.Any() == true)
+                    project.SaveOptionSetValues(tableLogicalName, column.LogicalName, column.Options);
+            }
+        }
+
+        private static string GetPrimaryIdAttribute(SqliteProjectService project, DmtSnapshot snapshot)
+        {
+            var (_, _, primaryIdAttr, _) = project.GetTableConfig(snapshot.TableLogicalName);
+            if (!string.IsNullOrWhiteSpace(primaryIdAttr)) return primaryIdAttr;
+
+            return snapshot.ColumnConfig.FirstOrDefault(c =>
+                    string.Equals(c.Type, "Uniqueidentifier", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(c.Type, "Guid", StringComparison.OrdinalIgnoreCase)
+                    || c.LogicalName.EndsWith("id", StringComparison.OrdinalIgnoreCase))
+                ?.LogicalName;
+        }
+
+        private static ExcelExportConfig BuildExcelExportConfig(DmtSnapshot snapshot, string primaryIdAttr)
+        {
+            return new ExcelExportConfig
+            {
+                MatchKeyMode = snapshot.LoadMatchKeyMode,
+                MatchKeys = snapshot.LoadMatchKeyFields != null ? new List<string>(snapshot.LoadMatchKeyFields) : new List<string>(),
+                Table = new ExcelTableConfig
+                {
+                    LogicalName = snapshot.TableLogicalName,
+                    PrimaryIdAttribute = primaryIdAttr
+                },
+                Columns = snapshot.ColumnConfig.Select(c => new ExcelColumnConfig
+                {
+                    LogicalName = c.LogicalName,
+                    DisplayName = c.DisplayName,
+                    Type = ToExcelColumnType(c),
+                    RelatedTable = c.RelatedTable,
+                    Resolution = c.Resolution,
+                    AlternateKeyFields = c.AlternateKeyFields != null ? new List<string>(c.AlternateKeyFields) : new List<string>()
+                }).ToList()
+            };
+        }
+
+        private static AttributeType ToRecordAttributeType(DataTableColumnConfig col)
+        {
+            var type = col.Type ?? string.Empty;
+            if (string.Equals(type, "Uniqueidentifier", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(type, "Guid", StringComparison.OrdinalIgnoreCase))
+                return AttributeType.Identifier;
+            if (string.Equals(type, "Lookup", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(type, "Owner", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(type, "Customer", StringComparison.OrdinalIgnoreCase))
+                return AttributeType.EntityReference;
+            if (string.Equals(type, "Picklist", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(type, "OptionSet", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(type, "State", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(type, "Status", StringComparison.OrdinalIgnoreCase))
+                return AttributeType.OptionSet;
+            if (string.Equals(type, "MultiSelectPicklist", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(type, "MultiOptionSet", StringComparison.OrdinalIgnoreCase))
+                return AttributeType.MultiOptionSet;
+            return AttributeType.Standard;
+        }
+
+        private static string ToExcelColumnType(DataTableColumnConfig col)
+        {
+            var type = col.Type ?? "String";
+            if (string.Equals(type, "Picklist", StringComparison.OrdinalIgnoreCase)) return "OptionSet";
+            if (string.Equals(type, "MultiSelectPicklist", StringComparison.OrdinalIgnoreCase)) return "MultiOptionSet";
+            if (string.Equals(type, "Uniqueidentifier", StringComparison.OrdinalIgnoreCase)) return "Guid";
+            return type;
+        }
+
+        private static DataTableConfig BuildConfigFromExcel(DataTableConfig config, ExcelExportConfig excelConfig)
+        {
+            var effective = new DataTableConfig
+            {
+                Filter = config?.Filter,
+                SelectedAttributes = config?.SelectedAttributes != null ? new List<string>(config.SelectedAttributes) : new List<string>(),
+                BatchSize = config?.BatchSize > 0 ? config.BatchSize : 25,
+                AllColumns = config?.AllColumns != null ? new List<DataTableColumnConfig>(config.AllColumns) : new List<DataTableColumnConfig>(),
+                LoadMatchKeyMode = config?.LoadMatchKeyMode ?? "Guid",
+                LoadMatchKeyFields = config?.LoadMatchKeyFields != null ? new List<string>(config.LoadMatchKeyFields) : new List<string>(),
+                LoadMatchAlternateKeyName = config?.LoadMatchAlternateKeyName,
+                PushMatchKeyMode = config?.PushMatchKeyMode,
+                PushMatchKeyFields = config?.PushMatchKeyFields != null ? new List<string>(config.PushMatchKeyFields) : new List<string>(),
+                PushMatchAlternateKeyName = config?.PushMatchAlternateKeyName,
+                ExcelConfig = config?.ExcelConfig
+            };
+            var import = excelConfig?.ImportSettings;
+            var mode = import?.MatchKeyMode ?? excelConfig?.MatchKeyMode;
+            var fields = import?.MatchKeyFields ?? excelConfig?.MatchKeys;
+            var alternateKey = import?.MatchAlternateKeyName ?? excelConfig?.MatchAlternateKeyName;
+
+            if (!string.IsNullOrWhiteSpace(mode))
+                effective.LoadMatchKeyMode = mode;
+            if (fields != null)
+                effective.LoadMatchKeyFields = new List<string>(fields);
+            if (!string.IsNullOrWhiteSpace(alternateKey))
+                effective.LoadMatchAlternateKeyName = alternateKey;
+
+            return effective;
         }
     }
 }

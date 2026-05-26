@@ -60,7 +60,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private DmtSettings _dmtSettings;
         private string _dmtFilePath;
         private ExecutionPlan _executionPlan;
-        private string _executionPlanFilePath;
+        private string _executionPlanProjectId;
         private TableSettings _currentTableSettings;
         private string _currentTableLogicalName;
         private string _previousTableLogicalName;
@@ -89,7 +89,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             "Validation checks disconnected targets, linked-step order, missing files, duplicate outputs, and preview counts where possible.",
             "Use variables such as {date}, {datetime}, {table}, {source}, {target}, and {planName} in plan file paths.",
             "Excel import write-back only fills generated GUIDs for workbook rows that did not already contain a main GUID.",
-            "Saved .dmtplan.json files are snapshots, so plan steps are protected from later settings-file changes.",
+            "Project plans are stored in the open .dmtproj file, so plan steps stay with their snapshots and mappings.",
             "Changing a step target refreshes that step's mapping snapshot and requires validation again.",
             "For chained plans, keep export steps before their linked imports; the plan review blocks invalid moves."
         };
@@ -510,8 +510,15 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (client == null || string.IsNullOrWhiteSpace(client.ConnectedOrgUniqueName)) return;
 
             _targetClients[client.ConnectedOrgUniqueName] = client;
+            var envId = GetClientEnvironmentId(client);
+            if (!string.IsNullOrWhiteSpace(envId))
+                _targetClients[envId] = client;
             if (instance != null)
+            {
                 _targetInstances[client.ConnectedOrgUniqueName] = instance;
+                if (!string.IsNullOrWhiteSpace(envId))
+                    _targetInstances[envId] = instance;
+            }
 
             if (makeDefault || _targetClient == null)
             {
@@ -531,7 +538,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 ? null
                 : new DmtEnvironmentInfo
                 {
-                    UniqueName = ActiveTargetClient.ConnectedOrgUniqueName,
+                    UniqueName = GetClientEnvironmentId(ActiveTargetClient),
                     FriendlyName = ActiveTargetClient.ConnectedOrgFriendlyName
                 };
         }
@@ -539,15 +546,20 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private List<DmtEnvironmentInfo> GetLoadedTargetEnvironments()
         {
             return _targetClients.Values
-                .Where(client => client != null && !string.IsNullOrWhiteSpace(client.ConnectedOrgUniqueName))
+                .Where(client => client != null && !string.IsNullOrWhiteSpace(GetClientEnvironmentId(client)))
                 .Select(client => new DmtEnvironmentInfo
                 {
-                    UniqueName = client.ConnectedOrgUniqueName,
+                    UniqueName = GetClientEnvironmentId(client),
                     FriendlyName = client.ConnectedOrgFriendlyName
                 })
                 .GroupBy(env => env.UniqueName, StringComparer.OrdinalIgnoreCase)
                 .Select(group => group.First())
                 .ToList();
+        }
+
+        private static string GetClientEnvironmentId(CrmServiceClient client)
+        {
+            return client?.EnvironmentId ?? client?.ConnectedOrgId.ToString() ?? client?.ConnectedOrgUniqueName;
         }
 
         private void UpdateExecutionPlanTargetEnvironments()
@@ -565,7 +577,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             {
                 _executionPlan.TargetEnvironment = new DmtEnvironmentInfo
                 {
-                    UniqueName = _targetClient.ConnectedOrgUniqueName,
+                    UniqueName = GetClientEnvironmentId(_targetClient),
                     FriendlyName = _targetClient.ConnectedOrgFriendlyName
                 };
             }
@@ -2369,8 +2381,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             if (tsmiExecutionPlan == null) return;
 
-            var hasPlan = _executionPlan != null && !string.IsNullOrWhiteSpace(_executionPlanFilePath);
-            tsmiExecutionPlan.Text = hasPlan ? GetExecutionPlanDisplayName(_executionPlanFilePath) : "Execution Plan";
+            var hasPlan = _executionPlan != null && !string.IsNullOrWhiteSpace(_executionPlanProjectId);
+            tsmiExecutionPlan.Text = hasPlan ? _executionPlan.Name : "Execution Plan";
             tsmiPlanSave.Enabled = hasPlan;
             tsmiPlanReview.Visible = false;
             tsmiPlanValidate.Enabled = hasPlan;
@@ -2387,14 +2399,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             var fileName = Path.GetFileName(filePath);
             return fileName != null && fileName.EndsWith(".dmt.json", StringComparison.OrdinalIgnoreCase)
                 ? fileName.Substring(0, fileName.Length - ".dmt.json".Length)
-                : Path.GetFileNameWithoutExtension(filePath);
-        }
-
-        private string GetExecutionPlanDisplayName(string filePath)
-        {
-            var fileName = Path.GetFileName(filePath);
-            return fileName != null && fileName.EndsWith(".dmtplan.json", StringComparison.OrdinalIgnoreCase)
-                ? fileName.Substring(0, fileName.Length - ".dmtplan.json".Length)
                 : Path.GetFileNameWithoutExtension(filePath);
         }
 

@@ -28,98 +28,91 @@ namespace Dataverse.XrmTools.DataMigrationTool
 {
     public partial class DataMigrationControl
     {
+        private const string LastExecutionPlanProjectKey = "last_execution_plan_id";
+
         #region Execution Plan Methods
         private bool EnsureExecutionPlanLoaded()
         {
-            if (_executionPlan != null && !string.IsNullOrWhiteSpace(_executionPlanFilePath)) return true;
+            if (_executionPlan != null && !string.IsNullOrWhiteSpace(_executionPlanProjectId)) return true;
 
-            using (var dlg = new ExecutionPlanFileDialog())
+            if (!EnsureProjectPlanStoreAvailable()) return false;
+
+            var plans = _project.Service.GetPlans();
+            if (plans.Count == 1)
             {
-                if (dlg.ShowDialog(ParentForm) != DialogResult.OK || string.IsNullOrWhiteSpace(dlg.FilePath))
-                    return false;
-
-                if (dlg.Choice == ExecutionPlanFileChoice.NewFile)
-                {
-                    CreateExecutionPlan(dlg.FilePath);
-                    return true;
-                }
-
-                if (dlg.Choice == ExecutionPlanFileChoice.ExistingFile)
-                {
-                    LoadExecutionPlan(dlg.FilePath);
-                    return true;
-                }
+                LoadExecutionPlan(plans[0].Id);
+                return _executionPlan != null;
             }
 
-            return false;
+            if (plans.Count > 1)
+                return LoadExecutionPlan();
+
+            CreateExecutionPlan();
+            return _executionPlan != null;
         }
 
-        private void CreateExecutionPlan(string filePath = null)
+        private void CreateExecutionPlan(string planName = null)
         {
-            if (string.IsNullOrWhiteSpace(filePath))
-            {
-                using (var dlg = new SaveFileDialog
-                {
-                    Title = "Create execution plan",
-                    Filter = "DMT Execution Plan (*.dmtplan.json)|*.dmtplan.json",
-                    DefaultExt = "dmtplan.json",
-                    FileName = GetDefaultSaveFileName(".dmtplan.json", "migration-plan")
-                })
-                {
-                    if (dlg.ShowDialog(ParentForm) != DialogResult.OK) return;
-                    filePath = dlg.FileName;
-                }
-            }
+            if (!EnsureProjectPlanStoreAvailable()) return;
 
-            _executionPlan = ExecutionPlanFileService.CreateNew(
-                filePath,
-                _sourceClient?.ConnectedOrgUniqueName,
-                _sourceClient?.ConnectedOrgFriendlyName,
-                _targetClient?.ConnectedOrgUniqueName,
-                _targetClient?.ConnectedOrgFriendlyName);
+            if (string.IsNullOrWhiteSpace(planName))
+                planName = PromptExecutionPlanName("Create execution plan", GetDefaultExecutionPlanName());
+            if (string.IsNullOrWhiteSpace(planName)) return;
+
+            _executionPlanProjectId = Guid.NewGuid().ToString("D");
+            _executionPlan = ExecutionPlanService.CreateNewProjectPlan(
+                planName,
+                GetProjectSourceEnvironmentInfo(),
+                GetActiveTargetEnvironmentInfo(),
+                GetLoadedTargetEnvironments());
             UpdateExecutionPlanTargetEnvironments();
-            _executionPlanFilePath = filePath;
             _executionPlanValidatedForExecution = false;
             AutoSaveExecutionPlan();
             RenderExecutionPlanMenu();
-            SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Execution plan created: {Path.GetFileName(filePath)}"));
+            SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Execution plan created: {_executionPlan.Name}"));
         }
 
-        private void LoadExecutionPlan(string filePath = null)
+        private bool LoadExecutionPlan(string planId = null, bool showStatus = true)
         {
-            if (string.IsNullOrWhiteSpace(filePath))
+            if (!EnsureProjectPlanStoreAvailable()) return false;
+
+            if (string.IsNullOrWhiteSpace(planId))
             {
-                using (var dlg = new OpenFileDialog
-                {
-                    Title = "Load execution plan",
-                    Filter = "DMT Execution Plan (*.dmtplan.json)|*.dmtplan.json"
-                })
-                {
-                    if (dlg.ShowDialog(ParentForm) != DialogResult.OK) return;
-                    filePath = dlg.FileName;
-                }
+                var selected = SelectProjectExecutionPlan();
+                if (selected == null) return false;
+                planId = selected.Id;
             }
 
-            _executionPlan = ExecutionPlanFileService.Load(filePath);
-            _executionPlanFilePath = filePath;
+            var planRow = _project.Service.GetPlans().FirstOrDefault(p => string.Equals(p.Id, planId, StringComparison.OrdinalIgnoreCase));
+            if (planRow == null) return false;
+
+            _executionPlanProjectId = planRow.Id;
+            _executionPlan = ExecutionPlanService.FromProjectPlan(
+                planRow,
+                _project.Service.GetPlanSteps(planRow.Id),
+                GetProjectSourceEnvironmentInfo(),
+                GetLoadedTargetEnvironments());
             UpdateExecutionPlanTargetEnvironments();
-            ExecutionPlanFileService.ValidatePlan(_executionPlan);
+            ExecutionPlanService.ValidatePlan(_executionPlan);
             _executionPlanValidatedForExecution = false;
+            RememberLastExecutionPlan(planRow.Id);
             RenderExecutionPlanMenu();
-            SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Execution plan loaded: {Path.GetFileName(filePath)}"));
+            if (showStatus)
+                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Execution plan loaded: {_executionPlan.Name}"));
+            return true;
         }
 
         private void SaveExecutionPlan()
         {
-            if (_executionPlan == null || string.IsNullOrWhiteSpace(_executionPlanFilePath))
+            if (_executionPlan == null || string.IsNullOrWhiteSpace(_executionPlanProjectId))
             {
                 CreateExecutionPlan();
                 return;
             }
 
-            ExecutionPlanFileService.Save(_executionPlanFilePath, _executionPlan);
+            SaveExecutionPlanToProject();
             RenderExecutionPlanMenu();
-            SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Execution plan saved: {Path.GetFileName(_executionPlanFilePath)}"));
+            SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Execution plan saved: {_executionPlan.Name}"));
         }
 
         private void SaveExecutionPlanAs()
@@ -130,35 +123,178 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 return;
             }
 
-            using (var dlg = new SaveFileDialog
-            {
-                Title = "Save execution plan as",
-                Filter = "DMT Execution Plan (*.dmtplan.json)|*.dmtplan.json",
-                DefaultExt = "dmtplan.json",
-                FileName = !string.IsNullOrWhiteSpace(_executionPlanFilePath)
-                    ? Path.GetFileName(_executionPlanFilePath)
-                    : GetDefaultSaveFileName(".dmtplan.json", "migration-plan")
-            })
-            {
-                if (!string.IsNullOrWhiteSpace(_executionPlanFilePath))
-                    dlg.InitialDirectory = Path.GetDirectoryName(_executionPlanFilePath);
-                if (dlg.ShowDialog(ParentForm) != DialogResult.OK) return;
+            if (!EnsureProjectPlanStoreAvailable()) return;
+            var planName = PromptExecutionPlanName("Clone execution plan", $"{_executionPlan.Name} copy");
+            if (string.IsNullOrWhiteSpace(planName)) return;
 
-                _executionPlanFilePath = dlg.FileName;
-                ExecutionPlanFileService.Save(_executionPlanFilePath, _executionPlan);
-                RenderExecutionPlanMenu();
-                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Execution plan saved as: {Path.GetFileName(_executionPlanFilePath)}"));
-            }
+            _executionPlanProjectId = Guid.NewGuid().ToString("D");
+            _executionPlan.Name = planName;
+            _executionPlan.CreatedOn = DateTime.UtcNow;
+            _executionPlan.UpdatedOn = DateTime.UtcNow;
+            SaveExecutionPlanToProject();
+            RenderExecutionPlanMenu();
+            SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Execution plan cloned: {_executionPlan.Name}"));
         }
 
         private void AutoSaveExecutionPlan(bool showStatus = false)
         {
-            if (_executionPlan == null || string.IsNullOrWhiteSpace(_executionPlanFilePath)) return;
+            if (_executionPlan == null || string.IsNullOrWhiteSpace(_executionPlanProjectId)) return;
 
-            ExecutionPlanFileService.Save(_executionPlanFilePath, _executionPlan);
+            SaveExecutionPlanToProject();
             RenderExecutionPlanMenu();
             if (showStatus)
-                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Execution plan saved: {Path.GetFileName(_executionPlanFilePath)}"));
+                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Execution plan saved: {_executionPlan.Name}"));
+        }
+
+        private bool EnsureProjectPlanStoreAvailable()
+        {
+            if (_project?.Service != null) return true;
+
+            MessageBox.Show(
+                "Open or create a project before working with execution plans.",
+                "Execution Plan",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return false;
+        }
+
+        private void SaveExecutionPlanToProject()
+        {
+            if (_project?.Service == null || _executionPlan == null) return;
+            if (string.IsNullOrWhiteSpace(_executionPlanProjectId))
+                _executionPlanProjectId = Guid.NewGuid().ToString("D");
+
+            _executionPlan.UpdatedOn = DateTime.UtcNow;
+            var plan = ExecutionPlanService.ToProjectPlan(_executionPlan, _executionPlanProjectId);
+            var steps = ExecutionPlanService.ToProjectPlanSteps(_executionPlan, _executionPlanProjectId, _project.SourceEnvironment?.Id);
+            _project.Service.ReplacePlan(plan, steps);
+            RememberLastExecutionPlan(_executionPlanProjectId);
+        }
+
+        private bool TryLoadLastExecutionPlan()
+        {
+            if (_project?.Service == null) return false;
+
+            var plans = _project.Service.GetPlans();
+            if (!plans.Any()) return false;
+
+            var lastPlanId = _project.Service.GetProjectValue(LastExecutionPlanProjectKey);
+            var plan = !string.IsNullOrWhiteSpace(lastPlanId)
+                ? plans.FirstOrDefault(p => string.Equals(p.Id, lastPlanId, StringComparison.OrdinalIgnoreCase))
+                : null;
+
+            plan = plan ?? plans.OrderByDescending(p => p.UpdatedOn).FirstOrDefault();
+            return plan != null && LoadExecutionPlan(plan.Id, showStatus: false);
+        }
+
+        private void RememberLastExecutionPlan(string planId)
+        {
+            if (_project?.Service == null || string.IsNullOrWhiteSpace(planId)) return;
+            _project.Service.SetProjectValue(LastExecutionPlanProjectKey, planId);
+        }
+
+        private DmtEnvironmentInfo GetProjectSourceEnvironmentInfo()
+        {
+            var source = _project?.SourceEnvironment;
+            return new DmtEnvironmentInfo
+            {
+                UniqueName = source?.Id ?? GetClientEnvironmentId(_sourceClient) ?? _sourceClient?.ConnectedOrgUniqueName,
+                FriendlyName = source?.FriendlyName ?? _sourceClient?.ConnectedOrgFriendlyName
+            };
+        }
+
+        private string GetDefaultExecutionPlanName()
+        {
+            if (!string.IsNullOrWhiteSpace(_project?.ProjectName))
+                return $"{_project.ProjectName} Plan";
+            return "Migration Plan";
+        }
+
+        private string PromptExecutionPlanName(string title, string defaultName)
+        {
+            using (var dialog = new Form
+            {
+                Text = title,
+                StartPosition = FormStartPosition.CenterParent,
+                ShowIcon = false,
+                ShowInTaskbar = false,
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                MaximizeBox = false,
+                MinimizeBox = false,
+                ClientSize = new Size(420, 124)
+            })
+            {
+                var label = new System.Windows.Forms.Label
+                {
+                    Text = "Plan name",
+                    Left = 12,
+                    Top = 14,
+                    Width = 390,
+                    Height = 20
+                };
+                var text = new TextBox
+                {
+                    Left = 12,
+                    Top = 38,
+                    Width = 390,
+                    Text = defaultName ?? "Migration Plan"
+                };
+                var ok = new Button { Text = "Save", Width = 84, Height = 28, Left = 226, Top = 82, DialogResult = DialogResult.OK };
+                var cancel = new Button { Text = "Cancel", Width = 84, Height = 28, Left = 318, Top = 82, DialogResult = DialogResult.Cancel };
+                dialog.Controls.Add(label);
+                dialog.Controls.Add(text);
+                dialog.Controls.Add(ok);
+                dialog.Controls.Add(cancel);
+                dialog.AcceptButton = ok;
+                dialog.CancelButton = cancel;
+
+                return dialog.ShowDialog(ParentForm) == DialogResult.OK ? text.Text.Trim() : null;
+            }
+        }
+
+        private DmtPlan SelectProjectExecutionPlan()
+        {
+            var plans = _project?.Service?.GetPlans() ?? new List<DmtPlan>();
+            if (!plans.Any())
+            {
+                CreateExecutionPlan();
+                return null;
+            }
+
+            using (var dialog = new Form
+            {
+                Text = "Load execution plan",
+                StartPosition = FormStartPosition.CenterParent,
+                ShowIcon = false,
+                ShowInTaskbar = false,
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                MaximizeBox = false,
+                MinimizeBox = false,
+                ClientSize = new Size(460, 320)
+            })
+            {
+                var list = new ListBox
+                {
+                    Left = 12,
+                    Top = 12,
+                    Width = 436,
+                    Height = 256,
+                    DisplayMember = nameof(DmtPlan.Name)
+                };
+                foreach (var plan in plans)
+                    list.Items.Add(plan);
+                if (list.Items.Count > 0) list.SelectedIndex = 0;
+
+                var load = new Button { Text = "Load", Width = 84, Height = 28, Left = 272, Top = 280, DialogResult = DialogResult.OK };
+                var cancel = new Button { Text = "Cancel", Width = 84, Height = 28, Left = 364, Top = 280, DialogResult = DialogResult.Cancel };
+                dialog.Controls.Add(list);
+                dialog.Controls.Add(load);
+                dialog.Controls.Add(cancel);
+                dialog.AcceptButton = load;
+                dialog.CancelButton = cancel;
+
+                return dialog.ShowDialog(ParentForm) == DialogResult.OK ? list.SelectedItem as DmtPlan : null;
+            }
         }
 
         private void ReviewExecutionPlan()
@@ -737,12 +873,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 step.TargetEnvironment = null;
                 RefreshExecutionPlanStepMappingsForTarget(step);
                 _executionPlanValidatedForExecution = false;
-                ExecutionPlanFileService.ValidatePlan(_executionPlan);
-                if (!string.IsNullOrWhiteSpace(_executionPlanFilePath))
-                {
-                    ExecutionPlanFileService.Save(_executionPlanFilePath, _executionPlan);
-                    SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Execution plan saved: {Path.GetFileName(_executionPlanFilePath)}"));
-                }
+                ExecutionPlanService.ValidatePlan(_executionPlan);
+                AutoSaveExecutionPlan(true);
                 BeginInvoke(new System.Action(RenderExecutionPlanMenu));
                 return;
             }
@@ -754,12 +886,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
             };
             RefreshExecutionPlanStepMappingsForTarget(step);
             _executionPlanValidatedForExecution = false;
-            ExecutionPlanFileService.ValidatePlan(_executionPlan);
-            if (!string.IsNullOrWhiteSpace(_executionPlanFilePath))
-            {
-                ExecutionPlanFileService.Save(_executionPlanFilePath, _executionPlan);
-                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Execution plan saved: {Path.GetFileName(_executionPlanFilePath)}"));
-            }
+            ExecutionPlanService.ValidatePlan(_executionPlan);
+            AutoSaveExecutionPlan(true);
             BeginInvoke(new System.Action(RenderExecutionPlanMenu));
         }
 
@@ -809,10 +937,10 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 _executionPlanSteps.EndUpdate();
             }
 
-            var hasPlan = _executionPlan != null && !string.IsNullOrWhiteSpace(_executionPlanFilePath);
+            var hasPlan = _executionPlan != null && !string.IsNullOrWhiteSpace(_executionPlanProjectId);
             var errors = _executionPlan?.Steps?.Count(s => string.Equals(s.Validation?.Status, "Error", StringComparison.OrdinalIgnoreCase)) ?? 0;
             var warnings = _executionPlan?.Steps?.Count(s => string.Equals(s.Validation?.Status, "Warning", StringComparison.OrdinalIgnoreCase)) ?? 0;
-            _executionPlanGroup.Text = hasPlan ? $"Execution Plan - {GetExecutionPlanDisplayName(_executionPlanFilePath)}" : "Execution Plan";
+            _executionPlanGroup.Text = hasPlan ? $"Execution Plan - {_executionPlan.Name}" : "Execution Plan";
             _executionPlanSummary.Text = hasPlan
                 ? $"{_executionPlan.Steps.Count} step(s), {errors} error(s), {warnings} warning(s)"
                 : "No active plan";
@@ -823,7 +951,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void RenderExecutionPlanActionState()
         {
-            var hasPlan = _executionPlan != null && !string.IsNullOrWhiteSpace(_executionPlanFilePath);
+            var hasPlan = _executionPlan != null && !string.IsNullOrWhiteSpace(_executionPlanProjectId);
             var selectedStep = GetSelectedExecutionPlanStep();
             var selectedIndex = selectedStep == null || _executionPlan?.Steps == null
                 ? -1
@@ -992,7 +1120,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (!(e.Item.Tag is ExecutionPlanStep step)) return;
 
             step.Enabled = e.Item.Checked;
-            ExecutionPlanFileService.ValidatePlan(_executionPlan);
+            ExecutionPlanService.ValidatePlan(_executionPlan);
             _executionPlanValidatedForExecution = false;
             AutoSaveExecutionPlan(true);
         }
@@ -1009,7 +1137,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
             _executionPlan.Steps.RemoveAt(index);
             _executionPlan.Steps.Insert(newIndex, step);
-            ExecutionPlanFileService.ValidatePlan(_executionPlan);
+            ExecutionPlanService.ValidatePlan(_executionPlan);
             _executionPlanValidatedForExecution = false;
             AutoSaveExecutionPlan(true);
             if (newIndex < _executionPlanSteps.Items.Count)
@@ -1040,7 +1168,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             var clone = ExecutionPlanService.CloneStepForEnvironment(step, targetEnvironment);
             RefreshExecutionPlanStepMappingsForTarget(clone);
             _executionPlan.Steps.Insert(index + 1, clone);
-            ExecutionPlanFileService.ValidatePlan(_executionPlan);
+            ExecutionPlanService.ValidatePlan(_executionPlan);
             _executionPlanValidatedForExecution = false;
             AutoSaveExecutionPlan(true);
             if (index + 1 < _executionPlanSteps.Items.Count)
@@ -1071,7 +1199,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 dependent.Input.SourceStepId = null;
             }
             _executionPlan.Steps.RemoveAt(index);
-            ExecutionPlanFileService.ValidatePlan(_executionPlan);
+            ExecutionPlanService.ValidatePlan(_executionPlan);
             _executionPlanValidatedForExecution = false;
             AutoSaveExecutionPlan(true);
         }
@@ -1164,7 +1292,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 OpenPushStepConfigDialog(step, snapshot, _ =>
                 {
                     _executionPlanValidatedForExecution = false;
-                    ExecutionPlanFileService.ValidatePlan(_executionPlan);
+                    ExecutionPlanService.ValidatePlan(_executionPlan);
                     AutoSaveExecutionPlan(true);
                     RenderExecutionPlanPanel();
                 }, "Apply");
@@ -1179,7 +1307,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 }
                 step.Snapshot.Mappings = ExecutionPlanService.CloneMappings(BuildMappingsForStepTarget(step, step.Snapshot.ExportSettings ?? GetDefaultImportSettings(Enums.Action.None)));
                 _executionPlanValidatedForExecution = false;
-                ExecutionPlanFileService.ValidatePlan(_executionPlan);
+                ExecutionPlanService.ValidatePlan(_executionPlan);
                 AutoSaveExecutionPlan(true);
                 return;
             }
@@ -1251,7 +1379,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             step.Snapshot.Mappings = ExecutionPlanService.CloneMappings(BuildMappingsForStepTarget(step, settings));
             if (preview != null)
                 step.Validation.Preview = ExecutionPlanService.ToPreviewSummary(preview, "Captured preview", false, false);
-            ExecutionPlanFileService.ValidatePlan(_executionPlan);
+            ExecutionPlanService.ValidatePlan(_executionPlan);
             RenderExecutionPlanMenu();
         }
 
@@ -1378,7 +1506,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     var plan = evt.Argument as ExecutionPlan;
                     var runLog = ExecutionPlanService.CreateRunLog(
                         plan,
-                        _executionPlanFilePath,
+                        _project?.FilePath,
                         new DmtEnvironmentInfo
                         {
                             UniqueName = _sourceClient?.ConnectedOrgUniqueName,
@@ -1479,7 +1607,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     var stepIndex = _executionPlan.Steps.FindIndex(s => string.Equals(s.Id, step.Id, StringComparison.OrdinalIgnoreCase)) + 1;
                     var runLog = ExecutionPlanService.CreateRunLog(
                         _executionPlan,
-                        _executionPlanFilePath,
+                        _project?.FilePath,
                         new DmtEnvironmentInfo
                         {
                             UniqueName = _sourceClient?.ConnectedOrgUniqueName,
@@ -1661,8 +1789,9 @@ namespace Dataverse.XrmTools.DataMigrationTool
             var sourceEnvId = _project.SourceEnvironment?.Id ?? string.Empty;
             var targetEnvId = step.TargetEnvironment?.UniqueName ?? string.Empty;
             var settings = step.Snapshot?.ImportSettings ?? new UiSettings { Action = Enums.Action.Create | Enums.Action.Update };
+            var pushMatchKey = BuildPushMatchKeySelection(step.Snapshot);
 
-            var result = SqliteDataLogic.Push(_project.Service, snapshotName, sourceEnvId, targetEnvId, ActiveTargetClient, settings, worker, step.Snapshot?.ImportMatchKeySelection, step.Snapshot?.LookupMatchKeys);
+            var result = SqliteDataLogic.Push(_project.Service, snapshotName, sourceEnvId, targetEnvId, ActiveTargetClient, settings, worker, pushMatchKey, step.Snapshot?.LookupMatchKeys);
 
             var summary = $"{step.Name}: {result?.Created ?? 0} created, {result?.Updated ?? 0} updated, {result?.Skipped ?? 0} skipped";
             if (result?.Errors?.Any() == true)
@@ -1679,11 +1808,26 @@ namespace Dataverse.XrmTools.DataMigrationTool
             };
         }
 
+        private static ExcelImportMatchKeySelection BuildPushMatchKeySelection(ExecutionPlanStepSnapshot snapshot)
+        {
+            if (snapshot == null) return null;
+            if (!string.IsNullOrWhiteSpace(snapshot.PushMatchKeyMode))
+            {
+                return new ExcelImportMatchKeySelection
+                {
+                    Mode = snapshot.PushMatchKeyMode,
+                    Fields = snapshot.PushMatchKeyFields != null ? new List<string>(snapshot.PushMatchKeyFields) : new List<string>(),
+                    AlternateKeyName = snapshot.PushMatchAlternateKeyName
+                };
+            }
+            return snapshot.ImportMatchKeySelection;
+        }
+
         private void ValidateExecutionPlanInternal(ExecutionPlan plan, BackgroundWorker worker, bool includePreviewCounts)
         {
             if (plan == null) return;
 
-            ExecutionPlanFileService.ValidatePlan(plan);
+            ExecutionPlanService.ValidatePlan(plan);
             AddEnvironmentValidationMessages(plan);
             AddDuplicateOutputPathValidationMessages(plan);
 
@@ -1820,34 +1964,85 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     var snap = args.snapshot as DmtSnapshot;
                     var configStep = args.step as ExecutionPlanStep;
                     var altKeys = new List<ExcelImportAlternateKeyOption>();
+                    IOrganizationService capturedTargetClient = null;
+
+                    var relatedTableData = new Dictionary<string, PushStepConfigDialog.LookupRelatedTableInfo>(StringComparer.OrdinalIgnoreCase);
 
                     if (snap != null && TrySetExecutionTargetOverride(configStep, out _))
                     {
                         try
                         {
-                            var repo = new CrmRepo(ActiveTargetClient);
+                            capturedTargetClient = ActiveTargetClient;
+                            var repo = new CrmRepo(capturedTargetClient);
                             var keys = repo.GetAlternateKeys(snap.TableLogicalName);
                             var availableFields = snap.ColumnConfig?.Select(c => c.LogicalName) ?? Enumerable.Empty<string>();
                             altKeys = ImportPreviewService.GetAvailableImportAlternateKeys(keys, availableFields);
+
+                            // Load related table info for each lookup column
+                            var lookupCols = snap.ColumnConfig?
+                                .Where(c => c.Type == "Lookup" || c.Type == "Owner" || c.Type == "Customer")
+                                .GroupBy(c => c.RelatedTable, StringComparer.OrdinalIgnoreCase)
+                                .Where(g => !string.IsNullOrWhiteSpace(g.Key)) ?? Enumerable.Empty<IGrouping<string, DataTableColumnConfig>>();
+
+                            foreach (var grp in lookupCols)
+                            {
+                                var info = new PushStepConfigDialog.LookupRelatedTableInfo();
+
+                                // Snapshot columns for this related table
+                                if (_project?.Service != null)
+                                {
+                                    try
+                                    {
+                                        var relSnap = _project.Service.GetSnapshots().FirstOrDefault(s =>
+                                            string.Equals(s.TableLogicalName, grp.Key, StringComparison.OrdinalIgnoreCase));
+                                        info.SnapshotColumns = relSnap?.ColumnConfig?
+                                            .Where(c => !c.LogicalName.StartsWith("_"))
+                                            .ToList() ?? new List<DataTableColumnConfig>();
+                                    }
+                                    catch { info.SnapshotColumns = new List<DataTableColumnConfig>(); }
+                                }
+
+                                // Alternate keys — filter by snapshot columns if available, otherwise show all
+                                try
+                                {
+                                    var relKeys = repo.GetAlternateKeys(grp.Key);
+                                    var fieldFilter = info.SnapshotColumns?.Any() == true
+                                        ? info.SnapshotColumns.Select(c => c.LogicalName)
+                                        : (IEnumerable<string>)null; // null = no filter
+                                    info.AltKeys = ImportPreviewService.GetAvailableImportAlternateKeys(relKeys, fieldFilter);
+                                }
+                                catch { info.AltKeys = new List<ExcelImportAlternateKeyOption>(); }
+
+                                relatedTableData[grp.Key] = info;
+                            }
                         }
                         catch { }
                         finally { ClearExecutionTargetOverride(); }
                     }
 
+                    // Compute all plan table names for lookup validation
+                    var allPlanTableNames = ComputeAllPlanTableNames();
+
                     SqliteDataLogic.PushPreview preview = null;
+                    string sourceEnvId = string.Empty;
+                    string targetEnvId = string.Empty;
                     if (snap != null && _project?.Service != null)
                     {
                         try
                         {
-                            var sourceEnvId = _project.SourceEnvironment?.Id ?? string.Empty;
-                            var targetEnvId = configStep?.TargetEnvironment?.UniqueName ?? string.Empty;
+                            sourceEnvId = _project.SourceEnvironment?.Id ?? string.Empty;
+                            targetEnvId = configStep?.TargetEnvironment?.UniqueName ?? string.Empty;
+                            var lookupMatchKeys = configStep?.Snapshot?.LookupMatchKeys;
+                            var pushMatchKey = BuildPushMatchKeySelection(configStep?.Snapshot);
                             preview = SqliteDataLogic.PreviewPush(_project.Service, snap.Name, sourceEnvId, targetEnvId,
-                                configStep?.Snapshot?.ImportSettings, configStep?.Snapshot?.ImportMatchKeySelection);
+                                configStep?.Snapshot?.ImportSettings, pushMatchKey,
+                                lookupMatchKeys, allPlanTableNames, capturedTargetClient,
+                                SqliteDataLogic.DefaultPushPreviewLimit, true);
                         }
                         catch { }
                     }
 
-                    evt.Result = new { altKeys, preview };
+                    evt.Result = new { altKeys, preview, sourceEnvId, targetEnvId, allPlanTableNames, capturedTargetClient, relatedTableData };
                 },
                 PostWorkCallBack = evt =>
                 {
@@ -1855,8 +2050,15 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     dynamic result = evt.Result;
                     var altKeys = result?.altKeys as List<ExcelImportAlternateKeyOption> ?? new List<ExcelImportAlternateKeyOption>();
                     var preview = result?.preview as SqliteDataLogic.PushPreview;
+                    var srcId = result?.sourceEnvId as string ?? string.Empty;
+                    var tgtId = result?.targetEnvId as string ?? string.Empty;
+                    var planTableNames = result?.allPlanTableNames as ISet<string>;
+                    var targetClient = result?.capturedTargetClient as IOrganizationService;
+                    var relData = result?.relatedTableData as Dictionary<string, PushStepConfigDialog.LookupRelatedTableInfo>
+                        ?? new Dictionary<string, PushStepConfigDialog.LookupRelatedTableInfo>(StringComparer.OrdinalIgnoreCase);
 
-                    using (var dlg = new PushStepConfigDialog(step, snapshot, altKeys, preview, acceptButtonText))
+                    using (var dlg = new PushStepConfigDialog(step, snapshot, altKeys, preview, acceptButtonText,
+                        _project?.Service, srcId, tgtId, planTableNames, targetClient, relData))
                     {
                         if (dlg.ShowDialog(ParentForm) != DialogResult.OK) return;
                     }
@@ -1864,6 +2066,20 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     onConfigured(step);
                 }
             });
+        }
+
+        private ISet<string> ComputeAllPlanTableNames()
+        {
+            var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (_executionPlan?.Steps == null || _project?.Service == null) return result;
+            foreach (var s in _executionPlan.Steps)
+            {
+                if (!ExecutionPlanService.IsPushSnapshotStep(s) || string.IsNullOrWhiteSpace(s.Input?.SnapshotName)) continue;
+                var snap = _project.Service.GetSnapshot(s.Input.SnapshotName);
+                if (!string.IsNullOrWhiteSpace(snap?.TableLogicalName))
+                    result.Add(snap.TableLogicalName);
+            }
+            return result;
         }
 
         private void RefreshExecutionPlanImportPreview(ExecutionPlanStep step, int stepIndex, BackgroundWorker worker, bool fullPreview = false)
@@ -2099,13 +2315,21 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void SaveExecutionPlanRunLog(ExecutionPlanRunLog runLog)
         {
-            if (runLog == null || string.IsNullOrWhiteSpace(_executionPlanFilePath)) return;
+            if (runLog == null || _project?.Service == null) return;
 
-            var directory = Path.GetDirectoryName(_executionPlanFilePath);
-            if (string.IsNullOrWhiteSpace(directory)) directory = Environment.CurrentDirectory;
-            var fileName = $"{ExecutionPlanService.SanitizePathToken(_executionPlan?.Name ?? "execution-plan")}.{DateTime.Now:yyyy-MM-dd_HHmm}.run.json";
-            var path = Path.Combine(directory, fileName);
-            ExecutionPlanFileService.SaveRunLog(path, runLog);
+            _project.Service.SaveRunLog(new DmtRunLog
+            {
+                PlanId = _executionPlanProjectId,
+                PlanName = _executionPlan?.Name,
+                StartedOn = runLog.StartedOn,
+                CompletedOn = runLog.CompletedOn,
+                Status = runLog.Steps.Any(step => string.Equals(step.Status, "Failed", StringComparison.OrdinalIgnoreCase))
+                    ? "Failed"
+                    : runLog.Steps.Any(step => string.Equals(step.Status, "Warning", StringComparison.OrdinalIgnoreCase))
+                        ? "Warning"
+                        : "Completed",
+                Log = runLog
+            });
         }
 
         private string ResolveExecutionStepPath(ExecutionPlanStep step, int stepIndex)
@@ -2158,7 +2382,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             AutoSaveExecutionPlan();
             _executionPlan = null;
-            _executionPlanFilePath = null;
+            _executionPlanProjectId = null;
             _executionPlanValidatedForExecution = false;
             RenderExecutionPlanMenu();
             SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Execution plan closed"));
@@ -2183,7 +2407,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             step.Snapshot.Mappings = ExecutionPlanService.CloneMappings(BuildMappingsForStepTarget(step, uiSettings));
 
             _executionPlan.Steps.Add(step);
-            ExecutionPlanFileService.ValidatePlan(_executionPlan);
+            ExecutionPlanService.ValidatePlan(_executionPlan);
             _executionPlanValidatedForExecution = false;
             AutoSaveExecutionPlan(true);
             SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Added '{step.Name}' to execution plan"));
@@ -2224,7 +2448,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 ApplyImportMatchKeySelection(step.Snapshot.ExcelConfig, matchKey);
 
             _executionPlan.Steps.Add(step);
-            ExecutionPlanFileService.ValidatePlan(_executionPlan);
+            ExecutionPlanService.ValidatePlan(_executionPlan);
             _executionPlanValidatedForExecution = false;
             AutoSaveExecutionPlan(true);
             SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Added '{step.Name}' to execution plan"));
@@ -2282,7 +2506,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     });
                 }
 
-                var defaultUniqueName = _targetClient?.ConnectedOrgUniqueName;
+                var defaultUniqueName = GetClientEnvironmentId(_targetClient);
                 for (var i = 0; i < combo.Items.Count; i++)
                 {
                     var option = combo.Items[i] as ExecutionPlanTargetOption;
@@ -2371,7 +2595,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 _executionPlan.Steps.Insert(sourceIndex + 1, step);
             else
                 _executionPlan.Steps.Add(step);
-            ExecutionPlanFileService.ValidatePlan(_executionPlan);
+            ExecutionPlanService.ValidatePlan(_executionPlan);
             _executionPlanValidatedForExecution = false;
             AutoSaveExecutionPlan(true);
             SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Added linked '{step.Name}' to execution plan"));

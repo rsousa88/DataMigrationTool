@@ -2,6 +2,7 @@
 using System;
 using System.Drawing;
 using System.IO;
+using System.Linq;
 using System.Windows.Forms;
 
 // Microsoft
@@ -192,8 +193,10 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 RenderProjectBanner();
                 RenderProjectName();
                 RefreshInlineSnapshotList();
+                TryLoadLastExecutionPlan();
 
-                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Project opened: {_project.ProjectName}"));
+                var planSuffix = _executionPlan != null ? $" | Plan: {_executionPlan.Name}" : string.Empty;
+                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Project opened: {_project.ProjectName}{planSuffix}"));
             }
             catch (Exception ex)
             {
@@ -209,11 +212,15 @@ namespace Dataverse.XrmTools.DataMigrationTool
             var name = _project.ProjectName;
             try { _project.Service?.Dispose(); } catch { }
             _project = null;
+            _executionPlan = null;
+            _executionPlanProjectId = null;
+            _executionPlanValidatedForExecution = false;
 
             if (_projectMismatchBanner != null)
                 _projectMismatchBanner.Visible = false;
             RenderProjectName();
             RefreshInlineSnapshotList();
+            RenderExecutionPlanMenu();
 
             if (!silent)
                 SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Project closed: {name}"));
@@ -252,6 +259,15 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (_project == null || client == null) return;
 
             var envId = client.EnvironmentId ?? client.ConnectedOrgId.ToString();
+            var existing = _project.Service.GetEnvironments("target")
+                .FirstOrDefault(env => string.Equals(env.Id, envId, StringComparison.OrdinalIgnoreCase));
+            var env = existing ?? new DmtProjectEnvironment { Id = envId, Role = "target" };
+            env.UniqueName = client.ConnectedOrgUniqueName;
+            env.FriendlyName = client.ConnectedOrgFriendlyName;
+            env.Url = client.CrmConnectOrgUriActual?.ToString() ?? string.Empty;
+            env.Role = "target";
+            _project.Service.SaveEnvironment(env);
+
             if (!_project.TargetClients.ContainsKey(envId))
                 _project.TargetClients[envId] = client;
         }

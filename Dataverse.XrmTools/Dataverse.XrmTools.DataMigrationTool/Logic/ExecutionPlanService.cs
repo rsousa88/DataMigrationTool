@@ -23,6 +23,189 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
     public static class ExecutionPlanService
     {
+        public static ExecutionPlan CreateNewProjectPlan(string name, DmtEnvironmentInfo sourceEnvironment, DmtEnvironmentInfo targetEnvironment, IEnumerable<DmtEnvironmentInfo> targetEnvironments)
+        {
+            var targets = (targetEnvironments ?? Enumerable.Empty<DmtEnvironmentInfo>())
+                .Where(env => env != null && !string.IsNullOrWhiteSpace(env.UniqueName))
+                .GroupBy(env => env.UniqueName, StringComparer.OrdinalIgnoreCase)
+                .Select(group => Clone(group.First()))
+                .ToList();
+
+            if (targetEnvironment != null
+                && !string.IsNullOrWhiteSpace(targetEnvironment.UniqueName)
+                && !targets.Any(env => string.Equals(env.UniqueName, targetEnvironment.UniqueName, StringComparison.OrdinalIgnoreCase)))
+                targets.Add(Clone(targetEnvironment));
+
+            return new ExecutionPlan
+            {
+                Name = string.IsNullOrWhiteSpace(name) ? "Migration Plan" : name.Trim(),
+                SourceEnvironment = Clone(sourceEnvironment),
+                TargetEnvironment = Clone(targetEnvironment),
+                TargetEnvironments = targets
+            };
+        }
+
+        public static DmtPlan ToProjectPlan(ExecutionPlan plan, string planId)
+        {
+            if (plan == null) throw new ArgumentNullException(nameof(plan));
+
+            return new DmtPlan
+            {
+                Id = string.IsNullOrWhiteSpace(planId) ? Guid.NewGuid().ToString("D") : planId,
+                Name = string.IsNullOrWhiteSpace(plan.Name) ? "Migration Plan" : plan.Name,
+                CreatedOn = plan.CreatedOn == default(DateTime) ? DateTime.UtcNow : plan.CreatedOn,
+                UpdatedOn = DateTime.UtcNow,
+                Defaults = Clone(plan.Defaults) ?? new ExecutionPlanDefaults()
+            };
+        }
+
+        public static List<DmtPlanStep> ToProjectPlanSteps(ExecutionPlan plan, string planId, string sourceEnvId)
+        {
+            return (plan?.Steps ?? new List<ExecutionPlanStep>())
+                .Select((step, index) => ToProjectPlanStep(step, planId, sourceEnvId, index))
+                .ToList();
+        }
+
+        public static ExecutionPlan FromProjectPlan(DmtPlan plan, IEnumerable<DmtPlanStep> steps, DmtEnvironmentInfo sourceEnvironment, IEnumerable<DmtEnvironmentInfo> targetEnvironments)
+        {
+            if (plan == null) return null;
+
+            var targets = (targetEnvironments ?? Enumerable.Empty<DmtEnvironmentInfo>())
+                .Where(env => env != null && !string.IsNullOrWhiteSpace(env.UniqueName))
+                .GroupBy(env => env.UniqueName, StringComparer.OrdinalIgnoreCase)
+                .Select(group => Clone(group.First()))
+                .ToList();
+
+            var executionPlan = new ExecutionPlan
+            {
+                Name = plan.Name,
+                CreatedOn = plan.CreatedOn,
+                UpdatedOn = plan.UpdatedOn,
+                SourceEnvironment = Clone(sourceEnvironment),
+                TargetEnvironment = targets.FirstOrDefault(),
+                TargetEnvironments = targets,
+                Defaults = Clone(plan.Defaults) ?? new ExecutionPlanDefaults(),
+                Steps = (steps ?? Enumerable.Empty<DmtPlanStep>())
+                    .OrderBy(step => step.SortOrder)
+                    .Select(FromProjectPlanStep)
+                    .ToList()
+            };
+
+            EnsurePlanDefaults(executionPlan);
+            return executionPlan;
+        }
+
+        private static DmtPlanStep ToProjectPlanStep(ExecutionPlanStep step, string planId, string sourceEnvId, int index)
+        {
+            var isExport = IsExportStep(step);
+            var filePath = isExport ? step.Output?.PathTemplate : step.Input?.Path;
+            var snapshot = step.Snapshot ?? new ExecutionPlanStepSnapshot();
+            return new DmtPlanStep
+            {
+                Id = string.IsNullOrWhiteSpace(step.Id) ? Guid.NewGuid().ToString("D") : step.Id,
+                PlanId = planId,
+                SortOrder = index,
+                Name = step.Name,
+                Enabled = step.Enabled,
+                Operation = step.Operation,
+                TableLogicalName = step.Table?.LogicalName,
+                SourceEnvId = isExport ? sourceEnvId : null,
+                TargetEnvId = step.TargetEnvironment?.UniqueName,
+                SnapshotName = step.Input?.SnapshotName,
+                FileType = GetStepFileType(step),
+                FilePath = filePath,
+                Snapshot = new DmtPlanStepSnapshot
+                {
+                    Table = Clone(step.Table),
+                    TargetEnvironment = Clone(step.TargetEnvironment),
+                    Input = Clone(step.Input) ?? new ExecutionPlanStepInput(),
+                    Output = Clone(step.Output) ?? new ExecutionPlanStepOutput(),
+                    SettingsProvenance = Clone(step.SettingsProvenance),
+                    SelectedAttributes = snapshot.SelectedAttributes?.ToList() ?? new List<string>(),
+                    Filter = snapshot.Filter,
+                    Mappings = CloneMappings(snapshot.Mappings),
+                    ExcelConfig = CloneExcelConfig(snapshot.ExcelConfig),
+                    RecordCollection = Clone(snapshot.RecordCollection),
+                    ImportMatchKeySelection = CloneImportMatchKeySelection(snapshot.ImportMatchKeySelection),
+                    LoadMatchKeyMode = snapshot.ImportMatchKeySelection?.Mode,
+                    LoadMatchKeyFields = snapshot.ImportMatchKeySelection?.Fields?.ToList() ?? new List<string>(),
+                    LoadMatchAlternateKeyName = snapshot.ImportMatchKeySelection?.AlternateKeyName,
+                    PushMatchKeyMode = snapshot.PushMatchKeyMode,
+                    PushMatchKeyFields = snapshot.PushMatchKeyFields?.ToList() ?? new List<string>(),
+                    PushMatchAlternateKeyName = snapshot.PushMatchAlternateKeyName,
+                    ImportSettings = Clone(snapshot.ImportSettings),
+                    ExportSettings = Clone(snapshot.ExportSettings),
+                    LookupMatchKeys = Clone(snapshot.LookupMatchKeys)
+                },
+                FailurePolicy = Clone(step.FailurePolicy) ?? new ExecutionPlanFailurePolicy(),
+                Validation = Clone(step.Validation) ?? new ExecutionPlanValidation()
+            };
+        }
+
+        private static ExecutionPlanStep FromProjectPlanStep(DmtPlanStep step)
+        {
+            var snapshot = step.Snapshot ?? new DmtPlanStepSnapshot();
+            var executionStep = new ExecutionPlanStep
+            {
+                Id = string.IsNullOrWhiteSpace(step.Id) ? Guid.NewGuid().ToString("D") : step.Id,
+                Name = step.Name,
+                Enabled = step.Enabled,
+                Operation = step.Operation,
+                Table = Clone(snapshot.Table) ?? new DmtTableInfo { LogicalName = step.TableLogicalName },
+                TargetEnvironment = Clone(snapshot.TargetEnvironment) ?? (!string.IsNullOrWhiteSpace(step.TargetEnvId) ? new DmtEnvironmentInfo { UniqueName = step.TargetEnvId } : null),
+                Input = Clone(snapshot.Input) ?? new ExecutionPlanStepInput(),
+                Output = Clone(snapshot.Output) ?? new ExecutionPlanStepOutput(),
+                SettingsProvenance = Clone(snapshot.SettingsProvenance),
+                Snapshot = new ExecutionPlanStepSnapshot
+                {
+                    SelectedAttributes = snapshot.SelectedAttributes?.ToList() ?? new List<string>(),
+                    Filter = snapshot.Filter,
+                    Mappings = CloneMappings(snapshot.Mappings),
+                    ExcelConfig = CloneExcelConfig(snapshot.ExcelConfig),
+                    RecordCollection = Clone(snapshot.RecordCollection),
+                    ImportMatchKeySelection = CloneImportMatchKeySelection(snapshot.ImportMatchKeySelection),
+                    PushMatchKeyMode = snapshot.PushMatchKeyMode,
+                    PushMatchKeyFields = snapshot.PushMatchKeyFields?.ToList() ?? new List<string>(),
+                    PushMatchAlternateKeyName = snapshot.PushMatchAlternateKeyName,
+                    ImportSettings = Clone(snapshot.ImportSettings),
+                    ExportSettings = Clone(snapshot.ExportSettings),
+                    LookupMatchKeys = Clone(snapshot.LookupMatchKeys)
+                },
+                FailurePolicy = Clone(step.FailurePolicy) ?? new ExecutionPlanFailurePolicy(),
+                Validation = Clone(step.Validation) ?? new ExecutionPlanValidation()
+            };
+
+            if (string.IsNullOrWhiteSpace(executionStep.Input?.SnapshotName))
+                executionStep.Input.SnapshotName = step.SnapshotName;
+            if (string.IsNullOrWhiteSpace(executionStep.Input?.Path) && !IsExportStep(executionStep))
+                executionStep.Input.Path = step.FilePath;
+            if (string.IsNullOrWhiteSpace(executionStep.Output?.PathTemplate) && IsExportStep(executionStep))
+                executionStep.Output.PathTemplate = step.FilePath;
+            EnsureStepDefaults(executionStep);
+            return executionStep;
+        }
+
+        public static void ValidatePlan(ExecutionPlan plan)
+        {
+            if (plan == null) return;
+            EnsurePlanDefaults(plan);
+
+            var ids = plan.Steps.Select(s => s.Id).Where(id => !string.IsNullOrWhiteSpace(id)).ToList();
+            var duplicateIds = ids.GroupBy(id => id, StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
+            var order = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var steps = new Dictionary<string, ExecutionPlanStep>(StringComparer.OrdinalIgnoreCase);
+            for (var i = 0; i < plan.Steps.Count; i++)
+            {
+                var step = plan.Steps[i];
+                if (string.IsNullOrWhiteSpace(step.Id) || order.ContainsKey(step.Id)) continue;
+                order[step.Id] = i;
+                steps[step.Id] = step;
+            }
+
+            foreach (var step in plan.Steps)
+                ValidateStep(step, duplicateIds, order, steps);
+        }
+
         public static string GetOperationDisplayName(string operation)
         {
             switch (operation)
@@ -497,6 +680,167 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             {
                 return string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
             }
+        }
+
+        private static string GetStepFileType(ExecutionPlanStep step)
+        {
+            if (string.Equals(step?.Operation, "ExportToExcel", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(step?.Operation, "ImportFromExcel", StringComparison.OrdinalIgnoreCase))
+                return "Excel";
+            if (string.Equals(step?.Operation, "ExportToJson", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(step?.Operation, "ImportFromJson", StringComparison.OrdinalIgnoreCase))
+                return "JSON";
+            return null;
+        }
+
+        private static T Clone<T>(T value) where T : class
+        {
+            return value == null ? null : JsonConvert.DeserializeObject<T>(JsonConvert.SerializeObject(value));
+        }
+
+        private static void EnsurePlanDefaults(ExecutionPlan plan)
+        {
+            if (plan == null) return;
+            plan.Defaults = plan.Defaults ?? new ExecutionPlanDefaults();
+            plan.Steps = plan.Steps ?? new List<ExecutionPlanStep>();
+            plan.TargetEnvironments = plan.TargetEnvironments ?? new List<DmtEnvironmentInfo>();
+            if (plan.TargetEnvironment != null
+                && !string.IsNullOrWhiteSpace(plan.TargetEnvironment.UniqueName)
+                && !plan.TargetEnvironments.Any(env => string.Equals(env.UniqueName, plan.TargetEnvironment.UniqueName, StringComparison.OrdinalIgnoreCase)))
+                plan.TargetEnvironments.Add(Clone(plan.TargetEnvironment));
+
+            foreach (var step in plan.Steps)
+                EnsureStepDefaults(step);
+        }
+
+        private static void EnsureStepDefaults(ExecutionPlanStep step)
+        {
+            if (step == null) return;
+            if (string.IsNullOrWhiteSpace(step.Id)) step.Id = Guid.NewGuid().ToString("D");
+            step.Input = step.Input ?? new ExecutionPlanStepInput();
+            step.Output = step.Output ?? new ExecutionPlanStepOutput();
+            step.Snapshot = step.Snapshot ?? new ExecutionPlanStepSnapshot();
+            step.Snapshot.SelectedAttributes = step.Snapshot.SelectedAttributes ?? new List<string>();
+            step.Snapshot.Mappings = step.Snapshot.Mappings ?? new List<Mapping>();
+            step.Snapshot.PushMatchKeyFields = step.Snapshot.PushMatchKeyFields ?? new List<string>();
+            step.FailurePolicy = step.FailurePolicy ?? new ExecutionPlanFailurePolicy();
+            step.Validation = step.Validation ?? new ExecutionPlanValidation();
+            step.Validation.Messages = step.Validation.Messages ?? new List<ExecutionPlanValidationMessage>();
+        }
+
+        private static void ValidateStep(ExecutionPlanStep step, List<string> duplicateIds, Dictionary<string, int> order, Dictionary<string, ExecutionPlanStep> steps)
+        {
+            EnsureStepDefaults(step);
+            step.Validation.Messages.Clear();
+
+            if (string.IsNullOrWhiteSpace(step.Id))
+                AddMessage(step, "Error", "Step has no id.");
+            else if (duplicateIds.Contains(step.Id))
+                AddMessage(step, "Error", "Step id is duplicated.");
+
+            if (string.IsNullOrWhiteSpace(step.Name))
+                AddMessage(step, "Warning", "Step has no name.");
+
+            if (string.IsNullOrWhiteSpace(step.Operation))
+                AddMessage(step, "Error", "Step has no operation.");
+
+            if (step.Table == null || string.IsNullOrWhiteSpace(step.Table.LogicalName))
+                AddMessage(step, "Error", "Step has no table snapshot.");
+
+            var isImport = (step.Operation ?? string.Empty).StartsWith("Import", StringComparison.OrdinalIgnoreCase);
+            var isExport = IsExportStep(step);
+
+            if (isImport)
+                ValidateInput(step, order, steps);
+
+            if (isExport)
+                ValidateOutput(step);
+
+            step.Validation.ValidatedAt = DateTime.UtcNow;
+            step.Validation.Status = step.Validation.Messages.Any(m => string.Equals(m.Severity, "Error", StringComparison.OrdinalIgnoreCase))
+                ? "Error"
+                : step.Validation.Messages.Any(m => string.Equals(m.Severity, "Warning", StringComparison.OrdinalIgnoreCase))
+                    ? "Warning"
+                    : "Ready";
+        }
+
+        private static void ValidateInput(ExecutionPlanStep step, Dictionary<string, int> order, Dictionary<string, ExecutionPlanStep> steps)
+        {
+            var input = step.Input ?? new ExecutionPlanStepInput();
+            if (string.Equals(input.Mode, "FromStepOutput", StringComparison.OrdinalIgnoreCase))
+            {
+                if (string.IsNullOrWhiteSpace(input.SourceStepId))
+                {
+                    AddMessage(step, "Error", "Linked input has no source step.");
+                    return;
+                }
+
+                if (!order.ContainsKey(input.SourceStepId))
+                {
+                    AddMessage(step, "Error", "Linked source step was not found.");
+                    return;
+                }
+
+                if (order.TryGetValue(step.Id, out var stepIndex) && order[input.SourceStepId] > stepIndex)
+                    AddMessage(step, "Error", "Linked import must run after its export step.");
+
+                if (steps.TryGetValue(input.SourceStepId, out var sourceStep))
+                {
+                    if (!IsExportStep(sourceStep))
+                        AddMessage(step, "Error", "Linked source step is not an export step.");
+
+                    if (!string.Equals(sourceStep.Table?.LogicalName, step.Table?.LogicalName, StringComparison.OrdinalIgnoreCase))
+                        AddMessage(step, "Error", "Linked source step table does not match the import step table.");
+
+                    if (!LinkedFileTypeMatches(sourceStep.Operation, step.Operation))
+                        AddMessage(step, "Error", "Linked source step file type does not match the import operation.");
+                }
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(input.Path))
+                AddMessage(step, "Error", "Import input path is missing.");
+            else if (!File.Exists(input.Path))
+                AddMessage(step, "Warning", $"Import input file does not exist: {input.Path}");
+        }
+
+        private static bool LinkedFileTypeMatches(string sourceOperation, string importOperation)
+        {
+            if (string.Equals(sourceOperation, "ExportToJson", StringComparison.OrdinalIgnoreCase))
+                return string.Equals(importOperation, "ImportFromJson", StringComparison.OrdinalIgnoreCase);
+            if (string.Equals(sourceOperation, "ExportToExcel", StringComparison.OrdinalIgnoreCase))
+                return string.Equals(importOperation, "ImportFromExcel", StringComparison.OrdinalIgnoreCase);
+            return false;
+        }
+
+        private static void ValidateOutput(ExecutionPlanStep step)
+        {
+            var path = step.Output?.PathTemplate;
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                AddMessage(step, "Error", "Export output path is missing.");
+                return;
+            }
+
+            try
+            {
+                var directory = Path.GetDirectoryName(path);
+                if (!string.IsNullOrWhiteSpace(directory) && !Directory.Exists(directory))
+                    AddMessage(step, "Info", $"Output directory will be created: {directory}");
+            }
+            catch (Exception ex)
+            {
+                AddMessage(step, "Error", $"Output path is invalid: {ex.Message}");
+            }
+        }
+
+        private static void AddMessage(ExecutionPlanStep step, string severity, string message)
+        {
+            step.Validation.Messages.Add(new ExecutionPlanValidationMessage
+            {
+                Severity = severity,
+                Message = message
+            });
         }
     }
 }

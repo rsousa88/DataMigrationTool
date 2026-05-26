@@ -6,6 +6,10 @@ using System.Linq;
 // ClosedXML
 using ClosedXML.Excel;
 
+// Microsoft
+using Microsoft.Xrm.Sdk;
+using Microsoft.Xrm.Sdk.Messages;
+
 // Newtonsoft
 using Newtonsoft.Json;
 
@@ -165,6 +169,67 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
             Assert.Contains(snapshot.ColumnConfig, c => c.LogicalName == "name");
         }
 
+        [Fact]
+        public void LoadFromJson_CustomMatchKey_Resolves_SourceId_FromSource()
+        {
+            var sourceId = Guid.NewGuid();
+            var collection = RecordCollectionWithAccountNumber("A-100", id: null);
+            var jsonPath = _tmp.WriteJson("match.json", collection);
+            var source = new FakeOrganizationService
+            {
+                ExecuteHandler = request =>
+                {
+                    if (request is RetrieveMultipleRequest)
+                    {
+                        return new RetrieveMultipleResponse
+                        {
+                            Results =
+                            {
+                                ["EntityCollection"] = new EntityCollection(new[]
+                                {
+                                    new Entity("account") { Id = sourceId }
+                                }.ToList())
+                            }
+                        };
+                    }
+                    return new OrganizationResponse();
+                }
+            };
+
+            var snapshot = SqliteFileAdapter.LoadFromJson(_svc, jsonPath, "match-snap", "env1", MatchKeyConfig(), source, null);
+            var rows = _svc.ReadSnapshotRecords(snapshot.TableSuffix, snapshot.ColumnConfig).ToList();
+
+            Assert.Single(rows);
+            Assert.Equal(sourceId.ToString("D"), rows[0]["_source_id"]?.ToString());
+            Assert.False((bool)rows[0]["_is_new"]);
+        }
+
+        [Fact]
+        public void LoadFromJson_CustomMatchKey_Marks_Row_New_WhenSourceMissing()
+        {
+            var collection = RecordCollectionWithAccountNumber("A-404", id: null);
+            var jsonPath = _tmp.WriteJson("new.json", collection);
+            var source = new FakeOrganizationService
+            {
+                ExecuteHandler = request => request is RetrieveMultipleRequest
+                    ? new RetrieveMultipleResponse
+                    {
+                        Results =
+                        {
+                            ["EntityCollection"] = new EntityCollection()
+                        }
+                    }
+                    : new OrganizationResponse()
+            };
+
+            var snapshot = SqliteFileAdapter.LoadFromJson(_svc, jsonPath, "new-snap", "env1", MatchKeyConfig(), source, null);
+            var rows = _svc.ReadSnapshotRecords(snapshot.TableSuffix, snapshot.ColumnConfig).ToList();
+
+            Assert.Single(rows);
+            Assert.True(Guid.TryParse(rows[0]["_source_id"]?.ToString(), out _));
+            Assert.True((bool)rows[0]["_is_new"]);
+        }
+
         // ─── Excel ─────────────────────────────────────────────────────────────
 
         [Fact]
@@ -314,6 +379,59 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
 
         // ─── Helpers ───────────────────────────────────────────────────────────
 
+        [Fact]
+        public void TableSuffix_Collision_AppendsCounter_ForDifferentSnapshotNames()
+        {
+            var collection = TestDataBuilder.RecordCollection();
+            var path1 = _tmp.WriteJson("s1.json", collection);
+            var path2 = _tmp.WriteJson("s2.json", collection);
+
+            var first = SqliteFileAdapter.LoadFromJson(_svc, path1, "My Snapshot", "env1", null, null);
+            var second = SqliteFileAdapter.LoadFromJson(_svc, path2, "My Snapshot!", "env1", null, null);
+
+            Assert.Equal("my_snapshot", first.TableSuffix);
+            Assert.Equal("my_snapshot_2", second.TableSuffix);
+        }
+
+        [Fact]
+        public void ExportToJson_WritesSnapshotRows_WithoutInternalColumns()
+        {
+            var collection = TestDataBuilder.RecordCollection("account", "accountid");
+            var jsonPath = _tmp.WriteJson("source.json", collection);
+            var snapshot = SqliteFileAdapter.LoadFromJson(_svc, jsonPath, "export-json", "env1", null, null);
+            var exportPath = _tmp.GetPath("snapshot.json");
+
+            SqliteFileAdapter.ExportToJson(_svc, snapshot.Name, exportPath);
+
+            var exported = JsonConvert.DeserializeObject<RecordCollection>(System.IO.File.ReadAllText(exportPath));
+            var attributes = exported.Records.Single().Attributes.Select(a => a.Key).ToList();
+            Assert.Equal("account", exported.LogicalName);
+            Assert.DoesNotContain("_source_id", attributes);
+            Assert.DoesNotContain("_is_new", attributes);
+            Assert.Contains("name", attributes);
+        }
+
+        [Fact]
+        public void ExportToExcel_WritesDataAndMetadataSheets_WithoutInternalColumns()
+        {
+            var collection = TestDataBuilder.RecordCollection("account", "accountid");
+            var jsonPath = _tmp.WriteJson("source-excel.json", collection);
+            var snapshot = SqliteFileAdapter.LoadFromJson(_svc, jsonPath, "export-excel", "env1", null, null);
+            var exportPath = _tmp.GetExcelPath("snapshot.xlsx");
+
+            SqliteFileAdapter.ExportToExcel(_svc, snapshot.Name, exportPath);
+
+            using (var wb = new XLWorkbook(exportPath))
+            {
+                Assert.True(wb.Worksheets.Contains("_dmt"));
+                Assert.True(wb.Worksheets.Contains("Data"));
+                var headers = wb.Worksheet("Data").Row(1).CellsUsed().Select(c => c.GetString()).ToList();
+                Assert.DoesNotContain("_source_id", headers);
+                Assert.DoesNotContain("_is_new", headers);
+                Assert.Contains("name", headers);
+            }
+        }
+
         private string BuildTestExcel(
             string fileName,
             string tableLogicalName,
@@ -357,6 +475,47 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
             }
 
             return path;
+        }
+
+        private static DataTableConfig MatchKeyConfig()
+        {
+            return new DataTableConfig
+            {
+                LoadMatchKeyMode = "Custom",
+                LoadMatchKeyFields = new List<string> { "accountnumber" },
+                AllColumns = new List<DataTableColumnConfig>
+                {
+                    new DataTableColumnConfig { LogicalName = "accountid", DisplayName = "Account ID", Type = "Uniqueidentifier", SqliteType = "TEXT" },
+                    new DataTableColumnConfig { LogicalName = "accountnumber", DisplayName = "Account Number", Type = "String", SqliteType = "TEXT" },
+                    new DataTableColumnConfig { LogicalName = "name", DisplayName = "Name", Type = "String", SqliteType = "TEXT" }
+                }
+            };
+        }
+
+        private static RecordCollection RecordCollectionWithAccountNumber(string accountNumber, Guid? id)
+        {
+            var attributes = new List<RecordAttribute>
+            {
+                new RecordAttribute { Key = "accountnumber", Type = AttributeType.Standard, Value = accountNumber },
+                new RecordAttribute { Key = "name", Type = AttributeType.Standard, Value = "Match Co" }
+            };
+            if (id.HasValue)
+                attributes.Insert(0, new RecordAttribute { Key = "accountid", Type = AttributeType.Identifier, Value = id.Value });
+
+            return new RecordCollection
+            {
+                LogicalName = "account",
+                PrimaryIdAttribute = "accountid",
+                Count = 1,
+                Records = new List<DmtRecord>
+                {
+                    new DmtRecord
+                    {
+                        SourceRowNumber = 1,
+                        Attributes = attributes
+                    }
+                }
+            };
         }
     }
 }

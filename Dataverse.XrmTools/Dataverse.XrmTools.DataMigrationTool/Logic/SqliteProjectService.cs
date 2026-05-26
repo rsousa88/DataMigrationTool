@@ -393,14 +393,21 @@ VALUES(@ln, @dn, @pid, @pn, @cfg);";
 
         public void SaveSnapshot(DmtSnapshot snapshot)
         {
+            SaveSnapshot(snapshot, null);
+        }
+
+        private void SaveSnapshot(DmtSnapshot snapshot, SqliteTransaction tx)
+        {
             if (snapshot.SortOrder <= 0)
             {
                 using var maxCmd = _connection.CreateCommand();
+                if (tx != null) maxCmd.Transaction = tx;
                 maxCmd.CommandText = "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM _snapshots;";
                 snapshot.SortOrder = (int)(long)maxCmd.ExecuteScalar();
             }
 
             using var cmd = _connection.CreateCommand();
+            if (tx != null) cmd.Transaction = tx;
             cmd.CommandText = @"
 INSERT OR REPLACE INTO _snapshots(id, name, table_suffix, table_logical_name, source_env_id,
     created_on, updated_on, row_count, source, load_match_key_mode, load_match_key_fields, column_config_json, sort_order)
@@ -422,6 +429,23 @@ VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @lmkm, @lmkf, @ccj
             cmd.Parameters.AddWithValue("@ccj", JsonConvert.SerializeObject(snapshot.ColumnConfig, _json));
             cmd.Parameters.AddWithValue("@so",   snapshot.SortOrder);
             cmd.ExecuteNonQuery();
+        }
+
+        public void ReplaceSnapshotData(DmtSnapshot snapshot, List<DataTableColumnConfig> columns, IEnumerable<Dictionary<string, object>> rows)
+        {
+            using var tx = _connection.BeginTransaction();
+            try
+            {
+                SaveSnapshot(snapshot, tx);
+                CreateSnapshotTable(snapshot.TableSuffix, columns, tx);
+                WriteSnapshotRecords(snapshot.TableSuffix, rows, columns, tx);
+                tx.Commit();
+            }
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
         }
 
         public DmtSnapshot GetSnapshot(string name)
@@ -458,6 +482,28 @@ VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @lmkm, @lmkf, @ccj
             return cmd.ExecuteScalar() != null;
         }
 
+        public ISet<string> GetSnapshotSourceIds(string tableSuffix)
+        {
+            var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using var cmd = _connection.CreateCommand();
+            cmd.CommandText = $"SELECT _source_id FROM [data_{tableSuffix}] WHERE _source_id IS NOT NULL;";
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+                if (!reader.IsDBNull(0)) result.Add(reader.GetString(0));
+            return result;
+        }
+
+        public ISet<string> GetAllSnapshotSourceIdsForTable(string tableLogicalName)
+        {
+            var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var snapshots = GetSnapshots()
+                .Where(s => string.Equals(s.TableLogicalName, tableLogicalName, StringComparison.OrdinalIgnoreCase));
+            foreach (var snap in snapshots)
+                foreach (var id in GetSnapshotSourceIds(snap.TableSuffix))
+                    result.Add(id);
+            return result;
+        }
+
         public void DeleteSnapshot(string name)
         {
             var snapshot = GetSnapshot(name)
@@ -466,7 +512,7 @@ VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @lmkm, @lmkf, @ccj
             using var tx = _connection.BeginTransaction();
             try
             {
-                DropDataTableIfExists(snapshot.TableSuffix);
+                DropDataTableIfExists(snapshot.TableSuffix, tx);
 
                 using var cmd = _connection.CreateCommand();
                 cmd.Transaction = tx;
@@ -544,6 +590,11 @@ VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @lmkm, @lmkf, @ccj
 
         public void CreateSnapshotTable(string tableSuffix, List<DataTableColumnConfig> columns)
         {
+            CreateSnapshotTable(tableSuffix, columns, null);
+        }
+
+        private void CreateSnapshotTable(string tableSuffix, List<DataTableColumnConfig> columns, SqliteTransaction tx)
+        {
             var reserved = columns.Select(c => c.LogicalName)
                 .Intersect(ReservedColumnNames, StringComparer.OrdinalIgnoreCase)
                 .ToList();
@@ -551,7 +602,7 @@ VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @lmkm, @lmkf, @ccj
                 throw new InvalidOperationException(
                     $"Column name(s) collide with reserved names: {string.Join(", ", reserved)}");
 
-            DropDataTableIfExists(tableSuffix);
+            DropDataTableIfExists(tableSuffix, tx);
 
             var sb = new StringBuilder();
             sb.Append($"CREATE TABLE [data_{tableSuffix}] (");
@@ -567,6 +618,7 @@ VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @lmkm, @lmkf, @ccj
             sb.Append(");");
 
             using var cmd = _connection.CreateCommand();
+            if (tx != null) cmd.Transaction = tx;
             cmd.CommandText = sb.ToString();
             cmd.ExecuteNonQuery();
         }
@@ -575,61 +627,10 @@ VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @lmkm, @lmkf, @ccj
             IEnumerable<Dictionary<string, object>> rows,
             List<DataTableColumnConfig> columns)
         {
-            var colNames = columns.Select(c => c.LogicalName).ToList();
-            var insertCols = string.Join(", ", new[] { "_source_id", "_is_new" }
-                .Concat(colNames.Select(n => $"[{n}]")));
-            var insertParams = string.Join(", ", new[] { "@_source_id", "@_is_new" }
-                .Concat(colNames.Select(n => $"@{n}")));
-
             using var tx = _connection.BeginTransaction();
             try
             {
-                using var cmd = _connection.CreateCommand();
-                cmd.Transaction = tx;
-                cmd.CommandText = $"INSERT INTO [data_{tableSuffix}]({insertCols}) VALUES({insertParams});";
-
-                // Pre-create parameters
-                cmd.Parameters.Add("@_source_id", SqliteType.Text);
-                cmd.Parameters.Add("@_is_new", SqliteType.Integer);
-                foreach (var col in columns)
-                {
-                    var paramType = col.SqliteType == "INTEGER" ? SqliteType.Integer
-                        : col.SqliteType == "REAL" ? SqliteType.Real
-                        : SqliteType.Text;
-                    cmd.Parameters.Add($"@{col.LogicalName}", paramType);
-                }
-
-                foreach (var row in rows)
-                {
-                    row.TryGetValue("_source_id", out var srcId);
-                    row.TryGetValue("_is_new", out var isNew);
-
-                    cmd.Parameters["@_source_id"].Value = srcId != null ? (object)(string)srcId : DBNull.Value;
-                    cmd.Parameters["@_is_new"].Value = (isNew is true || isNew is 1L || isNew is 1) ? 1L : 0L;
-
-                    foreach (var col in columns)
-                    {
-                        row.TryGetValue(col.LogicalName, out var val);
-                        cmd.Parameters[$"@{col.LogicalName}"].Value = BindValue(val, col.SqliteType);
-                    }
-
-                    cmd.ExecuteNonQuery();
-                }
-
-                // Update snapshot row_count
-                using var countCmd = _connection.CreateCommand();
-                countCmd.Transaction = tx;
-                countCmd.CommandText = $"SELECT COUNT(*) FROM [data_{tableSuffix}];";
-                var count = (long)countCmd.ExecuteScalar();
-
-                using var updateCmd = _connection.CreateCommand();
-                updateCmd.Transaction = tx;
-                updateCmd.CommandText = "UPDATE _snapshots SET row_count=@rc, updated_on=@uo WHERE table_suffix=@s;";
-                updateCmd.Parameters.AddWithValue("@rc", count);
-                updateCmd.Parameters.AddWithValue("@uo", DateTime.UtcNow.ToString("O"));
-                updateCmd.Parameters.AddWithValue("@s", tableSuffix);
-                updateCmd.ExecuteNonQuery();
-
+                WriteSnapshotRecords(tableSuffix, rows, columns, tx);
                 tx.Commit();
             }
             catch
@@ -637,6 +638,64 @@ VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @lmkm, @lmkf, @ccj
                 tx.Rollback();
                 throw;
             }
+        }
+
+        private void WriteSnapshotRecords(string tableSuffix,
+            IEnumerable<Dictionary<string, object>> rows,
+            List<DataTableColumnConfig> columns,
+            SqliteTransaction tx)
+        {
+            var colNames = columns.Select(c => c.LogicalName).ToList();
+            var insertCols = string.Join(", ", new[] { "_source_id", "_is_new" }
+                .Concat(colNames.Select(n => $"[{n}]")));
+            var insertParams = string.Join(", ", new[] { "@_source_id", "@_is_new" }
+                .Concat(colNames.Select(n => $"@{n}")));
+
+            using var cmd = _connection.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.CommandText = $"INSERT INTO [data_{tableSuffix}]({insertCols}) VALUES({insertParams});";
+
+            // Pre-create parameters
+            cmd.Parameters.Add("@_source_id", SqliteType.Text);
+            cmd.Parameters.Add("@_is_new", SqliteType.Integer);
+            foreach (var col in columns)
+            {
+                var paramType = col.SqliteType == "INTEGER" ? SqliteType.Integer
+                    : col.SqliteType == "REAL" ? SqliteType.Real
+                    : SqliteType.Text;
+                cmd.Parameters.Add($"@{col.LogicalName}", paramType);
+            }
+
+            foreach (var row in rows)
+            {
+                row.TryGetValue("_source_id", out var srcId);
+                row.TryGetValue("_is_new", out var isNew);
+
+                cmd.Parameters["@_source_id"].Value = srcId != null ? (object)srcId.ToString() : DBNull.Value;
+                cmd.Parameters["@_is_new"].Value = (isNew is true || isNew is 1L || isNew is 1) ? 1L : 0L;
+
+                foreach (var col in columns)
+                {
+                    row.TryGetValue(col.LogicalName, out var val);
+                    cmd.Parameters[$"@{col.LogicalName}"].Value = BindValue(val, col.SqliteType);
+                }
+
+                cmd.ExecuteNonQuery();
+            }
+
+            // Update snapshot row_count
+            using var countCmd = _connection.CreateCommand();
+            countCmd.Transaction = tx;
+            countCmd.CommandText = $"SELECT COUNT(*) FROM [data_{tableSuffix}];";
+            var count = (long)countCmd.ExecuteScalar();
+
+            using var updateCmd = _connection.CreateCommand();
+            updateCmd.Transaction = tx;
+            updateCmd.CommandText = "UPDATE _snapshots SET row_count=@rc, updated_on=@uo WHERE table_suffix=@s;";
+            updateCmd.Parameters.AddWithValue("@rc", count);
+            updateCmd.Parameters.AddWithValue("@uo", DateTime.UtcNow.ToString("O"));
+            updateCmd.Parameters.AddWithValue("@s", tableSuffix);
+            updateCmd.ExecuteNonQuery();
         }
 
         public IEnumerable<Dictionary<string, object>> ReadSnapshotRecords(
@@ -691,6 +750,27 @@ VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @lmkm, @lmkf, @ccj
             return result;
         }
 
+        public Dictionary<string, object> ReadSnapshotRecordBySourceId(string tableSuffix, string sourceId)
+        {
+            using var check = _connection.CreateCommand();
+            check.CommandText = $"SELECT name FROM sqlite_master WHERE type='table' AND name='data_{tableSuffix}';";
+            if (check.ExecuteScalar() == null) return null;
+
+            using var cmd = _connection.CreateCommand();
+            cmd.CommandText = $"SELECT * FROM [data_{tableSuffix}] WHERE _source_id=@id LIMIT 1;";
+            cmd.Parameters.AddWithValue("@id", sourceId);
+            using var reader = cmd.ExecuteReader();
+            if (!reader.Read()) return null;
+
+            var row = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < reader.FieldCount; i++)
+            {
+                var name = reader.GetName(i);
+                row[name] = reader.IsDBNull(i) ? null : reader.GetValue(i);
+            }
+            return row;
+        }
+
         public int CountSnapshotRows(string tableSuffix)
         {
             using var cmd = _connection.CreateCommand();
@@ -698,9 +778,10 @@ VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @lmkm, @lmkf, @ccj
             return (int)(long)cmd.ExecuteScalar();
         }
 
-        private void DropDataTableIfExists(string tableSuffix)
+        private void DropDataTableIfExists(string tableSuffix, SqliteTransaction tx = null)
         {
             using var cmd = _connection.CreateCommand();
+            if (tx != null) cmd.Transaction = tx;
             cmd.CommandText = $"DROP TABLE IF EXISTS [data_{tableSuffix}];";
             cmd.ExecuteNonQuery();
         }
@@ -824,6 +905,51 @@ VALUES(@id,@name,@desc,@co,@uo,@dj);";
             cmd.ExecuteNonQuery();
         }
 
+        public void ReplacePlan(DmtPlan plan, IEnumerable<DmtPlanStep> steps)
+        {
+            using var tx = _connection.BeginTransaction();
+            try
+            {
+                SavePlan(plan, tx);
+
+                using (var delete = _connection.CreateCommand())
+                {
+                    delete.Transaction = tx;
+                    delete.CommandText = "DELETE FROM _plan_steps WHERE plan_id=@pid;";
+                    delete.Parameters.AddWithValue("@pid", plan.Id);
+                    delete.ExecuteNonQuery();
+                }
+
+                foreach (var step in steps ?? Enumerable.Empty<DmtPlanStep>())
+                    SavePlanStep(step, tx);
+
+                tx.Commit();
+            }
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
+        }
+
+        private void SavePlan(DmtPlan plan, SqliteTransaction tx)
+        {
+            using var cmd = _connection.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.CommandText = @"
+INSERT OR REPLACE INTO _plans(id,name,description,created_on,updated_on,defaults_json)
+VALUES(@id,@name,@desc,@co,@uo,@dj);";
+            cmd.Parameters.AddWithValue("@id",   plan.Id);
+            cmd.Parameters.AddWithValue("@name", plan.Name);
+            cmd.Parameters.AddWithValue("@desc", (object)plan.Description ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@co",   plan.CreatedOn.ToString("O"));
+            cmd.Parameters.AddWithValue("@uo",   plan.UpdatedOn.ToString("O"));
+            cmd.Parameters.AddWithValue("@dj",   plan.Defaults != null
+                ? JsonConvert.SerializeObject(plan.Defaults, _json)
+                : (object)DBNull.Value);
+            cmd.ExecuteNonQuery();
+        }
+
         public List<DmtPlan> GetPlans()
         {
             using var cmd = _connection.CreateCommand();
@@ -862,6 +988,36 @@ VALUES(@id,@name,@desc,@co,@uo,@dj);";
         public void SavePlanStep(DmtPlanStep step)
         {
             using var cmd = _connection.CreateCommand();
+            cmd.CommandText = @"
+INSERT OR REPLACE INTO _plan_steps(id,plan_id,sort_order,name,enabled,operation,
+    table_logical_name,source_env_id,target_env_id,snapshot_name,file_type,file_path,
+    snapshot_json,failure_policy_json,validation_json)
+VALUES(@id,@pid,@so,@name,@en,@op,@tln,@seid,@teid,@sn,@ft,@fp,@sj,@fpj,@vj);";
+            cmd.Parameters.AddWithValue("@id",   step.Id);
+            cmd.Parameters.AddWithValue("@pid",  step.PlanId);
+            cmd.Parameters.AddWithValue("@so",   step.SortOrder);
+            cmd.Parameters.AddWithValue("@name", (object)step.Name ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@en",   step.Enabled ? 1 : 0);
+            cmd.Parameters.AddWithValue("@op",   step.Operation);
+            cmd.Parameters.AddWithValue("@tln",  (object)step.TableLogicalName ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@seid", (object)step.SourceEnvId ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@teid", (object)step.TargetEnvId ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@sn",   (object)step.SnapshotName ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@ft",   (object)step.FileType ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@fp",   (object)step.FilePath ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@sj",   step.Snapshot != null
+                ? JsonConvert.SerializeObject(step.Snapshot, _json) : (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@fpj",  step.FailurePolicy != null
+                ? JsonConvert.SerializeObject(step.FailurePolicy, _json) : (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@vj",   step.Validation != null
+                ? JsonConvert.SerializeObject(step.Validation, _json) : (object)DBNull.Value);
+            cmd.ExecuteNonQuery();
+        }
+
+        private void SavePlanStep(DmtPlanStep step, SqliteTransaction tx)
+        {
+            using var cmd = _connection.CreateCommand();
+            cmd.Transaction = tx;
             cmd.CommandText = @"
 INSERT OR REPLACE INTO _plan_steps(id,plan_id,sort_order,name,enabled,operation,
     table_logical_name,source_env_id,target_env_id,snapshot_name,file_type,file_path,
@@ -1044,6 +1200,7 @@ VALUES(@id,@pid,@pn,@so,@co,@st,@lj);";
                 case "Integer":
                 case "BigInt":
                 case "Boolean":
+                case "OptionSet":
                 case "Picklist":
                 case "State":
                 case "Status":

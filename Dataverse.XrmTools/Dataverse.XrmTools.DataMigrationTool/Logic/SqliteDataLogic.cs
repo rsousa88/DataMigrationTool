@@ -52,7 +52,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 .Where(c => columns.Contains(c.LogicalName, StringComparer.OrdinalIgnoreCase))
                 .ToList();
 
-            var rows = entities?.Entities.Select(e => EntityToRow(e, colsInSnapshot)).ToList()
+            var rows = entities?.Entities.Select(e => EntityToRow(e, colsInSnapshot, primaryIdAttr)).ToList()
                        ?? new List<Dictionary<string, object>>();
 
             // Resolve or create snapshot row
@@ -87,9 +87,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             }
 
             worker?.ReportProgress(70, $"Writing {rows.Count} rows to project snapshot...");
-            project.SaveSnapshot(snapshot);
-            project.CreateSnapshotTable(tableSuffix, colsInSnapshot);
-            project.WriteSnapshotRecords(tableSuffix, rows, colsInSnapshot);
+            snapshot.TableSuffix = tableSuffix;
+            project.ReplaceSnapshotData(snapshot, colsInSnapshot, rows);
 
             worker?.ReportProgress(85, "Saving option-set labels...");
             if (attributeMetadata != null)
@@ -113,10 +112,14 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
         public class PushPreview
         {
             public int TotalRows { get; set; }
+            public int AnalyzedRows { get; set; }
+            public int PreviewLimit { get; set; }
+            public bool HasMoreRows { get; set; }
             public int CreateCount { get; set; }
             public int UpdateCount { get; set; }
             public int DeleteCount { get; set; }
             public int WarningCount { get; set; }
+            public int ErrorCount { get; set; }
             public List<PushPreviewItem> Items { get; set; } = new List<PushPreviewItem>();
         }
 
@@ -126,7 +129,10 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             public string SourceId { get; set; }
             public string Operation { get; set; }  // "Create" | "Update" | "Delete" | "Skip"
             public string Warnings { get; set; }
+            public string Errors { get; set; }
         }
+
+        public const int DefaultPushPreviewLimit = 1000;
 
         public static PushPreview PreviewPush(
             SqliteProjectService project,
@@ -134,40 +140,126 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             string sourceEnvId,
             string targetEnvId,
             UiSettings settings,
-            ExcelImportMatchKeySelection matchKeyOverride = null)
+            ExcelImportMatchKeySelection matchKeyOverride = null,
+            List<PushLookupMatchKey> lookupMatchKeys = null,
+            ISet<string> allPlanTableNames = null,
+            IOrganizationService targetClient = null,
+            int previewLimit = DefaultPushPreviewLimit,
+            bool queryTargetForMatchKeys = false)
         {
             var preview = new PushPreview();
 
             var snapshot = project.GetSnapshot(snapshotName);
             if (snapshot == null) return preview;
 
-            var cols = snapshot.ColumnConfig;
+            var cols = GetPushPreviewColumns(snapshot.ColumnConfig, matchKeyOverride, lookupMatchKeys);
             var lookupCols = cols.Where(c => c.Type == "Lookup" || c.Type == "Owner" || c.Type == "Customer").ToList();
 
             bool doCreate = settings == null || (settings.Action & DmtAction.Create) != 0;
             bool doUpdate = settings == null || (settings.Action & DmtAction.Update) != 0;
             bool doDelete = settings != null && (settings.Action & DmtAction.Delete) != 0;
 
-            var allRows = project.ReadSnapshotRecords(snapshot.TableSuffix, cols).ToList();
-            preview.TotalRows = allRows.Count;
+            var matchKeyMode = matchKeyOverride?.Mode ?? "Guid";
+            var matchKeyFields = matchKeyOverride?.Fields ?? new List<string>();
+            var targetRepo = queryTargetForMatchKeys && targetClient != null ? new CrmRepo(targetClient) : null;
+            var matchKeyCache = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            string matchKeyLookupError = null;
+            var relatedSnapshotTables = new HashSet<string>(project.GetSnapshots()
+                .Where(s => !string.IsNullOrWhiteSpace(s.TableLogicalName))
+                .Select(s => s.TableLogicalName), StringComparer.OrdinalIgnoreCase);
+            var idMappingCache = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+            idMappingCache[snapshot.TableLogicalName] = project.GetAllIdMappings(snapshot.TableLogicalName, sourceEnvId, targetEnvId);
+            foreach (var table in lookupCols.Select(c => c.RelatedTable).Where(t => !string.IsNullOrWhiteSpace(t)).Distinct(StringComparer.OrdinalIgnoreCase))
+                idMappingCache[table] = project.GetAllIdMappings(table, sourceEnvId, targetEnvId);
+
+            // Pre-load source IDs for related tables only when not in plan context (used for snapshot-level warnings)
+            var allSnapshotSourceIds = new Dictionary<string, ISet<string>>(StringComparer.OrdinalIgnoreCase);
+            if (lookupCols.Any() && allPlanTableNames == null)
+            {
+                var uniqueRelatedTables = lookupCols
+                    .Where(c => !string.IsNullOrEmpty(c.RelatedTable))
+                    .Select(c => c.RelatedTable)
+                    .Distinct(StringComparer.OrdinalIgnoreCase);
+                foreach (var relatedTable in uniqueRelatedTables)
+                    allSnapshotSourceIds[relatedTable] = project.GetAllSnapshotSourceIdsForTable(relatedTable);
+            }
+
+            var totalRows = snapshot.RowCount > 0 ? snapshot.RowCount : project.CountSnapshotRows(snapshot.TableSuffix);
+            preview.TotalRows = totalRows;
+            preview.PreviewLimit = previewLimit <= 0 ? DefaultPushPreviewLimit : previewLimit;
+            var allRows = project.ReadSnapshotRecords(snapshot.TableSuffix, cols, 0, preview.PreviewLimit).ToList();
+            preview.AnalyzedRows = allRows.Count;
+            preview.HasMoreRows = totalRows > allRows.Count;
+            var targetMatchesBySingleField = BuildTargetMatchesBySingleField(
+                targetRepo,
+                snapshot.TableLogicalName,
+                matchKeyMode,
+                matchKeyFields,
+                cols,
+                allRows);
 
             for (var idx = 0; idx < allRows.Count; idx++)
             {
                 var row = allRows[idx];
                 var sourceId = row.TryGetValue("_source_id", out var sid) ? sid?.ToString() : null;
-                var isNew = row.TryGetValue("_is_new", out var isn) && isn is long l && l == 1L;
+                var isNew = row.TryGetValue("_is_new", out var isn) && IsTruthy(isn);
 
                 var warnings = new List<string>();
+                var errors = new List<string>();
 
-                // Check lookup resolvability
+                // Check lookup columns
                 foreach (var col in lookupCols)
                 {
                     if (!row.TryGetValue(col.LogicalName, out var lv) || lv == null) continue;
                     var srcGuidStr = lv.ToString();
                     if (!Guid.TryParse(srcGuidStr, out _)) continue;
-                    var targetResolved = project.ResolveTargetId(col.RelatedTable ?? snapshot.TableLogicalName, sourceEnvId, srcGuidStr, targetEnvId);
-                    if (string.IsNullOrEmpty(targetResolved))
-                        warnings.Add($"Lookup '{col.LogicalName}' → {col.RelatedTable}: no ID mapping (source GUID will be used as fallback)");
+
+                    // Honour "Skip" mode — no validation needed for this field
+                    var lookupKey = lookupMatchKeys?.FirstOrDefault(k =>
+                        string.Equals(k.LogicalName, col.LogicalName, StringComparison.OrdinalIgnoreCase));
+                    if (string.Equals(lookupKey?.Mode, "Skip", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    var relatedTable = col.RelatedTable;
+                    if ((string.Equals(lookupKey?.Mode, "AlternateKey", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(lookupKey?.Mode, "Custom", StringComparison.OrdinalIgnoreCase))
+                        && lookupKey.Fields?.Any() == true)
+                    {
+                        if (!string.IsNullOrWhiteSpace(relatedTable) && relatedSnapshotTables.Contains(relatedTable))
+                            continue;
+
+                        warnings.Add($"Lookup '{col.LogicalName}': no project snapshot for '{relatedTable}' to resolve by configured key");
+                        continue;
+                    }
+
+                    if (allPlanTableNames != null)
+                    {
+                        // Plan context: if there's a plan step for this related table, no error
+                        if (!string.IsNullOrEmpty(relatedTable) && allPlanTableNames.Contains(relatedTable))
+                            continue;
+
+                        var targetResolved = ResolveTargetIdFromPreviewCache(idMappingCache,
+                            relatedTable ?? snapshot.TableLogicalName, srcGuidStr);
+                        if (string.IsNullOrEmpty(targetResolved))
+                            errors.Add($"Lookup '{col.LogicalName}': no mapping and no plan step for '{relatedTable}'");
+                    }
+                    else
+                    {
+                        // No plan context: warn if not in project snapshots or no ID mapping
+                        if (!string.IsNullOrEmpty(relatedTable)
+                            && allSnapshotSourceIds.TryGetValue(relatedTable, out var allSrcIds)
+                            && !allSrcIds.Contains(srcGuidStr))
+                        {
+                            warnings.Add($"Lookup '{col.LogicalName}': related record not in any project snapshot");
+                        }
+                        else
+                        {
+                            var targetResolved = ResolveTargetIdFromPreviewCache(idMappingCache,
+                                relatedTable ?? snapshot.TableLogicalName, srcGuidStr);
+                            if (string.IsNullOrEmpty(targetResolved))
+                                warnings.Add($"Lookup '{col.LogicalName}' → {relatedTable}: no ID mapping (source GUID will be used)");
+                        }
+                    }
                 }
 
                 string operation;
@@ -181,15 +273,57 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 }
                 else
                 {
-                    var existingStr = project.ResolveTargetId(snapshot.TableLogicalName, sourceEnvId, sourceId, targetEnvId);
+                    var existingStr = ResolveTargetIdFromPreviewCache(idMappingCache, snapshot.TableLogicalName, sourceId);
                     var hasMapping = !string.IsNullOrEmpty(existingStr);
 
                     if (doDelete)
+                    {
                         operation = hasMapping ? "Delete" : "Skip";
+                    }
                     else if (hasMapping)
+                    {
                         operation = doUpdate ? "Update" : "Skip";
+                    }
+                    else if (matchKeyMode != "Guid" && matchKeyFields?.Any() == true && targetRepo != null)
+                    {
+                        // Query target by match key fields to determine Create vs Update
+                        var keyValues = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var kf in matchKeyFields)
+                        {
+                            if (row.TryGetValue(kf, out var kv) && kv != null)
+                                keyValues[kf] = kv;
+                        }
+                        var found = false;
+                        if (keyValues.Count == 1 && targetMatchesBySingleField != null)
+                        {
+                            var value = keyValues.Values.FirstOrDefault();
+                            found = value != null && targetMatchesBySingleField.ContainsKey(FormatPreviewMatchValue(value));
+                        }
+                        else if (keyValues.Any() && string.IsNullOrEmpty(matchKeyLookupError))
+                        {
+                            var cacheKey = BuildFieldValueCacheKey(snapshot.TableLogicalName, keyValues);
+                            if (!matchKeyCache.TryGetValue(cacheKey, out found))
+                            {
+                                try
+                                {
+                                    found = targetRepo.FindByFieldValues(snapshot.TableLogicalName, keyValues) != null;
+                                    matchKeyCache[cacheKey] = found;
+                                }
+                                catch (Exception ex)
+                                {
+                                    matchKeyLookupError = ex.Message;
+                                    warnings.Add($"Target match-key lookup failed; remaining preview rows use create/update defaults. {ex.Message}");
+                                }
+                            }
+                        }
+                        operation = found
+                            ? (doUpdate ? "Update" : "Skip")
+                            : (doCreate ? "Create" : "Skip");
+                    }
                     else
+                    {
                         operation = doCreate ? "Create" : "Skip";
+                    }
                 }
 
                 var item = new PushPreviewItem
@@ -197,7 +331,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     RowNumber = idx + 1,
                     SourceId = sourceId,
                     Operation = operation,
-                    Warnings = warnings.Any() ? string.Join("; ", warnings) : string.Empty
+                    Warnings = warnings.Any() ? string.Join("; ", warnings) : string.Empty,
+                    Errors = errors.Any() ? string.Join("; ", errors) : string.Empty
                 };
                 preview.Items.Add(item);
 
@@ -208,9 +343,138 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     case "Delete": preview.DeleteCount++; break;
                 }
                 if (warnings.Any()) preview.WarningCount++;
+                if (errors.Any()) preview.ErrorCount++;
             }
 
             return preview;
+        }
+
+        private static List<DataTableColumnConfig> GetPushPreviewColumns(
+            List<DataTableColumnConfig> snapshotColumns,
+            ExcelImportMatchKeySelection matchKey,
+            List<PushLookupMatchKey> lookupMatchKeys)
+        {
+            var columns = snapshotColumns ?? new List<DataTableColumnConfig>();
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var col in columns.Where(c => c.Type == "Lookup" || c.Type == "Owner" || c.Type == "Customer"))
+                if (!string.IsNullOrWhiteSpace(col.LogicalName))
+                    names.Add(col.LogicalName);
+
+            foreach (var field in matchKey?.Fields ?? new List<string>())
+                if (!string.IsNullOrWhiteSpace(field))
+                    names.Add(field);
+
+            foreach (var key in lookupMatchKeys ?? new List<PushLookupMatchKey>())
+                foreach (var field in key.Fields ?? new List<string>())
+                    if (!string.IsNullOrWhiteSpace(field))
+                        names.Add(field);
+
+            return columns
+                .Where(c => !string.IsNullOrWhiteSpace(c.LogicalName) && names.Contains(c.LogicalName))
+                .GroupBy(c => c.LogicalName, StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.First())
+                .ToList();
+        }
+
+        private static string BuildFieldValueCacheKey(string logicalName, Dictionary<string, object> fieldValues)
+        {
+            return logicalName + "|" + string.Join("|", fieldValues
+                .OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(kv => kv.Key + "=" + (kv.Value == null ? "<null>" : FormatPreviewMatchValue(kv.Value))));
+        }
+
+        private static Dictionary<string, Guid> BuildTargetMatchesBySingleField(
+            CrmRepo targetRepo,
+            string logicalName,
+            string matchKeyMode,
+            List<string> matchKeyFields,
+            List<DataTableColumnConfig> columns,
+            List<Dictionary<string, object>> rows)
+        {
+            if (targetRepo == null
+                || string.Equals(matchKeyMode, "Guid", StringComparison.OrdinalIgnoreCase)
+                || matchKeyFields?.Count != 1
+                || rows == null)
+                return null;
+
+            var field = matchKeyFields[0];
+            var column = columns?.FirstOrDefault(c => string.Equals(c.LogicalName, field, StringComparison.OrdinalIgnoreCase));
+            var values = rows
+                .Where(row => row.TryGetValue(field, out var value) && value != null)
+                .Select(row => ConvertPreviewQueryValue(row[field], column))
+                .Where(value => value != null)
+                .ToList();
+
+            return values.Any()
+                ? targetRepo.FindExistingIdsBySingleFieldValues(logicalName, field, values)
+                : new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        private static string FormatPreviewMatchValue(object value)
+        {
+            if (value == null) return string.Empty;
+            if (value is OptionSetValue osv) return osv.Value.ToString();
+            if (value is EntityReference er) return er.Id.ToString("D");
+            if (value is Money money) return money.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (value is DateTime dt) return dt.ToString("O");
+            if (value is IFormattable formattable) return formattable.ToString(null, System.Globalization.CultureInfo.InvariantCulture);
+            return value.ToString();
+        }
+
+        private static object ConvertPreviewQueryValue(object value, DataTableColumnConfig column)
+        {
+            if (value == null || column == null) return value;
+
+            switch (column.Type ?? string.Empty)
+            {
+                case "Integer":
+                case "Picklist":
+                case "OptionSet":
+                case "State":
+                case "Status":
+                    return value is long l ? (int)l : int.TryParse(value.ToString(), out var i) ? (object)i : value;
+
+                case "BigInt":
+                    return value is long ? value : long.TryParse(value.ToString(), out var big) ? (object)big : value;
+
+                case "Decimal":
+                case "Money":
+                    return value is decimal ? value : decimal.TryParse(value.ToString(), out var dec) ? (object)dec : value;
+
+                case "Double":
+                    return value is double ? value : double.TryParse(value.ToString(), out var dbl) ? (object)dbl : value;
+
+                case "Boolean":
+                    return IsTruthy(value);
+
+                case "Uniqueidentifier":
+                case "Lookup":
+                case "Owner":
+                case "Customer":
+                    return Guid.TryParse(value.ToString(), out var guid) ? (object)guid : value;
+
+                case "DateTime":
+                    return value is DateTime ? value : DateTime.TryParse(value.ToString(), out var dt) ? (object)dt : value;
+
+                default:
+                    return value;
+            }
+        }
+
+        private static string ResolveTargetIdFromPreviewCache(
+            Dictionary<string, Dictionary<string, string>> mappingsByTable,
+            string table,
+            string sourceId)
+        {
+            if (string.IsNullOrWhiteSpace(table) || string.IsNullOrWhiteSpace(sourceId))
+                return null;
+
+            return mappingsByTable != null
+                && mappingsByTable.TryGetValue(table, out var mappings)
+                && mappings.TryGetValue(sourceId, out var targetId)
+                ? targetId
+                : null;
         }
 
         public static PushResult Push(
@@ -234,8 +498,14 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 throw new InvalidOperationException($"No table config found for '{snapshot.TableLogicalName}'. Load the table attributes first.");
 
             var cols = snapshot.ColumnConfig;
-            var matchKeyMode = matchKeyOverride?.Mode ?? snapshot.LoadMatchKeyMode ?? "Guid";
-            var matchKeyFields = matchKeyOverride?.Fields ?? snapshot.LoadMatchKeyFields ?? new List<string>();
+            var matchKeyMode = matchKeyOverride?.Mode
+                ?? tableConfig?.PushMatchKeyMode
+                ?? snapshot.LoadMatchKeyMode
+                ?? "Guid";
+            var matchKeyFields = matchKeyOverride?.Fields
+                ?? (!string.IsNullOrWhiteSpace(tableConfig?.PushMatchKeyMode) ? tableConfig.PushMatchKeyFields : null)
+                ?? snapshot.LoadMatchKeyFields
+                ?? new List<string>();
 
             // Load user/team/BU mappings for substitution
             var mappings = project.GetMappings(sourceEnvId, targetEnvId) ?? new List<Mapping>();
@@ -271,7 +541,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
                 var row = allRows[idx];
                 var sourceId = row.TryGetValue("_source_id", out var sid) ? sid?.ToString() : null;
-                var isNew = row.TryGetValue("_is_new", out var isn) && isn is long l && l == 1L;
+                var isNew = row.TryGetValue("_is_new", out var isn) && IsTruthy(isn);
 
                 if (doDelete)
                 {
@@ -300,6 +570,13 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 var existingStr = string.IsNullOrEmpty(sourceId) ? null
                     : project.ResolveTargetId(snapshot.TableLogicalName, sourceEnvId, sourceId, targetEnvId);
                 var existingGuid = !string.IsNullOrEmpty(existingStr) && Guid.TryParse(existingStr, out var eg) ? eg : (Guid?)null;
+
+                if (existingGuid.HasValue && !TargetRecordExists(targetClient, snapshot.TableLogicalName, existingGuid.Value))
+                {
+                    project.RemoveIdMapping(snapshot.TableLogicalName, sourceEnvId, sourceId, targetEnvId);
+                    existingGuid = null;
+                    warnings.Add($"Stale target mapping removed for source {sourceId}; target record {existingStr} was not found.");
+                }
 
                 if (existingGuid.HasValue)
                 {
@@ -535,8 +812,37 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     // Check per-lookup match key override
                     var lookupKey = lookupMatchKeys?.FirstOrDefault(k =>
                         string.Equals(k.LogicalName, col.LogicalName, StringComparison.OrdinalIgnoreCase));
+
                     if (string.Equals(lookupKey?.Mode, "Skip", StringComparison.OrdinalIgnoreCase))
-                        return null; // intentionally omit the field when no mapping found
+                        return null;
+
+                    if ((string.Equals(lookupKey?.Mode, "AlternateKey", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(lookupKey?.Mode, "Custom", StringComparison.OrdinalIgnoreCase))
+                        && lookupKey.Fields?.Any() == true
+                        && targetRepo != null)
+                    {
+                        // Find the related record in the project's snapshot and resolve by field values
+                        var relSnap = project.GetSnapshots().FirstOrDefault(s =>
+                            string.Equals(s.TableLogicalName, relatedTable, StringComparison.OrdinalIgnoreCase));
+                        if (relSnap != null)
+                        {
+                            var relRow = project.ReadSnapshotRecordBySourceId(relSnap.TableSuffix, srcGuid.ToString("D"));
+                            if (relRow != null)
+                            {
+                                var keyValues = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+                                foreach (var kf in lookupKey.Fields)
+                                    if (relRow.TryGetValue(kf, out var kv) && kv != null)
+                                        keyValues[kf] = kv;
+
+                                if (keyValues.Any())
+                                {
+                                    var found = targetRepo.FindByFieldValues(relatedTable, keyValues);
+                                    if (found != null)
+                                        return new EntityReference(relatedTable, found.Id);
+                                }
+                            }
+                        }
+                    }
 
                     // Fall back to source GUID (may exist in target already)
                     return new EntityReference(col.RelatedTable, srcGuid);
@@ -574,12 +880,14 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                         System.Globalization.DateTimeStyles.RoundtripKind, out var dt) ? dt : (object)null;
 
                 case "Picklist":
+                case "OptionSet":
                 case "State":
                 case "Status":
                     return raw is long lo ? new OptionSetValue((int)lo)
                         : int.TryParse(raw.ToString(), out var ov) ? new OptionSetValue(ov) : (object)null;
 
                 case "MultiSelectPicklist":
+                case "MultiOptionSet":
                 {
                     var parts = raw.ToString().Split(new[] { ',', '|' }, StringSplitOptions.RemoveEmptyEntries);
                     var values = parts.Select(p => int.TryParse(p.Trim(), out var pv) ? (int?)pv : null)
@@ -598,20 +906,15 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
         private static string ReserveUniqueSuffix(SqliteProjectService project, string name)
         {
-            var candidate = SqliteProjectService.SanitizeSnapshotName(name);
-            if (!project.HasSnapshot(candidate)) return candidate;
-
-            for (var i = 2; i < 1000; i++)
-            {
-                var numbered = $"{candidate}_{i}";
-                if (!project.HasSnapshot(numbered)) return numbered;
-            }
-            return $"{candidate}_{DateTime.UtcNow:yyyyMMddHHmmss}";
+            return project.ResolveTableSuffix(name);
         }
 
-        private static Dictionary<string, object> EntityToRow(Entity entity, List<DataTableColumnConfig> columns)
+        private static Dictionary<string, object> EntityToRow(Entity entity, List<DataTableColumnConfig> columns, string primaryIdAttr)
         {
             var row = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            if (entity.Id != Guid.Empty)
+                row["_source_id"] = entity.Id.ToString("D");
+
             foreach (var col in columns)
             {
                 if (!entity.Attributes.TryGetValue(col.LogicalName, out var value))
@@ -623,7 +926,46 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 if (value is EntityReference er && er.Name != null)
                     row[col.LogicalName + "_name"] = er.Name;
             }
+
+            if (!row.ContainsKey("_source_id")
+                && !string.IsNullOrWhiteSpace(primaryIdAttr)
+                && row.TryGetValue(primaryIdAttr, out var sourceId)
+                && sourceId != null)
+            {
+                row["_source_id"] = sourceId.ToString();
+            }
             return row;
+        }
+
+        private static bool IsTruthy(object value)
+        {
+            if (value == null) return false;
+            if (value is bool b) return b;
+            if (value is long l) return l == 1L;
+            if (value is int i) return i == 1;
+            return string.Equals(value.ToString(), "1", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(value.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool TargetRecordExists(IOrganizationService targetClient, string tableLogicalName, Guid targetId)
+        {
+            if (targetClient == null || targetId == Guid.Empty) return false;
+
+            try
+            {
+                var entity = targetClient.Retrieve(tableLogicalName, targetId, new ColumnSet(false));
+                return entity != null;
+            }
+            catch (Exception ex)
+            {
+                var message = ex.Message ?? string.Empty;
+                if (message.IndexOf("does not exist", StringComparison.OrdinalIgnoreCase) >= 0
+                    || message.IndexOf("not found", StringComparison.OrdinalIgnoreCase) >= 0
+                    || message.IndexOf("0x80040217", StringComparison.OrdinalIgnoreCase) >= 0)
+                    return false;
+
+                throw;
+            }
         }
 
         private static object ConvertValue(object value, DataTableColumnConfig col)

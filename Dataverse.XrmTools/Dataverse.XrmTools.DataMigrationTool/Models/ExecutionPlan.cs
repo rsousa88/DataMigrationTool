@@ -73,6 +73,9 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
         public ExcelExportConfig ExcelConfig { get; set; }
         public RecordCollection RecordCollection { get; set; }
         public ExcelImportMatchKeySelection ImportMatchKeySelection { get; set; }
+        public string PushMatchKeyMode { get; set; }
+        public List<string> PushMatchKeyFields { get; set; } = new List<string>();
+        public string PushMatchAlternateKeyName { get; set; }
         public UiSettings ImportSettings { get; set; }
         public UiSettings ExportSettings { get; set; }
         public List<PushLookupMatchKey> LookupMatchKeys { get; set; }
@@ -81,7 +84,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
     public class PushLookupMatchKey
     {
         public string LogicalName { get; set; }
-        public string Mode { get; set; }         // "Guid" | "Custom"
+        public string Mode { get; set; }         // "Guid" | "AlternateKey" | "Custom" | "Skip"
+        public string AlternateKeyName { get; set; }
         public List<string> Fields { get; set; } = new List<string>();
     }
 
