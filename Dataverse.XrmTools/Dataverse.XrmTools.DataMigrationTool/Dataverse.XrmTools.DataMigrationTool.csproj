@@ -167,9 +167,6 @@
     <Compile Include="Forms\ExcelImportPreviewDialog.cs">
       <SubType>Form</SubType>
     </Compile>
-    <Compile Include="Forms\DmtSettingsFileDialog.cs">
-      <SubType>Form</SubType>
-    </Compile>
     <Compile Include="Forms\ExecutionPlanDialog.cs">
       <SubType>Form</SubType>
     </Compile>

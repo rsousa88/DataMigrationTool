@@ -30,14 +30,12 @@
             this.tsbPreview = new System.Windows.Forms.ToolStripButton();
             this.tsmiExport = new System.Windows.Forms.ToolStripMenuItem();
             this.tsmiExportData = new System.Windows.Forms.ToolStripMenuItem();
-            this.tsmiExportWithSettings = new System.Windows.Forms.ToolStripMenuItem();
             this.tsmiExportToExcel = new System.Windows.Forms.ToolStripMenuItem();
             this.tsSeparator2 = new System.Windows.Forms.ToolStripSeparator();
             this.tsmiEnvironments = new System.Windows.Forms.ToolStripMenuItem();
             this.tsmiReloadTables = new System.Windows.Forms.ToolStripMenuItem();
             this.tsSeparatorEnv = new System.Windows.Forms.ToolStripSeparator();
             this.tsmiConnectTarget = new System.Windows.Forms.ToolStripMenuItem();
-            this.tsmiSwitchConnections = new System.Windows.Forms.ToolStripMenuItem();
             this.tsmiExecutionPlan = new System.Windows.Forms.ToolStripMenuItem();
             this.tsmiPlanNew = new System.Windows.Forms.ToolStripMenuItem();
             this.tsmiPlanLoad = new System.Windows.Forms.ToolStripMenuItem();
@@ -137,7 +135,6 @@
             // 
             this.tsmiExport.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.tsmiExportData,
-            this.tsmiExportWithSettings,
             this.tsmiExportToExcel});
             this.tsmiExport.Enabled = false;
             this.tsmiExport.Image = global::Dataverse.XrmTools.DataMigrationTool.Properties.Resources.export;
@@ -152,14 +149,6 @@
             this.tsmiExportData.Size = new System.Drawing.Size(197, 22);
             this.tsmiExportData.Text = "To JSON";
             this.tsmiExportData.Click += new System.EventHandler(this.tsmiExportData_Click);
-            //
-            // tsmiExportWithSettings
-            // 
-            this.tsmiExportWithSettings.Enabled = false;
-            this.tsmiExportWithSettings.Name = "tsmiExportWithSettings";
-            this.tsmiExportWithSettings.Size = new System.Drawing.Size(197, 22);
-            this.tsmiExportWithSettings.Text = "Data and Table Settings";
-            this.tsmiExportWithSettings.Click += new System.EventHandler(this.tsmiExportWithSettings_Click);
             //
             // tsmiExportToExcel
             //
@@ -178,8 +167,7 @@
             this.tsmiEnvironments.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.tsmiReloadTables,
             this.tsSeparatorEnv,
-            this.tsmiConnectTarget,
-            this.tsmiSwitchConnections});
+            this.tsmiConnectTarget});
             this.tsmiEnvironments.Name = "tsmiEnvironments";
             this.tsmiEnvironments.Size = new System.Drawing.Size(107, 25);
             this.tsmiEnvironments.Text = "Environments";
@@ -202,14 +190,6 @@
             this.tsmiConnectTarget.Size = new System.Drawing.Size(210, 22);
             this.tsmiConnectTarget.Text = "Connect Target";
             this.tsmiConnectTarget.Click += new System.EventHandler(this.tsmiConnectTarget_Click);
-            //
-            // tsmiSwitchConnections
-            //
-            this.tsmiSwitchConnections.Enabled = false;
-            this.tsmiSwitchConnections.Name = "tsmiSwitchConnections";
-            this.tsmiSwitchConnections.Size = new System.Drawing.Size(210, 22);
-            this.tsmiSwitchConnections.Text = "Switch Source / Target";
-            this.tsmiSwitchConnections.Click += new System.EventHandler(this.tsmiSwitchConnections_Click);
             //
             // tsmiExecutionPlan
             //
@@ -826,14 +806,12 @@
         private System.Windows.Forms.ToolStripButton tsbPreview;
         private System.Windows.Forms.ToolStripMenuItem tsmiExport;
         private System.Windows.Forms.ToolStripMenuItem tsmiExportData;
-        private System.Windows.Forms.ToolStripMenuItem tsmiExportWithSettings;
         private System.Windows.Forms.ToolStripMenuItem tsmiExportToExcel;
         private System.Windows.Forms.ToolStripSeparator tsSeparator2;
         private System.Windows.Forms.ToolStripMenuItem tsmiEnvironments;
         private System.Windows.Forms.ToolStripMenuItem tsmiReloadTables;
         private System.Windows.Forms.ToolStripSeparator tsSeparatorEnv;
         private System.Windows.Forms.ToolStripMenuItem tsmiConnectTarget;
-        private System.Windows.Forms.ToolStripMenuItem tsmiSwitchConnections;
         private System.Windows.Forms.ToolStripMenuItem tsmiExecutionPlan;
         private System.Windows.Forms.ToolStripMenuItem tsmiPlanNew;
         private System.Windows.Forms.ToolStripMenuItem tsmiPlanLoad;

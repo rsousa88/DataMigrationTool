@@ -2467,8 +2467,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private void MoveImportSettingsIntoDialogs()
         {
             tsmiExportData.Text = "To JSON";
-            tsmiExportWithSettings.Visible = false;
-            tsmiExportWithSettings.Enabled = false;
             tsmiReloadTables.Enabled = false;
             gbViewSettings.Controls.Remove(cbHideInvalid);
             cbHideInvalid.Location = new Point(cbSelectAll.Right + 18, cbSelectAll.Top);
@@ -2489,7 +2487,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (sourceReady) // source connection is available
             {
                 tsmiConnectTarget.Enabled = enable;
-                tsmiSwitchConnections.Enabled = enable && targetReady;
                 tsmiReloadTables.Enabled = enable;
                 gbTables.Enabled = enable;
                 if (targetReady) // source and target connection is available
@@ -2506,8 +2503,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     tsbPreview.Enabled = enable;
                     tsmiExport.Enabled = enable;
                     tsmiExportData.Enabled = enable;
-                    tsmiExportWithSettings.Enabled = false;
-                    tsmiExportWithSettings.Visible = false;
                     tsmiExportToExcel.Enabled = enable;
                     gbFilters.Enabled = enable;
                 }
@@ -2802,54 +2797,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
         }
 
-        private void tsmiSwitchConnections_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                // swap clients
-                var tempClient = _sourceClient;
-                _sourceClient = _targetClient;
-                _targetClient = tempClient;
-
-                // swap instances
-                var tempInstance = _sourceInstance;
-                _sourceInstance = _targetInstance;
-                _targetInstance = tempInstance;
-
-                // reload mappings from new source instance
-                var srcMappings = _sourceInstance.Mappings.Where(map => map.SourceInstanceName.Equals(_sourceInstance.FriendlyName));
-                _mappings = new List<Mapping>(srcMappings);
-
-                // swap XrmToolBox framework connection details (drives the bold top-left/top-right labels)
-                var sourceDetail = ConnectionDetail;
-                var targetDetail = AdditionalConnectionDetails.FirstOrDefault();
-                if (sourceDetail != null && targetDetail != null)
-                {
-                    ConnectionDetail = targetDetail;
-                    AdditionalConnectionDetails[0] = sourceDetail; // Replace (not Add) — won't trigger ConnectionDetailsUpdated
-                }
-
-                // clear stale data and reload from new source
-                lvTables.Items.Clear();
-                lvAttributes.Items.Clear();
-                rtbFilter.Text = string.Empty;
-                _dmtSettings = null;
-                _dmtFilePath = null;
-                _currentTableSettings = null;
-                _currentTableLogicalName = null;
-                _previousTableLogicalName = null;
-                ReRenderComponents(true);
-
-                LoadTables();
-            }
-            catch (Exception ex)
-            {
-                ManageWorkingState(false);
-                _logger.Log(LogLevel.ERROR, ex.Message);
-                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
         private void tsbRefreshTables_Click(object sender, EventArgs e)
         {
             try
@@ -3006,12 +2953,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 _logger.Log(LogLevel.ERROR, ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
-        }
-
-        private void tsmiExportWithSettings_Click(object sender, EventArgs e)
-        {
-            tsmiExportWithSettings.Visible = false;
-            tsmiExportWithSettings.Enabled = false;
         }
 
         private void tsmiExportToExcel_Click(object sender, EventArgs e)
