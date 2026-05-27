@@ -53,7 +53,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 TotalRows = request.Collection.Count,
                 ImportErrors = request.Collection.ImportErrors ?? new List<string>(),
                 Settings = settings,
-                MappingCount = request.MappingCount,
                 AvailableMatchKeys = availableMatchKeys,
                 AvailableAlternateKeys = GetAvailableImportAlternateKeys(metadata, availableMatchKeys),
                 ValueColumns = valueColumns

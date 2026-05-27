@@ -182,13 +182,6 @@ CREATE TABLE IF NOT EXISTS _optionset_values (
     PRIMARY KEY (table_logical_name, attribute_logical_name, value)
 );
 
-CREATE TABLE IF NOT EXISTS _mappings (
-    source_env_id TEXT NOT NULL,
-    target_env_id TEXT NOT NULL,
-    mappings_json TEXT NOT NULL,
-    PRIMARY KEY (source_env_id, target_env_id)
-);
-
 CREATE TABLE IF NOT EXISTS _plans (
     id            TEXT PRIMARY KEY,
     name          TEXT NOT NULL,
@@ -860,30 +853,6 @@ VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @lmkm, @lmkf, @ccj
             cmd.Parameters.AddWithValue("@l", label);
             var scalar = cmd.ExecuteScalar();
             return scalar == null ? (int?)null : (int)(long)scalar;
-        }
-
-        // ─── Mappings ──────────────────────────────────────────────────────────
-
-        public void SaveMappings(string sourceEnvId, string targetEnvId, List<Mapping> mappings)
-        {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = "INSERT OR REPLACE INTO _mappings(source_env_id,target_env_id,mappings_json) VALUES(@s,@t,@m);";
-            cmd.Parameters.AddWithValue("@s", sourceEnvId);
-            cmd.Parameters.AddWithValue("@t", targetEnvId);
-            cmd.Parameters.AddWithValue("@m", JsonConvert.SerializeObject(mappings ?? new List<Mapping>(), _json));
-            cmd.ExecuteNonQuery();
-        }
-
-        public List<Mapping> GetMappings(string sourceEnvId, string targetEnvId)
-        {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = "SELECT mappings_json FROM _mappings WHERE source_env_id=@s AND target_env_id=@t;";
-            cmd.Parameters.AddWithValue("@s", sourceEnvId);
-            cmd.Parameters.AddWithValue("@t", targetEnvId);
-            var json = cmd.ExecuteScalar() as string;
-            return json != null
-                ? JsonConvert.DeserializeObject<List<Mapping>>(json, _json)
-                : new List<Mapping>();
         }
 
         // ─── Plans ─────────────────────────────────────────────────────────────

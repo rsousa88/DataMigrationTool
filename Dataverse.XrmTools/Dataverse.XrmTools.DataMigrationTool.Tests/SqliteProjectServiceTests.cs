@@ -8,7 +8,6 @@ using System.Linq;
 using Xunit;
 
 // DataMigrationTool
-using Dataverse.XrmTools.DataMigrationTool.AppSettings;
 using Dataverse.XrmTools.DataMigrationTool.Logic;
 using Dataverse.XrmTools.DataMigrationTool.Models;
 using Dataverse.XrmTools.DataMigrationTool.Tests.TestSupport;
@@ -463,29 +462,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
         public void ResolveOptionSetLabel_ReturnsNull_WhenNotFound()
         {
             Assert.Null(_svc.ResolveOptionSetLabel("account", "statecode", "Unknown"));
-        }
-
-        // ─── Mappings ──────────────────────────────────────────────────────────
-
-        [Fact]
-        public void SaveMappings_GetMappings_RoundTrip()
-        {
-            var mappings = new List<Mapping>
-            {
-                new Mapping { SourceId = Guid.NewGuid(), TargetId = Guid.NewGuid() }
-            };
-            _svc.SaveMappings("src-env", "tgt-env", mappings);
-
-            var result = _svc.GetMappings("src-env", "tgt-env");
-            Assert.Single(result);
-            Assert.Equal(mappings[0].SourceId, result[0].SourceId);
-        }
-
-        [Fact]
-        public void GetMappings_ReturnsEmptyList_WhenNone()
-        {
-            var result = _svc.GetMappings("src", "tgt");
-            Assert.Empty(result);
         }
 
         // ─── Plans ─────────────────────────────────────────────────────────────

@@ -146,6 +146,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     };
 
                     BindProjectSource(_sourceClient);
+                    RegisterProjectTarget(ActiveTargetClient);
                     RenderProjectBanner();
                     RenderProjectName();
                     RefreshInlineSnapshotList();
@@ -190,6 +191,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 };
 
                 BindProjectSource(_sourceClient);
+                RegisterProjectTarget(ActiveTargetClient);
                 RenderProjectBanner();
                 RenderProjectName();
                 RefreshInlineSnapshotList();

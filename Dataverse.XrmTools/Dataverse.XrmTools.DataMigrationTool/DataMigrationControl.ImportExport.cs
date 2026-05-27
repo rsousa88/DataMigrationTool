@@ -23,33 +23,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
 {
     public partial class DataMigrationControl
     {
-        private List<Mapping> BuildMappingsForImport(UiSettings uiSettings)
-        {
-            uiSettings = uiSettings ?? GetDefaultImportSettings(Enums.Action.None);
-            var mappings = ActiveTargetInstance == null || _sourceInstance?.Mappings == null
-                ? new List<Mapping>(_mappings ?? new List<Mapping>())
-                : _sourceInstance.Mappings
-                    .Where(map => string.Equals(map.TargetInstanceName, ActiveTargetInstance.FriendlyName, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
-            if (ActiveTargetClient == null || ActiveTargetInstance == null || _sourceInstance == null)
-                return mappings;
-
-            if (uiSettings.MapUsers || uiSettings.MapTeams || uiSettings.MapBu)
-            {
-                var mappingsLogic = new MappingsLogic(_sourceClient, ActiveTargetClient);
-                if (uiSettings.MapUsers)
-                    mappings.AddRange(mappingsLogic.GetUserMappings(_sourceInstance.FriendlyName, ActiveTargetInstance.FriendlyName));
-                if (uiSettings.MapTeams)
-                    mappings.AddRange(mappingsLogic.GetTeamMappings(_sourceInstance.FriendlyName, ActiveTargetInstance.FriendlyName));
-                if (uiSettings.MapBu)
-                {
-                    var buMapping = mappingsLogic.GetBusinessUnitMapping(_sourceInstance.FriendlyName, ActiveTargetInstance.FriendlyName);
-                    if (buMapping != null) mappings.Add(buMapping);
-                }
-            }
-            return mappings;
-        }
-
         private RecordCollection FilterRecordCollection(RecordCollection collection, IEnumerable<Guid> ids)
         {
             return RecordCollectionService.FilterByIds(collection, ids);
@@ -252,35 +225,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 }));
         }
 
-        private int BeginExcelImportOperation()
-        {
-            _activeExcelImportOperationId++;
-            _importPreviewDialogOpen = false;
-            return _activeExcelImportOperationId;
-        }
-
-        private bool IsCurrentExcelImportOperation(int operationId)
-        {
-            return operationId > 0 && operationId == _activeExcelImportOperationId;
-        }
-
-        private bool ShouldIgnoreExcelImportCallback(RunWorkerCompletedEventArgs evt, int operationId, string cancelledMessage)
-        {
-            if (!IsCurrentExcelImportOperation(operationId)) return true;
-            if (!evt.Cancelled) return false;
-
-            _activeExcelImportOperationId++;
-            _logger.Log(Enums.LogLevel.INFO, cancelledMessage);
-            SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs(cancelledMessage));
-            return true;
-        }
-
-        private void ThrowIfCancelled(BackgroundWorker worker)
-        {
-            if (worker != null && worker.CancellationPending)
-                throw new OperationCanceledException();
-        }
-
         private ExcelImportPreview BuildExcelImportPreview(TableData tableData, RecordCollection collection, ExcelExportConfig config, UiSettings uiSettings, string filePath, IPlanLookupResolver planLookupResolver = null)
         {
             return ImportPreviewService.BuildPreview(new ExcelImportPreviewRequest
@@ -291,7 +235,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 Settings = uiSettings,
                 FilePath = filePath,
                 TargetName = ActiveTargetInstance?.FriendlyName ?? string.Empty,
-                MappingCount = BuildMappingsForImport(uiSettings).Count,
                 ExistingTargetIdsProvider = sourceIds => GetExistingTargetIdsIncludingPlanMatches(
                     tableData.Table.LogicalName,
                     tableData.Table.IdAttribute,
@@ -387,21 +330,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             collection.ImportErrors = warnings;
         }
 
-        private void SaveDmtImportSettings(UiSettings uiSettings, ExcelImportMatchKeySelection selection)
-        {
-            if (_dmtSettings == null) return;
-
-            _dmtSettings.ImportSettings = new DmtImportSettings
-            {
-                BatchSize = uiSettings != null && uiSettings.BatchSize > 0 ? Math.Min(uiSettings.BatchSize, 25) : 25,
-                MatchKeyMode = selection?.Mode ?? "Guid",
-                MatchKeyFields = selection?.Fields?.ToList() ?? new List<string>(),
-                MatchAlternateKeyName = selection?.AlternateKeyName
-            };
-
-            AutoSaveDmtSettings();
-        }
-
         private HashSet<Guid> GetExistingTargetIds(string logicalName, string idAttribute, IEnumerable<Guid> sourceIds, int batchSize)
         {
             var existing = new HashSet<Guid>();
@@ -429,21 +357,5 @@ namespace Dataverse.XrmTools.DataMigrationTool
             return existing;
         }
 
-        private class ExcelImportSession
-        {
-            public string FilePath { get; set; }
-            public string SourceType { get; set; }
-            public ExcelExportConfig Config { get; set; }
-            public RecordCollection Collection { get; set; }
-            public int OperationId { get; set; }
-            public DmtEnvironmentInfo TargetEnvironment { get; set; }
-        }
-
-        private class ExcelImportPreflightResult
-        {
-            public string FilePath { get; set; }
-            public int RowCount { get; set; }
-            public ExcelExportConfig Config { get; set; }
-        }
     }
 }

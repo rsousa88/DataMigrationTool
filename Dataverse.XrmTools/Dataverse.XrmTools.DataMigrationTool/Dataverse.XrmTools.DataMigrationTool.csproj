@@ -74,7 +74,6 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="AppSettings\Instance.cs" />
-    <Compile Include="AppSettings\Mapping.cs" />
     <Compile Include="AppSettings\Settings.cs" />
     <Compile Include="AppSettings\Sort.cs" />
     <Compile Include="AppSettings\TableSettings.cs" />
@@ -130,32 +129,12 @@
     <Compile Include="Enums\ConnectionType.cs" />
     <Compile Include="Enums\LogLevel.cs" />
     <Compile Include="Enums\Operation.cs" />
-    <Compile Include="Enums\MappingState.cs" />
-    <Compile Include="Enums\MappingType.cs" />
     <Compile Include="External\FolderSelectDialog.cs" />
-    <Compile Include="Forms\AttributeMapping.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="Forms\AttributeMapping.Designer.cs">
-      <DependentUpon>AttributeMapping.cs</DependentUpon>
-    </Compile>
-    <Compile Include="Forms\Mappings.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="Forms\Mappings.Designer.cs">
-      <DependentUpon>Mappings.cs</DependentUpon>
-    </Compile>
     <Compile Include="Forms\Results.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Forms\Results.Designer.cs">
       <DependentUpon>Results.cs</DependentUpon>
-    </Compile>
-    <Compile Include="Forms\ValueMapping.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="Forms\ValueMapping.Designer.cs">
-      <DependentUpon>ValueMapping.cs</DependentUpon>
     </Compile>
     <Compile Include="Helpers\ListViewComparer.cs" />
     <Compile Include="Helpers\Logger.cs" />
@@ -188,9 +167,6 @@
     <Compile Include="Forms\ExecutionPlanResultsDialog.cs">
       <SubType>Form</SubType>
     </Compile>
-    <Compile Include="Forms\ImportSourceDialog.cs">
-      <SubType>Form</SubType>
-    </Compile>
     <Compile Include="Forms\StartupGuideDialog.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -208,7 +184,6 @@
     <Compile Include="Logic\ExecutionPlanService.cs" />
     <Compile Include="Logic\ImportPreviewService.cs" />
     <Compile Include="Logic\ImportWorkflowService.cs" />
-    <Compile Include="Logic\MappingsLogic.cs" />
     <Compile Include="Logic\PlanLookupContext.cs" />
     <Compile Include="Logic\RecordCollectionService.cs" />
     <Compile Include="Models\DmtProject.cs" />
@@ -244,17 +219,8 @@
       <DependentUpon>DataMigrationControl.cs</DependentUpon>
       <SubType>Designer</SubType>
     </EmbeddedResource>
-    <EmbeddedResource Include="Forms\AttributeMapping.resx">
-      <DependentUpon>AttributeMapping.cs</DependentUpon>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Forms\Mappings.resx">
-      <DependentUpon>Mappings.cs</DependentUpon>
-    </EmbeddedResource>
     <EmbeddedResource Include="Forms\Results.resx">
       <DependentUpon>Results.cs</DependentUpon>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Forms\ValueMapping.resx">
-      <DependentUpon>ValueMapping.cs</DependentUpon>
     </EmbeddedResource>
     <EmbeddedResource Include="Properties\Resources.resx">
       <Generator>ResXFileCodeGenerator</Generator>

@@ -2,9 +2,6 @@
 using System;
 using System.Collections.Generic;
 
-// DataMigrationTool
-using Dataverse.XrmTools.DataMigrationTool.AppSettings;
-
 namespace Dataverse.XrmTools.DataMigrationTool.Models
 {
     public class ExecutionPlan
@@ -69,7 +66,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
     {
         public List<string> SelectedAttributes { get; set; } = new List<string>();
         public string Filter { get; set; }
-        public List<Mapping> Mappings { get; set; } = new List<Mapping>();
         public ExcelExportConfig ExcelConfig { get; set; }
         public RecordCollection RecordCollection { get; set; }
         public ExcelImportMatchKeySelection ImportMatchKeySelection { get; set; }
@@ -79,6 +75,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
         public UiSettings ImportSettings { get; set; }
         public UiSettings ExportSettings { get; set; }
         public List<PushLookupMatchKey> LookupMatchKeys { get; set; }
+        // null/empty = all snapshot columns; otherwise only push these columns
+        public List<string> SelectedColumns { get; set; }
     }
 
     public class PushLookupMatchKey

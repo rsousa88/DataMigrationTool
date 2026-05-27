@@ -11,7 +11,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
         public UiSettings Settings { get; set; }
         public string FilePath { get; set; }
         public string TargetName { get; set; }
-        public int MappingCount { get; set; }
         public Func<IEnumerable<Guid>, ISet<Guid>> ExistingTargetIdsProvider { get; set; }
     }
 
@@ -30,7 +29,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
         public int CreateCount { get; set; }
         public int UpdateCount { get; set; }
         public int SkippedCount { get; set; }
-        public int MappingCount { get; set; }
         public UiSettings Settings { get; set; }
         public List<string> AvailableMatchKeys { get; set; } = new List<string>();
         public List<ExcelImportAlternateKeyOption> AvailableAlternateKeys { get; set; } = new List<ExcelImportAlternateKeyOption>();

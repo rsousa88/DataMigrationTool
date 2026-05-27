@@ -37,7 +37,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
         [Fact]
         public void ToEnum_ParsesEnumValue()
         {
-            Assert.Equal(MappingState.Existing, "Existing".ToEnum<MappingState>());
+            Assert.Equal(LogLevel.INFO, "INFO".ToEnum<LogLevel>());
         }
 
         [Fact]

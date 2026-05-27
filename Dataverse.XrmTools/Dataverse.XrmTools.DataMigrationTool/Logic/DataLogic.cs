@@ -32,7 +32,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
         private readonly IOrganizationService _targetSvc;
 
         private EntityCollection _sourceCollection;
-        private EntityCollection _mappedCollection;
         private EntityCollection _targetCollection;
 
         private List<ListViewItem> _resultsData = new List<ListViewItem>();
@@ -84,28 +83,16 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             return _sourceCollection?.Entities ?? Enumerable.Empty<Entity>();
         }
 
-        public bool Export(TableData tableData, UiSettings uiSettings, string filePath, List<Mapping> mappings, bool confirm = true)
+        public bool Export(TableData tableData, UiSettings uiSettings, string filePath, bool confirm = true)
         {
             ReportStatus($"Export: retrieving source {tableData.Table.LogicalName} records...");
             RetrieveSourceData(tableData, uiSettings.BatchSize);
 
-            if(uiSettings.ApplyMappingsOn.Equals(Operation.Export))
-            {
-                ReportStatus("Export: applying mappings...");
-                var mappingsLogic = new MappingsLogic(_sourceSvc, _targetSvc);
-                _mappedCollection = mappingsLogic.ExecuteMappingsOnExport(_sourceCollection.Entities.ToList(), mappings, tableData.Table);
-
-                ReportStatus($"Export: writing {_mappedCollection.Entities.Count} records to JSON...");
-                return SaveJsonFile(_mappedCollection, tableData, filePath, confirm);
-            }
-            else
-            {
-                ReportStatus($"Export: writing {_sourceCollection.Entities.Count} records to JSON...");
-                return SaveJsonFile(_sourceCollection, tableData, filePath, confirm);
-            }
+            ReportStatus($"Export: writing {_sourceCollection.Entities.Count} records to JSON...");
+            return SaveJsonFile(_sourceCollection, tableData, filePath, confirm);
         }
 
-        public OperationResult Import(TableData tableData, RecordCollection collection, UiSettings uiSettings, List<Mapping> mappings, bool confirm = true)
+        public OperationResult Import(TableData tableData, RecordCollection collection, UiSettings uiSettings, bool confirm = true)
         {
             ReportStatus($"Import: converting {collection.Count} {collection.LogicalName} records...");
             _sourceCollection = collection.ToEntityCollection(tableData.Metadata.Attributes);
@@ -119,7 +106,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             if (!confirm || MessageBox.Show(msg, "Info", MessageBoxButtons.YesNo, MessageBoxIcon.Question).Equals(DialogResult.Yes))
             {
                 ReportStatus("Import: applying selected operations...");
-                ExecuteTargetOperations(uiSettings, tableData.Table, false, true, mappings);
+                ExecuteTargetOperations(uiSettings, tableData.Table, false, true);
 
                 return new OperationResult
                 {
@@ -173,7 +160,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             ReportStatus($"Found {_targetCollection?.Entities.Count ?? 0} matching target {logicalName} records.");
         }
 
-        private void ExecuteTargetOperations(UiSettings uiSettings, Table table, bool isPreview, bool targetReady, List<Mapping> mappings = null, IEnumerable<string> previewColumns = null)
+        private void ExecuteTargetOperations(UiSettings uiSettings, Table table, bool isPreview, bool targetReady, IEnumerable<string> previewColumns = null)
         {
             if (_sourceCollection == null || (targetReady && _targetCollection == null)) { return; }
 
@@ -198,10 +185,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
             if (_worker.CancellationPending) return;
 
-            // apply mappings
-            var mappingsLogic = new MappingsLogic(_sourceSvc, _targetSvc);
-            var items = uiSettings.ApplyMappingsOn.Equals(Operation.Import) ? mappingsLogic.ExecuteMappingsOnImport(migrationItems, mappings, table) : migrationItems;
-            var itemList = items.ToList();
+            var itemList = migrationItems.ToList();
 
             // execute
             var diffCount = itemList.Count;

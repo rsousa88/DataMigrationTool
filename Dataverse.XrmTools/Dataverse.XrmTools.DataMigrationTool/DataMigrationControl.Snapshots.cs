@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Windows.Forms;
 
@@ -10,6 +11,7 @@ using XrmToolBox.Extensibility.Args;
 
 // DataMigrationTool
 using Dataverse.XrmTools.DataMigrationTool.Forms;
+using Dataverse.XrmTools.DataMigrationTool.Logic;
 using Dataverse.XrmTools.DataMigrationTool.Models;
 
 namespace Dataverse.XrmTools.DataMigrationTool
@@ -68,12 +70,15 @@ namespace Dataverse.XrmTools.DataMigrationTool
             pullBtn.Click += (s, e) => PullToProject();
             var loadBtn = new ToolStripButton("Load File") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true };
             loadBtn.Click += (s, e) => LoadFileToProject();
+            var exportBtn = new ToolStripButton("Export") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, ToolTipText = "Export selected snapshot" };
+            exportBtn.Click += (s, e) => ExportInlineSnapshot();
             _snapMoveUpBtn = new ToolStripButton("↑") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, Enabled = false, ToolTipText = "Move snapshot up" };
             _snapMoveUpBtn.Click += (s, e) => MoveInlineSnapshot(-1);
             _snapMoveDownBtn = new ToolStripButton("↓") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, Enabled = false, ToolTipText = "Move snapshot down" };
             _snapMoveDownBtn.Click += (s, e) => MoveInlineSnapshot(1);
             headerStrip.Items.Add(pullBtn);
             headerStrip.Items.Add(loadBtn);
+            headerStrip.Items.Add(exportBtn);
             headerStrip.Items.Add(new ToolStripSeparator());
             headerStrip.Items.Add(_snapMoveUpBtn);
             headerStrip.Items.Add(_snapMoveDownBtn);
@@ -185,6 +190,10 @@ namespace Dataverse.XrmTools.DataMigrationTool
             addToPlan.Click += (s, e) => AddInlineSnapshotToPlan();
             menu.Items.Add(addToPlan);
 
+            var export = new ToolStripMenuItem("Export Snapshot");
+            export.Click += (s, e) => ExportInlineSnapshot();
+            menu.Items.Add(export);
+
             menu.Items.Add(new ToolStripSeparator());
 
             var rename = new ToolStripMenuItem("Rename");
@@ -279,6 +288,49 @@ namespace Dataverse.XrmTools.DataMigrationTool
             var snap = GetInlineContextSnapshot();
             if (snap == null) return;
             AddSnapshotToPlan(snap);
+        }
+
+        private void ExportInlineSnapshot()
+        {
+            var snap = GetInlineContextSnapshot();
+            if (snap == null || _project?.Service == null) return;
+
+            using (var dialog = new SaveFileDialog
+            {
+                Title = "Export Snapshot",
+                FileName = $"{snap.Name}.json",
+                Filter = "JSON files (*.json)|*.json|Excel files (*.xlsx)|*.xlsx",
+                AddExtension = true,
+                OverwritePrompt = true
+            })
+            {
+                if (dialog.ShowDialog(ParentForm) != DialogResult.OK) return;
+
+                var path = dialog.FileName;
+                ManageWorkingState(true, $"Exporting snapshot '{snap.Name}'...");
+                WorkAsync(new XrmToolBox.Extensibility.WorkAsyncInfo
+                {
+                    Work = (worker, args) =>
+                    {
+                        if (string.Equals(Path.GetExtension(path), ".xlsx", StringComparison.OrdinalIgnoreCase))
+                            SqliteFileAdapter.ExportToExcel(_project.Service, snap.Name, path);
+                        else
+                            SqliteFileAdapter.ExportToJson(_project.Service, snap.Name, path);
+                    },
+                    PostWorkCallBack = args =>
+                    {
+                        ManageWorkingState(false);
+                        if (args.Error != null)
+                        {
+                            MessageBox.Show(this, $"Export failed: {args.Error.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                            return;
+                        }
+
+                        SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Snapshot exported: {Path.GetFileName(path)}"));
+                    },
+                    ProgressChanged = ReportWorkProgress
+                });
+            }
         }
 
         private void RenameInlineSnapshot()

@@ -50,14 +50,6 @@
             this.tsbAbort = new System.Windows.Forms.ToolStripButton();
             this.pnlMain = new System.Windows.Forms.TableLayoutPanel();
             this.pnlSettings = new System.Windows.Forms.TableLayoutPanel();
-            this.gbMappingSettings = new System.Windows.Forms.GroupBox();
-            this.rbMapOnImport = new System.Windows.Forms.RadioButton();
-            this.rbMapOnExport = new System.Windows.Forms.RadioButton();
-            this.lblApplyMappingsOn = new System.Windows.Forms.Label();
-            this.cbMapUsers = new System.Windows.Forms.CheckBox();
-            this.cbMapTeams = new System.Windows.Forms.CheckBox();
-            this.cbMapBu = new System.Windows.Forms.CheckBox();
-            this.btnMappings = new System.Windows.Forms.Button();
             this.gbOpSettings = new System.Windows.Forms.GroupBox();
             this.cbCreate = new System.Windows.Forms.CheckBox();
             this.cbUpdate = new System.Windows.Forms.CheckBox();
@@ -89,7 +81,6 @@
             this.tsMain.SuspendLayout();
             this.pnlMain.SuspendLayout();
             this.pnlSettings.SuspendLayout();
-            this.gbMappingSettings.SuspendLayout();
             this.gbOpSettings.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.nudBatchCount)).BeginInit();
             this.gbViewSettings.SuspendLayout();
@@ -302,125 +293,18 @@
             // 
             this.pnlSettings.ColumnCount = 1;
             this.pnlSettings.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 100F));
-            this.pnlSettings.Controls.Add(this.gbMappingSettings, 0, 1);
-            this.pnlSettings.Controls.Add(this.gbOpSettings, 0, 2);
-            this.pnlSettings.Controls.Add(this.gbViewSettings, 0, 3);
+            this.pnlSettings.Controls.Add(this.gbOpSettings, 0, 1);
+            this.pnlSettings.Controls.Add(this.gbViewSettings, 0, 2);
             this.pnlSettings.Dock = System.Windows.Forms.DockStyle.Fill;
             this.pnlSettings.Location = new System.Drawing.Point(2, 2);
             this.pnlSettings.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
             this.pnlSettings.Name = "pnlSettings";
-            this.pnlSettings.RowCount = 4;
-            this.pnlSettings.RowStyles.Add(new System.Windows.Forms.RowStyle());
+            this.pnlSettings.RowCount = 3;
             this.pnlSettings.RowStyles.Add(new System.Windows.Forms.RowStyle());
             this.pnlSettings.RowStyles.Add(new System.Windows.Forms.RowStyle());
             this.pnlSettings.RowStyles.Add(new System.Windows.Forms.RowStyle());
             this.pnlSettings.Size = new System.Drawing.Size(237, 759);
             this.pnlSettings.TabIndex = 0;
-            //
-            // gbMappingSettings
-            // 
-            this.gbMappingSettings.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
-            | System.Windows.Forms.AnchorStyles.Right)));
-            this.gbMappingSettings.Controls.Add(this.rbMapOnImport);
-            this.gbMappingSettings.Controls.Add(this.rbMapOnExport);
-            this.gbMappingSettings.Controls.Add(this.lblApplyMappingsOn);
-            this.gbMappingSettings.Controls.Add(this.cbMapUsers);
-            this.gbMappingSettings.Controls.Add(this.cbMapTeams);
-            this.gbMappingSettings.Controls.Add(this.cbMapBu);
-            this.gbMappingSettings.Controls.Add(this.btnMappings);
-            this.gbMappingSettings.Enabled = false;
-            this.gbMappingSettings.Location = new System.Drawing.Point(2, 116);
-            this.gbMappingSettings.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
-            this.gbMappingSettings.Name = "gbMappingSettings";
-            this.gbMappingSettings.Padding = new System.Windows.Forms.Padding(2, 2, 2, 2);
-            this.gbMappingSettings.Size = new System.Drawing.Size(233, 206);
-            this.gbMappingSettings.TabIndex = 0;
-            this.gbMappingSettings.TabStop = false;
-            this.gbMappingSettings.Text = "Mapping Settings";
-            // 
-            // rbMapOnImport
-            // 
-            this.rbMapOnImport.AutoSize = true;
-            this.rbMapOnImport.Location = new System.Drawing.Point(62, 106);
-            this.rbMapOnImport.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
-            this.rbMapOnImport.Name = "rbMapOnImport";
-            this.rbMapOnImport.Size = new System.Drawing.Size(54, 17);
-            this.rbMapOnImport.TabIndex = 105;
-            this.rbMapOnImport.Text = "Import";
-            this.rbMapOnImport.UseVisualStyleBackColor = true;
-            // 
-            // rbMapOnExport
-            // 
-            this.rbMapOnExport.AutoSize = true;
-            this.rbMapOnExport.Checked = true;
-            this.rbMapOnExport.Location = new System.Drawing.Point(6, 106);
-            this.rbMapOnExport.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
-            this.rbMapOnExport.Name = "rbMapOnExport";
-            this.rbMapOnExport.Size = new System.Drawing.Size(55, 17);
-            this.rbMapOnExport.TabIndex = 104;
-            this.rbMapOnExport.TabStop = true;
-            this.rbMapOnExport.Text = "Export";
-            this.rbMapOnExport.UseVisualStyleBackColor = true;
-            // 
-            // lblApplyMappingsOn
-            // 
-            this.lblApplyMappingsOn.AutoSize = true;
-            this.lblApplyMappingsOn.Location = new System.Drawing.Point(4, 90);
-            this.lblApplyMappingsOn.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
-            this.lblApplyMappingsOn.Name = "lblApplyMappingsOn";
-            this.lblApplyMappingsOn.Size = new System.Drawing.Size(100, 13);
-            this.lblApplyMappingsOn.TabIndex = 103;
-            this.lblApplyMappingsOn.Text = "Apply Mappings on:";
-            // 
-            // cbMapUsers
-            // 
-            this.cbMapUsers.AutoSize = true;
-            this.cbMapUsers.Location = new System.Drawing.Point(6, 21);
-            this.cbMapUsers.Name = "cbMapUsers";
-            this.cbMapUsers.Size = new System.Drawing.Size(147, 17);
-            this.cbMapUsers.TabIndex = 1;
-            this.cbMapUsers.Text = "Map Users by User Name";
-            this.cbMapUsers.UseVisualStyleBackColor = true;
-            this.cbMapUsers.CheckedChanged += new System.EventHandler(this.cbMapOption_CheckedChanged);
-            // 
-            // cbMapTeams
-            // 
-            this.cbMapTeams.AutoSize = true;
-            this.cbMapTeams.Location = new System.Drawing.Point(6, 44);
-            this.cbMapTeams.Name = "cbMapTeams";
-            this.cbMapTeams.Size = new System.Drawing.Size(127, 17);
-            this.cbMapTeams.TabIndex = 2;
-            this.cbMapTeams.Text = "Map Teams by Name";
-            this.cbMapTeams.UseVisualStyleBackColor = true;
-            this.cbMapTeams.CheckedChanged += new System.EventHandler(this.cbMapOption_CheckedChanged);
-            // 
-            // cbMapBu
-            // 
-            this.cbMapBu.AutoSize = true;
-            this.cbMapBu.Checked = true;
-            this.cbMapBu.CheckState = System.Windows.Forms.CheckState.Checked;
-            this.cbMapBu.Location = new System.Drawing.Point(6, 67);
-            this.cbMapBu.Name = "cbMapBu";
-            this.cbMapBu.Size = new System.Drawing.Size(140, 17);
-            this.cbMapBu.TabIndex = 3;
-            this.cbMapBu.Text = "Map Root Business Unit";
-            this.cbMapBu.UseVisualStyleBackColor = true;
-            this.cbMapBu.CheckedChanged += new System.EventHandler(this.cbMapOption_CheckedChanged);
-            // 
-            // btnMappings
-            // 
-            this.btnMappings.FlatAppearance.BorderSize = 0;
-            this.btnMappings.FlatStyle = System.Windows.Forms.FlatStyle.Popup;
-            this.btnMappings.ForeColor = System.Drawing.SystemColors.ControlText;
-            this.btnMappings.Image = global::Dataverse.XrmTools.DataMigrationTool.Properties.Resources.mapping20_colorful;
-            this.btnMappings.ImageAlign = System.Drawing.ContentAlignment.MiddleLeft;
-            this.btnMappings.Location = new System.Drawing.Point(7, 145);
-            this.btnMappings.Name = "btnMappings";
-            this.btnMappings.Size = new System.Drawing.Size(176, 28);
-            this.btnMappings.TabIndex = 102;
-            this.btnMappings.Text = "Mappings";
-            this.btnMappings.UseVisualStyleBackColor = true;
-            this.btnMappings.Click += new System.EventHandler(this.btnMappings_Click);
             // 
             // gbOpSettings
             // 
@@ -781,8 +665,6 @@
             this.tsMain.PerformLayout();
             this.pnlMain.ResumeLayout(false);
             this.pnlSettings.ResumeLayout(false);
-            this.gbMappingSettings.ResumeLayout(false);
-            this.gbMappingSettings.PerformLayout();
             this.gbOpSettings.ResumeLayout(false);
             this.gbOpSettings.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)(this.nudBatchCount)).EndInit();
@@ -838,13 +720,6 @@
         private System.Windows.Forms.GroupBox gbViewSettings;
         private System.Windows.Forms.CheckBox cbHideInvalid;
 
-        // Organization settings group
-        private System.Windows.Forms.GroupBox gbMappingSettings;
-        private System.Windows.Forms.CheckBox cbMapUsers;
-        private System.Windows.Forms.CheckBox cbMapTeams;
-        private System.Windows.Forms.CheckBox cbMapBu;
-        private System.Windows.Forms.Button btnMappings;
-
         // Operation settings group
         private System.Windows.Forms.GroupBox gbOpSettings;
         private System.Windows.Forms.CheckBox cbCreate;
@@ -879,8 +754,5 @@
         private System.Windows.Forms.Button btnFetchXmlBuilder;
         private System.Windows.Forms.Button btnSql4Cds;
         private System.Windows.Forms.RichTextBox rtbFilter;
-        private System.Windows.Forms.Label lblApplyMappingsOn;
-        private System.Windows.Forms.RadioButton rbMapOnExport;
-        private System.Windows.Forms.RadioButton rbMapOnImport;
     }
 }

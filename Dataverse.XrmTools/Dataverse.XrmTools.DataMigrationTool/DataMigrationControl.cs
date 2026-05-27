@@ -55,7 +55,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private Dictionary<string, CrmServiceClient> _targetClients = new Dictionary<string, CrmServiceClient>(StringComparer.OrdinalIgnoreCase);
         private Dictionary<string, Instance> _targetInstances = new Dictionary<string, Instance>(StringComparer.OrdinalIgnoreCase);
         private IEnumerable<Table> _tables;
-        private List<Mapping> _mappings;
         private IEnumerable<Sort> _sorts;
         private DmtSettings _dmtSettings;
         private string _dmtFilePath;
@@ -73,8 +72,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
         // flags
         private bool _ready = false;
         private bool _working;
-        private int _activeExcelImportOperationId;
-        private bool _importPreviewDialogOpen;
         private bool _suppressTableSelectionChanged;
         private bool _suppressSettingsEvents;
         private bool _startupFilesDialogShown;
@@ -102,6 +99,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private ToolStripButton _executionPlanSaveButton;
         private ToolStripButton _executionPlanSaveAsButton;
         private ToolStripButton _executionPlanValidateButton;
+        private ToolStripButton _executionPlanRefreshCountsButton;
         private ToolStripButton _executionPlanExecuteButton;
         private ToolStripButton _executionPlanPreviewStepButton;
         private ToolStripButton _executionPlanConfigureStepButton;
@@ -208,7 +206,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
                             Id = client.ConnectedOrgId,
                             UniqueName = client.ConnectedOrgUniqueName,
                             FriendlyName = client.ConnectedOrgFriendlyName,
-                            Mappings = new List<Mapping>(),
                             Updated = true
                         };
 
@@ -225,22 +222,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     BindProjectSource(client);
                     RenderProjectBanner();
                     RenderProjectName();
-
-                    // load source instance mappings
-                    _logger.Log(LogLevel.INFO, $"Loading mappings...");
-                    try
-                    {
-                        var srcMappings = _sourceInstance.Mappings.Where(map => map.SourceInstanceName.Equals(_sourceInstance.FriendlyName));
-                        _mappings = new List<Mapping>(srcMappings);
-
-                        _logger.Log(LogLevel.INFO, $"Clearing mappings...");
-                        ClearMappings();
-                    }
-                    catch
-                    {
-                        _logger.Log(LogLevel.INFO, $"Corrupt mappings detected: Resetting mappings...");
-                        ClearMappings(true);
-                    }
 
                     // load sorts
                     _logger.Log(LogLevel.INFO, $"Loading inital settings...");
@@ -277,11 +258,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     var client = detail.ServiceClient;
 
                     UpdateLegacyInstance(detail.ConnectionId.Value, client);
-                    if (_settings.SettingsVersion.Equals(0))
-                    {
-                        UpdateLegacyMappings(client);
-                    }
-
                     if (_sourceClient == null) { throw new Exception("Source connection is invalid"); }
                     _logger.Log(LogLevel.INFO, $"Source OrgId: {_sourceClient.ConnectedOrgId}");
                     _logger.Log(LogLevel.INFO, $"Source OrgUniqueName: {_sourceClient.ConnectedOrgUniqueName}");
@@ -307,7 +283,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
                             Id = client.ConnectedOrgId,
                             UniqueName = client.ConnectedOrgUniqueName,
                             FriendlyName = client.ConnectedOrgFriendlyName,
-                            Mappings = new List<Mapping>(),
                             Updated = true
                     };
 
@@ -317,13 +292,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     RegisterTargetConnection(client, instance, makeDefault: true);
                     RegisterProjectTarget(client);
 
-                    // filter mappings by target instance
-                    var tgtMappings = _mappings.Where(map => map.TargetInstanceName.Equals(_targetInstance.FriendlyName));
-                    _mappings = new List<Mapping>(tgtMappings);
-
-                    // load settings + mappings
                     LoadUiSettings();
-                    GenerateMappings();
 
                     SettingsHelper.SetSettings(_settings);
 
@@ -355,21 +324,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 legacy.Updated = true;
             }
 
-            SettingsHelper.SetSettings(_settings);
-        }
-
-        private void UpdateLegacyMappings(CrmServiceClient targetClient)
-        {
-            var mappings = _settings.Instances.SelectMany(inst => inst.Mappings.Where(map => map.Type.Equals(Enums.MappingType.Value)));
-
-            // update mappings
-            foreach (var map in mappings)
-            {
-                map.SourceInstanceName = _sourceClient.ConnectedOrgFriendlyName;
-                map.TargetInstanceName = targetClient.ConnectedOrgFriendlyName;
-            }
-
-            _settings.SettingsVersion = 1;
             SettingsHelper.SetSettings(_settings);
         }
 
@@ -634,14 +588,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
             _targetClient = client;
             _targetInstances.TryGetValue(uniqueName, out _targetInstance);
-
-            if (_sourceInstance?.Mappings != null)
-            {
-                _mappings = _sourceInstance.Mappings
-                    .Where(map => _targetInstance == null || string.Equals(map.TargetInstanceName, _targetInstance.FriendlyName, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
-                RenderMappingsButton();
-            }
 
             UpdateExecutionPlanTargetEnvironments();
             return true;
@@ -1152,381 +1098,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
         }
 
-        private void ImportFromExcel(string path = null)
-        {
-            _logger.Log(LogLevel.INFO, "Import from Excel operation...");
-            AutoSaveDmtSettings();
-
-            if (_working)
-            {
-                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Another operation is already running"));
-                return;
-            }
-
-            if (path == null)
-            {
-                var source = SelectImportSource("Import from Excel", "Excel files (*.xlsx)|*.xlsx", "ExportToExcel");
-                if (source == null || source.Choice == ImportSourceChoice.Cancel) return;
-                if (source.Choice == ImportSourceChoice.LinkedPlanStep)
-                {
-                    var linkedTarget = SelectOperationTargetEnvironment("Import Excel target");
-                    if (linkedTarget == null && GetLoadedTargetEnvironments().Any()) return;
-                    AddLinkedImportStepToExecutionPlan(source.SelectedStep, "ImportFromExcel", linkedTarget);
-                    return;
-                }
-                path = source.FilePath;
-            }
-            if (string.IsNullOrEmpty(path)) return;
-
-            if (!TrySelectImportPreviewTarget("Import Excel target", out var targetEnvironment)) return;
-
-            StartExcelImportPreflight(path, targetEnvironment);
-        }
-
-        private void StartExcelImportPreflight(string path, DmtEnvironmentInfo targetEnvironment)
-        {
-            ManageWorkingState(true, "Reading Excel metadata...");
-            WorkAsync(new WorkAsyncInfo
-            {
-                AsyncArgument = path,
-                IsCancelable = true,
-                Work = (worker, evt) =>
-                {
-                    try
-                    {
-                        var filePath = evt.Argument as string;
-                        worker.ReportProgress(0, "Excel import: reading workbook metadata...");
-                        ThrowIfCancelled(worker);
-                        var preflightLogic = new Logic.ExcelLogic();
-                        var rowCount = preflightLogic.GetImportRowCount(filePath, out ExcelExportConfig preflightConfig);
-                        ThrowIfCancelled(worker);
-                        evt.Result = new ExcelImportPreflightResult { FilePath = filePath, RowCount = rowCount, Config = preflightConfig };
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        evt.Cancel = true;
-                    }
-                },
-                PostWorkCallBack = evt =>
-                {
-                    ManageWorkingState(false);
-                    if (evt.Cancelled)
-                    {
-                        SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Excel import read cancelled"));
-                        return;
-                    }
-                    if (evt.Error != null)
-                    {
-                        _logger.Log(LogLevel.ERROR, evt.Error.ToString());
-                        MessageBox.Show(evt.Error.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        return;
-                    }
-
-                    var preflight = evt.Result as ExcelImportPreflightResult;
-                    if (preflight == null) return;
-                    if (!ValidateActiveSettingsTable(preflight.Config?.Table?.LogicalName, "Excel file")) return;
-                    if (!ConfirmLargeExcelImport(preflight.RowCount)) return;
-
-            StartExcelImportRead(preflight.FilePath, targetEnvironment, preflight.Config);
-                },
-                ProgressChanged = ReportWorkProgress
-            });
-        }
-
-        private void StartExcelImportRead(string path, DmtEnvironmentInfo targetEnvironment, ExcelExportConfig preflightConfig)
-        {
-            var operationId = BeginExcelImportOperation();
-            var defaultImportSettings = BuildExcelImportSettings(GetDefaultImportSettings(Enums.Action.None), preflightConfig);
-            ManageWorkingState(true, "Reading Excel file...");
-
-            WorkAsync(new WorkAsyncInfo
-            {
-                AsyncArgument = new { path, operationId, defaultImportSettings, targetEnvironment },
-                IsCancelable = true,
-                Work = (worker, evt) =>
-                {
-                    try
-                    {
-                        dynamic args = evt.Argument;
-                        string filePath = args.path;
-                        var workbookDefaultImportSettings = args.defaultImportSettings as ExcelImportSettings;
-                        worker.ReportProgress(0, "Excel import: reading workbook metadata...");
-                        ThrowIfCancelled(worker);
-                        var excelLogic = new Logic.ExcelLogic();
-                        var target = targetEnvironment != null && _targetClients.TryGetValue(targetEnvironment.UniqueName, out CrmServiceClient selectedTarget)
-                            ? selectedTarget
-                            : ActiveTargetClient;
-                        var requiredLookupTables = GetPlanLookupTablesRequiredByImportConfig(preflightConfig);
-                        var resolver = BuildPlanLookupContextForPriorSteps(targetEnvironment, null, worker, true, target, requiredLookupTables);
-
-                        var collection = excelLogic.ImportFromExcel(
-                            filePath,
-                            out ExcelExportConfig config,
-                            target,
-                            worker,
-                            importConfig =>
-                            {
-                                ThrowIfCancelled(worker);
-                                EnsureExcelImportSettings(importConfig, workbookDefaultImportSettings);
-                                ValidateActiveSettingsTable(importConfig?.Table?.LogicalName, "Excel file", promptUser: false);
-                            },
-                            resolver);
-                        ThrowIfCancelled(worker);
-                        worker.ReportProgress(0, $"Excel import: read {collection?.Count ?? 0} records with {collection?.ImportErrors?.Count ?? 0} warning(s).");
-
-                        evt.Result = new ExcelImportSession { FilePath = filePath, SourceType = "Excel", Config = config, Collection = collection, OperationId = args.operationId, TargetEnvironment = targetEnvironment };
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        evt.Cancel = true;
-                    }
-                },
-                PostWorkCallBack = evt =>
-                {
-                    ManageWorkingState(false);
-                    if (ShouldIgnoreExcelImportCallback(evt, operationId, "Excel import read cancelled")) return;
-
-                    if (evt.Error != null)
-                    {
-                        _logger.Log(LogLevel.ERROR, evt.Error.ToString());
-                        MessageBox.Show(evt.Error.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        return;
-                    }
-
-                    var session = evt.Result as ExcelImportSession;
-                    var collection = session?.Collection;
-                    var hasImportErrors = collection?.ImportErrors?.Any() == true;
-                    if (collection == null || (collection.Count == 0 && !hasImportErrors))
-                    {
-                        var message = "No records found in the Excel file.";
-                        MessageBox.Show(message, "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                        return;
-                    }
-
-                    var tableData = GetTableDataByLogicalName(collection.LogicalName, false);
-                    if (tableData == null)
-                    {
-                        MessageBox.Show($"Table '{collection.LogicalName}' not found. Please load tables first.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        return;
-                    }
-
-                    SelectTableForImportedFile(tableData);
-                    var previewSettings = GetDefaultImportSettings(session.Config, Enums.Action.None);
-                    StartExcelImportPreview(session, tableData, previewSettings);
-                },
-                ProgressChanged = ReportWorkProgress
-            });
-        }
-
-        private void StartExcelImportPreview(ExcelImportSession session, TableData tableData, UiSettings uiSettings)
-        {
-            if (session != null && session.OperationId > 0 && !IsCurrentExcelImportOperation(session.OperationId)) return;
-            ManageWorkingState(true, "Preparing import preview...");
-            WorkAsync(new WorkAsyncInfo
-            {
-                AsyncArgument = new { session, tableData, uiSettings },
-                IsCancelable = true,
-                Work = (worker, evt) =>
-                {
-                    try
-                    {
-                        dynamic args = evt.Argument;
-                        ThrowIfCancelled(worker);
-                        worker.ReportProgress(0, "Import preview: comparing source rows with target records...");
-                        var previewSession = args.session as ExcelImportSession;
-                        var previousClientOverride = _executionTargetClientOverride;
-                        var previousInstanceOverride = _executionTargetInstanceOverride;
-                        try
-                        {
-                            SetExecutionTargetOverride(previewSession?.TargetEnvironment);
-                            evt.Result = BuildExcelImportPreview(args.tableData, previewSession.Collection, previewSession.Config, args.uiSettings, previewSession.FilePath);
-                        }
-                        finally
-                        {
-                            _executionTargetClientOverride = previousClientOverride;
-                            _executionTargetInstanceOverride = previousInstanceOverride;
-                        }
-                        ThrowIfCancelled(worker);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        evt.Cancel = true;
-                    }
-                },
-                PostWorkCallBack = evt =>
-                {
-                    ManageWorkingState(false);
-                    if ((session?.OperationId ?? 0) > 0 && ShouldIgnoreExcelImportCallback(evt, session.OperationId, "Import preview cancelled")) return;
-                    if (evt.Error != null)
-                    {
-                        _logger.Log(LogLevel.ERROR, evt.Error.ToString());
-                        MessageBox.Show(evt.Error.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        return;
-                    }
-
-                    var preview = evt.Result as ExcelImportPreview;
-                    if (preview == null) return;
-
-                    if (_importPreviewDialogOpen) return;
-                    _importPreviewDialogOpen = true;
-                    using (var dlg = new ExcelImportPreviewDialog(
-                        preview,
-                        "Add to Plan",
-                        () => ConfigureMappingsForExecutionTarget(session?.TargetEnvironment)))
-                    {
-                        var result = DialogResult.Cancel;
-                        try
-                        {
-                            result = dlg.ShowDialog(ParentForm);
-                        }
-                        finally
-                        {
-                            _importPreviewDialogOpen = false;
-                        }
-                        if (result == DialogResult.Retry)
-                        {
-                            SaveDmtImportSettings(dlg.Settings, dlg.SelectedMatchKey);
-                            if (session.Config == null || !dlg.MatchKeyChanged)
-                            {
-                                if (session.Config == null) ApplyJsonImportMatchKeySelection(session.Collection, tableData, dlg.SelectedMatchKey);
-                                StartExcelImportPreview(session, tableData, dlg.Settings);
-                            }
-                            else
-                                ReloadExcelImportSession(session.FilePath, dlg.SelectedMatchKey, tableData, dlg.Settings, session.TargetEnvironment);
-                            return;
-                        }
-                        if (result == DialogResult.OK || result == DialogResult.Yes || dlg.AddToPlanRequested)
-                        {
-                            SaveDmtImportSettings(dlg.Settings, dlg.SelectedMatchKey);
-                            AddImportStepToExecutionPlan(session, tableData, dlg.Settings, dlg.SelectedMatchKey, preview);
-                            return;
-                        }
-                    }
-                },
-                ProgressChanged = ReportWorkProgress
-            });
-        }
-
-        private bool ConfirmLargeExcelImport(int rowCount)
-        {
-            var warning = ImportWorkflowService.GetLargeExcelImportWarning(rowCount);
-            if (!warning.ShouldConfirm) return true;
-
-            var icon = warning.Level == LargeImportWarningLevel.Warning
-                ? MessageBoxIcon.Warning
-                : MessageBoxIcon.Information;
-
-            return MessageBox.Show(warning.Message, "Large Excel Import", MessageBoxButtons.YesNo, icon) == DialogResult.Yes;
-        }
-
-        private void ReloadExcelImportSession(string filePath, ExcelImportMatchKeySelection matchKey, TableData tableData, UiSettings uiSettings, DmtEnvironmentInfo targetEnvironment)
-        {
-            var operationId = BeginExcelImportOperation();
-            ManageWorkingState(true, "Reading Excel file...");
-            WorkAsync(new WorkAsyncInfo
-            {
-                AsyncArgument = new { filePath, matchKey, operationId, targetEnvironment },
-                IsCancelable = true,
-                Work = (worker, evt) =>
-                {
-                    try
-                    {
-                        dynamic args = evt.Argument;
-                        string reloadFilePath = args.filePath;
-                        var reloadOperationId = (int)args.operationId;
-                        var reloadMatchKey = args.matchKey as ExcelImportMatchKeySelection;
-                        var reloadDefaultImportSettings = BuildExcelImportSettings(uiSettings, null);
-                        worker.ReportProgress(0, "Excel import: re-reading workbook metadata...");
-                        ThrowIfCancelled(worker);
-                        var excelLogic = new Logic.ExcelLogic();
-                        var target = targetEnvironment != null && _targetClients.TryGetValue(targetEnvironment.UniqueName, out CrmServiceClient selectedTarget)
-                            ? selectedTarget
-                            : ActiveTargetClient;
-                        var requiredLookupTables = GetPlanLookupTablesRequiredByImportConfig(excelLogic.ReadMetadata(reloadFilePath));
-                        var resolver = BuildPlanLookupContextForPriorSteps(targetEnvironment, null, worker, true, target, requiredLookupTables);
-                        var collection = excelLogic.ImportFromExcel(
-                            reloadFilePath,
-                            out ExcelExportConfig config,
-                            target,
-                            worker,
-                            importConfig =>
-                            {
-                                ThrowIfCancelled(worker);
-                                EnsureExcelImportSettings(importConfig, reloadDefaultImportSettings);
-                                ValidateActiveSettingsTable(importConfig?.Table?.LogicalName, "Excel file", promptUser: false);
-                                worker.ReportProgress(0, "Excel import: applying selected match key...");
-                                ApplyImportMatchKeySelection(importConfig, reloadMatchKey);
-                                ThrowIfCancelled(worker);
-                                worker.ReportProgress(0, $"Excel import: resolving rows using {importConfig.MatchKeyMode} match key...");
-                            },
-                            resolver);
-                        ThrowIfCancelled(worker);
-                        worker.ReportProgress(0, $"Excel import: read {collection?.Count ?? 0} records with {collection?.ImportErrors?.Count ?? 0} warning(s).");
-                        evt.Result = new ExcelImportSession { FilePath = reloadFilePath, SourceType = "Excel", Config = config, Collection = collection, OperationId = reloadOperationId, TargetEnvironment = targetEnvironment };
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        evt.Cancel = true;
-                    }
-                },
-                PostWorkCallBack = evt =>
-                {
-                    ManageWorkingState(false);
-                    if (ShouldIgnoreExcelImportCallback(evt, operationId, "Excel import read cancelled")) return;
-                    if (evt.Error != null)
-                    {
-                        _logger.Log(LogLevel.ERROR, evt.Error.ToString());
-                        MessageBox.Show(evt.Error.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        return;
-                    }
-
-                    var session = evt.Result as ExcelImportSession;
-                    if (session != null) StartExcelImportPreview(session, tableData, uiSettings);
-                },
-                ProgressChanged = ReportWorkProgress
-            });
-        }
-
-        private void Import(string path = null)
-        {
-            _logger.Log(LogLevel.INFO, $"Import operation...");
-            AutoSaveDmtSettings();
-
-            // get file path
-            if (path == null)
-            {
-                var source = SelectImportSource("Import from JSON", "Json files (*.json)|*.json", "ExportToJson");
-                if (source == null || source.Choice == ImportSourceChoice.Cancel) return;
-                if (source.Choice == ImportSourceChoice.LinkedPlanStep)
-                {
-                    var linkedTarget = SelectOperationTargetEnvironment("Import JSON target");
-                    if (linkedTarget == null && GetLoadedTargetEnvironments().Any()) return;
-                    AddLinkedImportStepToExecutionPlan(source.SelectedStep, "ImportFromJson", linkedTarget);
-                    return;
-                }
-                path = source.FilePath;
-            }
-            if (string.IsNullOrEmpty(path)) { return; }
-
-            if (!TrySelectImportPreviewTarget("Import JSON target", out var targetEnvironment)) return;
-
-            var json = File.ReadAllText(path);
-            var importData = json.DeserializeObject<RecordCollection>();
-            ImportFileDataChecks(importData);
-            if (!ValidateActiveSettingsTable(importData.LogicalName, "JSON file")) return;
-
-            var tableData = GetTableDataByLogicalName(importData.LogicalName, false);
-            if (tableData == null)
-            {
-                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Import operation aborted"));
-                return;
-            }
-
-            SelectTableForImportedFile(tableData);
-            var session = new ExcelImportSession { FilePath = path, SourceType = "JSON", Collection = importData, TargetEnvironment = targetEnvironment };
-            StartExcelImportPreview(session, tableData, GetDefaultImportSettings(Enums.Action.None));
-        }
-
         private void LoadUiSettings()
         {
             var uiSettings = _settings.UiSettings;
@@ -1534,11 +1105,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             {
                 if(_ready)
                 {
-                    cbMapUsers.Checked = uiSettings.MapUsers;
-                    cbMapTeams.Checked = uiSettings.MapTeams;
-                    cbMapBu.Checked = uiSettings.MapBu;
-                    rbMapOnExport.Checked = uiSettings.ApplyMappingsOn.Equals(Operation.Export);
-                    rbMapOnImport.Checked = uiSettings.ApplyMappingsOn.Equals(Operation.Import);
                     cbCreate.Checked = (uiSettings.Action & Enums.Action.Create) == Enums.Action.Create;
                     cbUpdate.Checked = (uiSettings.Action & Enums.Action.Update) == Enums.Action.Update;
                     cbDelete.Checked = (uiSettings.Action & Enums.Action.Delete) == Enums.Action.Delete;
@@ -1549,70 +1115,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 nudBatchCount.Value = uiSettings.BatchSize;
                 cbHideInvalid.Checked = uiSettings.HideInvalidAttributes;
             }
-        }
-
-        private void ClearMappings(bool fullReset = false)
-        {
-            if(fullReset)
-            {
-                // reset all mappings
-                _mappings = new List<Mapping>();
-                _sourceInstance.Mappings = _mappings;
-                SettingsHelper.SetSettings(_settings);
-                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("All Mappings were reset"));
-            }
-            else
-            {
-                // clear previously generated auto mappings
-                _mappings.RemoveAll(map => map.State.Equals(MappingState.Auto));
-                _sourceInstance.Mappings = _mappings;
-                SettingsHelper.SetSettings(_settings);
-                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Cleared previously generated Automatic Mappings"));
-            }
-        }
-
-        private void GenerateMappings()
-        {
-            _logger.Log(LogLevel.INFO, $"Generating automatic mappings...");
-
-            ManageWorkingState(true, "Generating automatic mappings...");
-
-            var uiSettings = ReadSettings(Enums.Action.None);
-
-            WorkAsync(new WorkAsyncInfo
-            {
-                IsCancelable = true,
-                Work = (worker, evt) =>
-                {
-                    ClearMappings();
-
-                    var mappingsLogic = new MappingsLogic(_sourceClient, ActiveTargetClient);
-
-                    if (uiSettings.MapUsers)
-                    {
-                        var usrMappings = mappingsLogic.GetUserMappings(_sourceInstance.FriendlyName, ActiveTargetInstance.FriendlyName);
-                        if (usrMappings.Any()) { _mappings.AddRange(usrMappings); }
-                    }
-                    if (uiSettings.MapTeams)
-                    {
-                        var teamMappings = mappingsLogic.GetTeamMappings(_sourceInstance.FriendlyName, ActiveTargetInstance.FriendlyName);
-                        if (teamMappings.Any()) { _mappings.AddRange(teamMappings); }
-                    }
-                    if (uiSettings.MapBu)
-                    {
-                        var buMapping = mappingsLogic.GetBusinessUnitMapping(_sourceInstance.FriendlyName, ActiveTargetInstance.FriendlyName);
-                        if (buMapping != null) { _mappings.Add(buMapping); }
-                    }
-                },
-                PostWorkCallBack = evt =>
-                {
-                    ManageWorkingState(false);
-
-                    SettingsHelper.SetSettings(_settings);
-                    AutoSaveDmtSettings();
-                    SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Automatic Mappings generated successfully"));
-                }
-            });
         }
 
         private TableData GetSelectedTableItemData(bool targetRequired = true, bool attributeRequired = false)
@@ -1732,44 +1234,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             LoadAttributesList(tableData);
             LoadFilters(tableData);
             SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Selected table from import file: {tableData.Table.LogicalName}"));
-        }
-
-        private bool ConfigureMappingsForExecutionTarget(DmtEnvironmentInfo targetEnvironment)
-        {
-            if (_sourceClient == null || _sourceInstance == null)
-                return false;
-
-            var previousClientOverride = _executionTargetClientOverride;
-            var previousInstanceOverride = _executionTargetInstanceOverride;
-            try
-            {
-                SetExecutionTargetOverride(targetEnvironment);
-                var targetInstance = ActiveTargetInstance;
-                if (targetInstance == null)
-                {
-                    MessageBox.Show("Connect or select the target environment before configuring mappings.", "Mappings", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    return false;
-                }
-
-                var mappingsDlg = new Mappings(_sourceClient, _sourceInstance, targetInstance, _tables, _settings);
-                mappingsDlg.ShowDialog(ParentForm);
-
-                if (!mappingsDlg.Updated) return false;
-
-                _mappings = _sourceInstance.Mappings?
-                    .Where(map => string.Equals(map.TargetInstanceName, targetInstance.FriendlyName, StringComparison.OrdinalIgnoreCase))
-                    .ToList() ?? new List<Mapping>();
-                RenderMappingsButton();
-                SettingsHelper.SetSettings(_settings);
-                AutoSaveDmtSettings();
-                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Successfully updated Organization Mappings"));
-                return true;
-            }
-            finally
-            {
-                _executionTargetClientOverride = previousClientOverride;
-                _executionTargetInstanceOverride = previousInstanceOverride;
-            }
         }
 
         private void EnsureTableDataAttributes(TableData tableData)
@@ -2296,7 +1760,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
 
             _dmtSettings.Filter = rtbFilter.Text;
-            _dmtSettings.Mappings = new List<Mapping>(_mappings ?? new List<Mapping>());
             if (_currentTableSettings?.ExcelConfig != null)
                 _dmtSettings.ExcelConfig = _currentTableSettings.ExcelConfig;
 
@@ -2316,10 +1779,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             _dmtSettings = settings;
             _currentTableLogicalName = settings?.Table?.LogicalName;
             _currentTableSettings = CreateTableSettingsFromDmt(settings);
-            _mappings = settings?.Mappings != null ? new List<Mapping>(settings.Mappings) : new List<Mapping>();
-            if (_sourceInstance != null)
-                _sourceInstance.Mappings = new List<Mapping>(_mappings);
-            RenderMappingsButton();
         }
 
         private TableSettings CreateTableSettingsFromDmt(DmtSettings settings)
@@ -2459,11 +1918,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             return bmp;
         }
 
-        private void RenderMappingsButton()
-        {
-            btnMappings.Font = (_mappings?.Any() == true) ? new Font(btnMappings.Font.Name, btnMappings.Font.Size, FontStyle.Bold) : new Font(btnMappings.Font.Name, btnMappings.Font.Size, FontStyle.Regular);
-        }
-
         private void MoveImportSettingsIntoDialogs()
         {
             tsmiExportData.Text = "To JSON";
@@ -2472,10 +1926,9 @@ namespace Dataverse.XrmTools.DataMigrationTool
             cbHideInvalid.Location = new Point(cbSelectAll.Right + 18, cbSelectAll.Top);
             gbAttributes.Controls.Add(cbHideInvalid);
             cbHideInvalid.BringToFront();
-            gbMappingSettings.Visible = false;
             gbOpSettings.Visible = false;
             gbViewSettings.Visible = false;
-            gbViewSettings.Location = gbMappingSettings.Location;
+            gbViewSettings.Location = gbOpSettings.Location;
         }
 
         private void ReRenderComponents(bool enable)
@@ -2491,10 +1944,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 gbTables.Enabled = enable;
                 if (targetReady) // source and target connection is available
                 {
-                    gbMappingSettings.Enabled = false;
                     gbOpSettings.Enabled = false;
-                    
-                    RenderMappingsButton();
                 }
 
                 if(tableSelected) // source connection is available and table is selected
@@ -2511,8 +1961,20 @@ namespace Dataverse.XrmTools.DataMigrationTool
             RenderExecutionPlanMenu(false);
         }
 
+        private UiSettings GetSavedUiSettings()
+        {
+            var saved = _settings?.UiSettings;
+            return new UiSettings
+            {
+                Action = saved?.Action ?? Enums.Action.None,
+                BatchSize = saved?.BatchSize ?? 0,
+                HideInvalidAttributes = saved?.HideInvalidAttributes ?? false
+            };
+        }
+
         public UiSettings ReadSettings(Enums.Action initial)
         {
+            var saved = GetSavedUiSettings();
             var mode = initial;
             if (cbCreate.Checked) mode |= Enums.Action.Create;
             if (cbUpdate.Checked) mode |= Enums.Action.Update;
@@ -2522,10 +1984,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             {
                 Action = mode,
                 BatchSize = nudBatchCount.Value.ToInt().Value,
-                MapUsers = cbMapUsers.Checked,
-                MapTeams = cbMapTeams.Checked,
-                MapBu = cbMapBu.Checked,
-                ApplyMappingsOn = rbMapOnExport.Checked ? Operation.Export : Operation.Import,
                 HideInvalidAttributes = cbHideInvalid.Checked
             };
 
@@ -2541,7 +1999,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private UiSettings GetDefaultImportSettings(Enums.Action initial)
         {
-            var saved = _settings.UiSettings ?? new UiSettings();
+            var saved = GetSavedUiSettings();
             var action = initial;
             if ((saved.Action & Enums.Action.Create) == Enums.Action.Create || saved.Action == Enums.Action.None)
                 action |= Enums.Action.Create;
@@ -2557,10 +2015,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             {
                 Action = action,
                 BatchSize = batchSize,
-                MapUsers = saved.MapUsers,
-                MapTeams = saved.MapTeams,
-                MapBu = saved.MapBu,
-                ApplyMappingsOn = saved.ApplyMappingsOn,
                 HideInvalidAttributes = saved.HideInvalidAttributes
             };
         }
@@ -2580,8 +2034,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 settings.Action |= Enums.Action.Create | Enums.Action.Update;
 
             settings.BatchSize = excelSettings.BatchSize > 0 ? Math.Min(excelSettings.BatchSize, 25) : settings.BatchSize;
-            settings.MapBu = excelSettings.MapBusinessUnit;
-            settings.ApplyMappingsOn = excelSettings.ApplyMappings ? Operation.Import : Operation.Export;
             return settings;
         }
 
@@ -2596,8 +2048,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             {
                 Action = uiSettings.Action,
                 BatchSize = uiSettings.BatchSize > 0 ? Math.Min(uiSettings.BatchSize, 25) : 25,
-                ApplyMappings = uiSettings.ApplyMappingsOn == Operation.Import,
-                MapBusinessUnit = uiSettings.MapBu,
                 MatchKeyMode = matchKeys.Any()
                     ? (string.IsNullOrWhiteSpace(config?.MatchKeyMode) ? "Custom" : config.MatchKeyMode)
                     : "Guid",
@@ -2696,8 +2146,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             pnlMain.ColumnStyles[0].SizeType = SizeType.Percent;
             pnlMain.ColumnStyles[0].Width = 100;
-
-            btnMappings.Left = (btnMappings.Parent.Width - btnMappings.Width) / 2;
         }
 
         private void lvTables_Resize(object sender, EventArgs e)
@@ -3064,35 +2512,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
         }
 
-        private void btnMappings_Click(object sender, EventArgs e)
-        {
-            if (_sourceClient == null) { return; }
-
-            try
-            {
-                var mappingsDlg = new Mappings(_sourceClient, _sourceInstance, _targetInstance, _tables, _settings);
-                mappingsDlg.ShowDialog(ParentForm);
-
-                if (mappingsDlg.Updated)
-                {
-                    _mappings = _sourceInstance.Mappings?
-                        .Where(map => _targetInstance == null || string.Equals(map.TargetInstanceName, _targetInstance.FriendlyName))
-                        .ToList() ?? new List<Mapping>();
-                    RenderMappingsButton();
-
-                    SettingsHelper.SetSettings(_settings);
-                    AutoSaveDmtSettings();
-                    SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Succesfully updated Organization Mappings"));
-                }
-            }
-            catch (Exception ex)
-            {
-                ManageWorkingState(false);
-                _logger.Log(LogLevel.ERROR, ex.Message);
-                MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
         private void btnFetchXmlBuilder_Click(object sender, EventArgs e)
         {
             try
@@ -3172,14 +2591,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 ManageWorkingState(false);
                 _logger.Log(LogLevel.ERROR, ex.Message);
                 MessageBox.Show(ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private void cbMapOption_CheckedChanged(object sender, EventArgs e)
-        {
-            if(_ready)
-            {
-                GenerateMappings();
             }
         }
 

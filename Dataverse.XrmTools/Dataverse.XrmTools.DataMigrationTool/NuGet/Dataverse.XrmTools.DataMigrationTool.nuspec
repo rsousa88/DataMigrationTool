@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
   <metadata>
     <id>Dataverse.XrmTools.DataMigrationTool</id>
-    <version>2026.5.25.1</version>
+    <version>2026.5.27.2</version>
     <title>Data Migration Tool</title>
     <authors>Rui Sousa</authors>
     <owners>Rui Sousa</owners>
@@ -14,14 +14,27 @@
     <description>
       Tool used to migrate data between Dataverse instances.
 
-      - Allows data to be exported to JSON format and later imported
-      - Supports Create, Update and Delete operations and attribute specification
+      - Creates portable .dmtproj project files with table configs, snapshots, mappings, execution plans, ID mappings, and run history
+      - Pulls Dataverse records into named snapshots and pushes snapshots to target environments
+      - Loads and exports project snapshots using JSON or Excel files
+      - Supports Create, Update and Delete operations and column selection
       - Easily filter data by using fetch XML filters
       - Integration with FetchXML Builder tool for easier query building
-      - Map records using several mapping options (auto or manual)
+      - Maps users, teams, business units, lookup values, and source-to-target record IDs
     </description>
     <summary>Migrate data between Dataverse instances</summary>
 	<releaseNotes>
+		2026.5.27.x
+		- [NEW] Project-backed migration workflows are now centered on portable .dmtproj files with table configs, snapshots, mappings, execution plans, ID mappings, and run history stored together
+		- [NEW] Snapshot actions now support pulling source data, loading files into project snapshots, exporting snapshots to JSON or Excel, and pushing snapshots to target environments
+		- [NEW] Push step configuration now separates payload column selection from GUID, alternate-key, and custom-column matching keys
+		- [NEW] Push lookup matching can now be configured per lookup column using source GUIDs, alternate keys, custom columns, or skipped fields
+		- [FIX] Plan validation is faster and separated from explicit count refreshes for heavier preview analysis
+		- [FIX] Project-local plan file paths are stored relatively and resolved from the .dmtproj location
+		- [FIX] Reconfigure is now available consistently for selected plan steps and no longer depends on preview state
+		- [FIX] Clean installations now include the SQLitePCLRaw batteries assembly required to create and open .dmtproj project files
+		- [FIX] Legacy mapping UI/code paths and obsolete mapping settings were removed from the active plugin surface
+
 		2026.5.25.x
 		- [NEW] SQLite-backed project files (.dmtproj) — all table configs, snapshots, ID mappings, and run history stored in a single portable file
 		- [NEW] Pull from Source — fetch records from Dataverse directly into a named project snapshot
@@ -70,6 +83,7 @@
 	<file src="..\bin\Release\ExcelNumberFormat.dll" target="lib\net48\Plugins\ExcelNumberFormat.dll" />
 	<file src="..\bin\Release\System.IO.Packaging.dll" target="lib\net48\Plugins\System.IO.Packaging.dll" />
 	<file src="..\bin\Release\Microsoft.Data.Sqlite.dll" target="lib\net48\Plugins\Microsoft.Data.Sqlite.dll" />
+	<file src="..\bin\Release\SQLitePCLRaw.batteries_v2.dll" target="lib\net48\Plugins\SQLitePCLRaw.batteries_v2.dll" />
 	<file src="..\bin\Release\SQLitePCLRaw.core.dll" target="lib\net48\Plugins\SQLitePCLRaw.core.dll" />
 	<file src="..\bin\Release\SQLitePCLRaw.provider.winsqlite3.dll" target="lib\net48\Plugins\SQLitePCLRaw.provider.winsqlite3.dll" />
   </files>

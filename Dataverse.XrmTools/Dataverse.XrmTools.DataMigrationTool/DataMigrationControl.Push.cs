@@ -1,5 +1,6 @@
 // System
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Windows.Forms;
 
@@ -30,6 +31,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             _tsmiPush = new ToolStripMenuItem("Add Snapshot to Plan");
             _tsmiPush.Click += (s, e) => AddPushSnapshotStepToExecutionPlan();
             _tsmiDeploy.DropDownItems.Add(_tsmiPush);
+
         }
 
         #endregion
@@ -94,6 +96,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
             if (!EnsureExecutionPlanLoaded()) return;
 
+            // Pre-populate match keys from per-table config defaults
+            var (savedTableConfig, _, _, _) = _project?.Service?.GetTableConfig(snapshot.TableLogicalName) ?? (null, null, null, null);
             var step = new ExecutionPlanStep
             {
                 Operation = "PushFromSnapshot",
@@ -108,7 +112,21 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 },
                 Snapshot = new ExecutionPlanStepSnapshot
                 {
-                    ImportSettings = new UiSettings { Action = DmtAction.Create | DmtAction.Update }
+                    ImportSettings = new UiSettings { Action = DmtAction.Create | DmtAction.Update },
+                    PushMatchKeyMode = savedTableConfig?.PushMatchKeyMode,
+                    PushMatchKeyFields = savedTableConfig?.PushMatchKeyFields != null
+                        ? new List<string>(savedTableConfig.PushMatchKeyFields)
+                        : new List<string>(),
+                    PushMatchAlternateKeyName = savedTableConfig?.PushMatchAlternateKeyName,
+                    LookupMatchKeys = savedTableConfig?.PushLookupMatchKeys?.Any() == true
+                        ? savedTableConfig.PushLookupMatchKeys.Select(k => new PushLookupMatchKey
+                        {
+                            LogicalName = k.LogicalName,
+                            Mode = k.Mode,
+                            AlternateKeyName = k.AlternateKeyName,
+                            Fields = k.Fields != null ? new List<string>(k.Fields) : new List<string>()
+                        }).ToList()
+                        : null
                 }
             };
 

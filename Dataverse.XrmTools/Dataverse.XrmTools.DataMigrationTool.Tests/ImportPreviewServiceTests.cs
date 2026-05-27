@@ -57,14 +57,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
                 Settings = new UiSettings { Action = DmtAction.Create | DmtAction.Update },
                 FilePath = "accounts.xlsx",
                 TargetName = "DEV",
-                MappingCount = 3,
                 ExistingTargetIdsProvider = ids => new HashSet<Guid> { existingId }
             });
 
             Assert.Equal("Excel", preview.SourceType);
             Assert.Equal("Excel export metadata", preview.SettingsSource);
             Assert.Equal("DEV", preview.TargetName);
-            Assert.Equal(3, preview.MappingCount);
             Assert.Equal(1, preview.CreateCount);
             Assert.Equal(1, preview.UpdateCount);
             Assert.Equal(1, preview.SkippedCount);

@@ -18,6 +18,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
         public string PlanName { get; set; }
         public string SourceName { get; set; }
         public string FallbackTargetName { get; set; }
+        public string ProjectDirectory { get; set; }
         public DateTime? Now { get; set; }
     }
 
@@ -123,7 +124,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     SettingsProvenance = Clone(step.SettingsProvenance),
                     SelectedAttributes = snapshot.SelectedAttributes?.ToList() ?? new List<string>(),
                     Filter = snapshot.Filter,
-                    Mappings = CloneMappings(snapshot.Mappings),
                     ExcelConfig = CloneExcelConfig(snapshot.ExcelConfig),
                     RecordCollection = Clone(snapshot.RecordCollection),
                     ImportMatchKeySelection = CloneImportMatchKeySelection(snapshot.ImportMatchKeySelection),
@@ -160,7 +160,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 {
                     SelectedAttributes = snapshot.SelectedAttributes?.ToList() ?? new List<string>(),
                     Filter = snapshot.Filter,
-                    Mappings = CloneMappings(snapshot.Mappings),
                     ExcelConfig = CloneExcelConfig(snapshot.ExcelConfig),
                     RecordCollection = Clone(snapshot.RecordCollection),
                     ImportMatchKeySelection = CloneImportMatchKeySelection(snapshot.ImportMatchKeySelection),
@@ -522,25 +521,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             };
         }
 
-        public static List<Mapping> CloneMappings(IEnumerable<Mapping> mappings)
-        {
-            return (mappings ?? Enumerable.Empty<Mapping>())
-                .Select(m => new Mapping
-                {
-                    Type = m.Type,
-                    TableDisplayName = m.TableDisplayName,
-                    TableLogicalName = m.TableLogicalName,
-                    AttributeDisplayName = m.AttributeDisplayName,
-                    AttributeLogicalName = m.AttributeLogicalName,
-                    SourceInstanceName = m.SourceInstanceName,
-                    SourceId = m.SourceId,
-                    TargetId = m.TargetId,
-                    TargetInstanceName = m.TargetInstanceName,
-                    State = m.State
-                })
-                .ToList();
-        }
-
         public static ExecutionPlanStep CloneStepForEnvironment(ExecutionPlanStep source, DmtEnvironmentInfo targetEnvironment = null)
         {
             if (source == null) throw new ArgumentNullException(nameof(source));
@@ -627,7 +607,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 ?? step?.TargetEnvironment?.UniqueName
                 ?? context?.FallbackTargetName;
 
-            return template
+            var resolved = template
                 .Replace("{date}", now.ToString("yyyy-MM-dd"))
                 .Replace("{datetime}", now.ToString("yyyy-MM-dd_HHmm"))
                 .Replace("{table}", SanitizePathToken(step?.Table?.LogicalName))
@@ -636,6 +616,45 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 .Replace("{source}", SanitizePathToken(context?.SourceName))
                 .Replace("{target}", SanitizePathToken(targetName))
                 .Replace("{planName}", SanitizePathToken(context?.PlanName));
+
+            if (!Path.IsPathRooted(resolved) && !string.IsNullOrWhiteSpace(context?.ProjectDirectory))
+                resolved = Path.GetFullPath(Path.Combine(context.ProjectDirectory, resolved));
+
+            return resolved;
+        }
+
+        public static string NormalizePlanPathForStorage(string path, string projectFilePath)
+        {
+            if (string.IsNullOrWhiteSpace(path) || string.IsNullOrWhiteSpace(projectFilePath) || !Path.IsPathRooted(path))
+                return path;
+
+            try
+            {
+                var projectDir = Path.GetDirectoryName(Path.GetFullPath(projectFilePath));
+                if (string.IsNullOrWhiteSpace(projectDir)) return path;
+
+                var fullPath = Path.GetFullPath(path);
+                var baseUri = new Uri(AppendDirectorySeparatorChar(projectDir), UriKind.Absolute);
+                var pathUri = new Uri(fullPath, UriKind.Absolute);
+                if (baseUri.Scheme != pathUri.Scheme || !baseUri.IsBaseOf(pathUri))
+                    return path;
+
+                return Uri.UnescapeDataString(baseUri.MakeRelativeUri(pathUri).ToString())
+                    .Replace('/', Path.DirectorySeparatorChar);
+            }
+            catch
+            {
+                return path;
+            }
+        }
+
+        private static string AppendDirectorySeparatorChar(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return path;
+            var last = path[path.Length - 1];
+            return last == Path.DirectorySeparatorChar || last == Path.AltDirectorySeparatorChar
+                ? path
+                : path + Path.DirectorySeparatorChar;
         }
 
         public static string SanitizePathToken(string value)
@@ -721,7 +740,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             step.Output = step.Output ?? new ExecutionPlanStepOutput();
             step.Snapshot = step.Snapshot ?? new ExecutionPlanStepSnapshot();
             step.Snapshot.SelectedAttributes = step.Snapshot.SelectedAttributes ?? new List<string>();
-            step.Snapshot.Mappings = step.Snapshot.Mappings ?? new List<Mapping>();
             step.Snapshot.PushMatchKeyFields = step.Snapshot.PushMatchKeyFields ?? new List<string>();
             step.FailurePolicy = step.FailurePolicy ?? new ExecutionPlanFailurePolicy();
             step.Validation = step.Validation ?? new ExecutionPlanValidation();

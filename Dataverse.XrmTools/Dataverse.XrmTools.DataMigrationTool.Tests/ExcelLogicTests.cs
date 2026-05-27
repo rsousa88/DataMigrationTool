@@ -68,7 +68,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
                 config.ImportSettings = new ExcelImportSettings
                 {
                     Action = Action.Create | Action.Update,
-                    ApplyMappings = true,
                     BatchSize = 50,
                     MatchKeyMode = "AlternateKey",
                     MatchAlternateKeyName = "ak_accountnumber",
@@ -86,7 +85,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
                 Assert.Equal("ak_accountnumber", loaded.MatchAlternateKeyName);
                 Assert.Equal(new[] { "accountnumber" }, loaded.MatchKeys);
                 Assert.Equal(Action.Create | Action.Update, loaded.ImportSettings.Action);
-                Assert.True(loaded.ImportSettings.ApplyMappings);
                 Assert.Equal(50, loaded.ImportSettings.BatchSize);
             }
         }

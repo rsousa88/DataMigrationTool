@@ -13,7 +13,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
     public class ExcelImportPreviewDialog : Form
     {
         private readonly ExcelImportPreview _preview;
-        private readonly System.Action _configureMappings;
         private readonly bool _previewOnly;
         private readonly ListView _list;
         private readonly CheckBox _cbCreate;
@@ -23,7 +22,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         private readonly Button _btnConfigureMatchKey;
         private readonly Label _lblCustomMatchKey;
         private readonly NumericUpDown _nudBatchSize;
-        private readonly CheckBox _cbApplyMappings;
         private readonly Button _btnImport;
         private readonly Button _btnRefresh;
         private List<string> _customMatchFields = new List<string>();
@@ -35,10 +33,9 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         public bool RefreshPreviewRequested { get; private set; }
         public bool MatchKeyChanged { get; private set; }
 
-        public ExcelImportPreviewDialog(ExcelImportPreview preview, string acceptButtonText = "Add to Plan", System.Action configureMappings = null, bool previewOnly = false)
+        public ExcelImportPreviewDialog(ExcelImportPreview preview, string acceptButtonText = "Add to Plan", bool previewOnly = false)
         {
             _preview = preview;
-            _configureMappings = configureMappings;
             _previewOnly = previewOnly;
             Settings = CloneSettings(preview.Settings);
             SelectedMatchKey = GetPreviewSelection(preview);
@@ -104,7 +101,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             _btnConfigureMatchKey = FindControl<Button>("btnConfigureMatchKey");
             _lblCustomMatchKey = FindControl<Label>("lblCustomMatchKey");
             _nudBatchSize = FindControl<NumericUpDown>("nudBatchSize");
-            _cbApplyMappings = FindControl<CheckBox>("cbApplyMappings");
             _btnConfigureMatchKey.Click += (s, e) => ConfigureCustomMatchKey();
             _cboMatchMode.SelectedIndexChanged += (s, e) =>
             {
@@ -114,7 +110,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             _cboAlternateKey.SelectedIndexChanged += (s, e) => UpdatePreviewRefreshState();
             _cbCreate.CheckedChanged += (s, e) => UpdatePreviewRefreshState();
             _cbUpdate.CheckedChanged += (s, e) => UpdatePreviewRefreshState();
-            _cbApplyMappings.CheckedChanged += (s, e) => UpdatePreviewRefreshState();
             if (_previewOnly)
             {
                 SetSettingsControlsEnabled(false);
@@ -176,15 +171,14 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
 
         private Control BuildSummaryContent()
         {
-            var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 6, Padding = new Padding(8, 4, 8, 4) };
+            var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 5, Padding = new Padding(8, 4, 8, 4) };
             panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 92F));
             panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             AddSummaryRow(panel, "Rows", _preview.TotalRows.ToString(), 0);
             AddSummaryRow(panel, "Create", _preview.CreateCount.ToString(), 1);
             AddSummaryRow(panel, "Update", _preview.UpdateCount.ToString(), 2);
             AddSummaryRow(panel, "Skipped", _preview.SkippedCount.ToString(), 3);
-            AddSummaryRow(panel, "Mappings", _preview.MappingCount.ToString(), 4);
-            AddSummaryRow(panel, "Match key", string.IsNullOrWhiteSpace(_preview.MatchKey) ? "record GUID" : _preview.MatchKey, 5);
+            AddSummaryRow(panel, "Match key", string.IsNullOrWhiteSpace(_preview.MatchKey) ? "record GUID" : _preview.MatchKey, 4);
             return panel;
         }
 
@@ -235,17 +229,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
 
             panel.Controls.Add(new Label { Text = "Batch size:", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 4);
             panel.Controls.Add(new NumericUpDown { Name = "nudBatchSize", Dock = DockStyle.Left, Width = 86, Minimum = 1, Maximum = 100, Value = Math.Max(1, Math.Min(100, Settings.BatchSize)) }, 1, 4);
-
-            panel.Controls.Add(new Label { Text = "Mappings:", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 5);
-            var mappingPanel = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, Margin = Padding.Empty, WrapContents = false };
-            mappingPanel.Controls.Add(new CheckBox { Name = "cbApplyMappings", Text = "Use organization mappings", AutoSize = true, Checked = Settings.ApplyMappingsOn == Operation.Import });
-            if (_configureMappings != null)
-            {
-                var configure = new Button { Text = "Configure...", Width = 88, Height = 25, Margin = new Padding(8, 2, 0, 0) };
-                configure.Click += (s, e) => _configureMappings();
-                mappingPanel.Controls.Add(configure);
-            }
-            panel.Controls.Add(mappingPanel, 1, 5);
 
             var note = new Label
             {
@@ -384,14 +367,14 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
 
         private void SetSettingsControlsEnabled(bool enabled)
         {
-            foreach (var control in new Control[] { _cbCreate, _cbUpdate, _cboMatchMode, _cboAlternateKey, _btnConfigureMatchKey, _nudBatchSize, _cbApplyMappings }.Where(c => c != null))
+            foreach (var control in new Control[] { _cbCreate, _cbUpdate, _cboMatchMode, _cboAlternateKey, _btnConfigureMatchKey, _nudBatchSize }.Where(c => c != null))
                 control.Enabled = enabled;
         }
 
         private string GetSettingsNoteText()
         {
             var source = string.IsNullOrWhiteSpace(_preview.SettingsSource) ? "current settings" : _preview.SettingsSource;
-            return $"Settings source: {source}. Operation and mapping changes apply when the plan executes. Changing the match key refreshes the preview first.";
+            return $"Settings source: {source}. Operation changes apply when the plan executes. Changing the match key refreshes the preview first.";
         }
 
         private bool SettingsWereLoadedFromExcel()
@@ -403,8 +386,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         {
             return Settings.Action != _preview.Settings.Action
                 || Settings.BatchSize != _preview.Settings.BatchSize
-                || Settings.MapBu != _preview.Settings.MapBu
-                || Settings.ApplyMappingsOn != _preview.Settings.ApplyMappingsOn
                 || !MatchKeySelectionEquals(GetPreviewSelection(_preview), SelectedMatchKey);
         }
 
@@ -509,11 +490,10 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
 
         private bool IsPreviewRefreshRequired()
         {
-            if (_cbCreate == null || _cbUpdate == null || _cbApplyMappings == null || _cboMatchMode == null) return false;
+            if (_cbCreate == null || _cbUpdate == null || _cboMatchMode == null) return false;
 
             return HasMatchKeyChanged(ReadMatchKeySelection())
-                || GetSelectedAction() != _preview.Settings.Action
-                || GetSelectedApplyMappingsOn() != _preview.Settings.ApplyMappingsOn;
+                || GetSelectedAction() != _preview.Settings.Action;
         }
 
         private ExcelImportMatchKeySelection ReadMatchKeySelection()
@@ -584,10 +564,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             {
                 Action = GetSelectedAction(),
                 BatchSize = (int)_nudBatchSize.Value,
-                MapUsers = false,
-                MapTeams = false,
-                MapBu = Settings.MapBu,
-                ApplyMappingsOn = GetSelectedApplyMappingsOn(),
                 HideInvalidAttributes = Settings.HideInvalidAttributes
             };
         }
@@ -600,11 +576,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             return action;
         }
 
-        private Operation GetSelectedApplyMappingsOn()
-        {
-            return _cbApplyMappings.Checked ? Operation.Import : Operation.Export;
-        }
-
         private UiSettings CloneSettings(UiSettings settings)
         {
             settings = settings ?? new UiSettings();
@@ -612,10 +583,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             {
                 Action = settings.Action,
                 BatchSize = settings.BatchSize <= 0 ? 25 : Math.Min(settings.BatchSize, 25),
-                MapUsers = false,
-                MapTeams = false,
-                MapBu = settings.MapBu,
-                ApplyMappingsOn = settings.ApplyMappingsOn,
                 HideInvalidAttributes = settings.HideInvalidAttributes
             };
         }

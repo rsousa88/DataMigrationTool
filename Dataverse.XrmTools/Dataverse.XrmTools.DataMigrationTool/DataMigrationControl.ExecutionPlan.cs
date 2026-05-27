@@ -392,6 +392,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             _executionPlanSaveButton = AddExecutionPlanToolStripButton(globalActions, "Save", (s, e) => SaveExecutionPlan());
             _executionPlanSaveAsButton = AddExecutionPlanToolStripButton(globalActions, "Save As", (s, e) => SaveExecutionPlanAs());
             _executionPlanValidateButton = AddExecutionPlanToolStripButton(globalActions, "Validate", (s, e) => ValidateExecutionPlan());
+            _executionPlanRefreshCountsButton = AddExecutionPlanToolStripButton(globalActions, "Refresh Counts", (s, e) => RefreshExecutionPlanCounts());
             _executionPlanExecuteButton = AddExecutionPlanToolStripButton(globalActions, "Execute Plan", (s, e) => ExecuteExecutionPlan());
 
             _executionPlanSteps = new ListView
@@ -443,7 +444,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
             var stepActions = CreateExecutionPlanToolStrip();
             _executionPlanPreviewStepButton = AddExecutionPlanToolStripButton(stepActions, "Preview", (s, e) => PreviewSelectedExecutionPlanStep());
-            _executionPlanConfigureStepButton = AddExecutionPlanToolStripButton(stepActions, "Configure", (s, e) => ReconfigureSelectedExecutionPlanStep());
+            _executionPlanConfigureStepButton = AddExecutionPlanToolStripButton(stepActions, "Reconfigure", (s, e) => ReconfigureSelectedExecutionPlanStep());
             _executionPlanExecuteStepButton = AddExecutionPlanToolStripButton(stepActions, "Execute Step", (s, e) => ExecuteSelectedExecutionPlanStep());
             stepActions.Items.Add(new ToolStripSeparator());
             _executionPlanCloneStepButton = AddExecutionPlanToolStripButton(stepActions, "Clone", (s, e) => CloneSelectedExecutionPlanStep());
@@ -562,7 +563,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             var menu = new ContextMenuStrip();
             menu.Items.Add("Preview", null, (s, e) => PreviewSelectedExecutionPlanStep());
-            menu.Items.Add("Configure", null, (s, e) => ReconfigureSelectedExecutionPlanStep());
+            menu.Items.Add("Reconfigure", null, (s, e) => ReconfigureSelectedExecutionPlanStep());
             menu.Items.Add("Execute Step", null, (s, e) => ExecuteSelectedExecutionPlanStep());
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("Clone", null, (s, e) => CloneSelectedExecutionPlanStep());
@@ -721,49 +722,9 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 },
                 DeselectedAttributes = deselected,
                 Filter = step.Snapshot?.Filter,
-                Mappings = ExecutionPlanService.CloneMappings(step.Snapshot?.Mappings ?? new List<Mapping>()),
                 ExcelConfig = ExecutionPlanService.CloneExcelConfig(step.Snapshot?.ExcelConfig),
                 ImportSettings = importSettings
             };
-        }
-
-        private void RefreshExecutionPlanStepMappingsForTarget(ExecutionPlanStep step)
-        {
-            if (step?.Snapshot == null) return;
-
-            var settings = (step.Operation ?? string.Empty).StartsWith("Import", StringComparison.OrdinalIgnoreCase)
-                ? step.Snapshot.ImportSettings
-                : step.Snapshot.ExportSettings;
-            if (settings == null) return;
-
-            var previousClientOverride = _executionTargetClientOverride;
-            var previousInstanceOverride = _executionTargetInstanceOverride;
-            try
-            {
-                if (TrySetExecutionTargetOverride(step, out _))
-                    step.Snapshot.Mappings = ExecutionPlanService.CloneMappings(BuildMappingsForImport(settings));
-            }
-            finally
-            {
-                _executionTargetClientOverride = previousClientOverride;
-                _executionTargetInstanceOverride = previousInstanceOverride;
-            }
-        }
-
-        private List<Mapping> BuildMappingsForStepTarget(ExecutionPlanStep step, UiSettings settings)
-        {
-            var previousClientOverride = _executionTargetClientOverride;
-            var previousInstanceOverride = _executionTargetInstanceOverride;
-            try
-            {
-                SetExecutionTargetOverride(step?.TargetEnvironment);
-                return BuildMappingsForImport(settings);
-            }
-            finally
-            {
-                _executionTargetClientOverride = previousClientOverride;
-                _executionTargetInstanceOverride = previousInstanceOverride;
-            }
         }
 
         private void RenderExecutionPlanRowTargetEditors()
@@ -871,7 +832,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (string.IsNullOrWhiteSpace(option.UniqueName))
             {
                 step.TargetEnvironment = null;
-                RefreshExecutionPlanStepMappingsForTarget(step);
                 _executionPlanValidatedForExecution = false;
                 ExecutionPlanService.ValidatePlan(_executionPlan);
                 AutoSaveExecutionPlan(true);
@@ -884,7 +844,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 UniqueName = option.UniqueName,
                 FriendlyName = option.FriendlyName
             };
-            RefreshExecutionPlanStepMappingsForTarget(step);
             _executionPlanValidatedForExecution = false;
             ExecutionPlanService.ValidatePlan(_executionPlan);
             AutoSaveExecutionPlan(true);
@@ -965,11 +924,10 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (_executionPlanSaveButton != null) _executionPlanSaveButton.Enabled = hasPlan;
             if (_executionPlanSaveAsButton != null) _executionPlanSaveAsButton.Enabled = _executionPlan != null;
             if (_executionPlanValidateButton != null) _executionPlanValidateButton.Enabled = hasPlan;
+            if (_executionPlanRefreshCountsButton != null) _executionPlanRefreshCountsButton.Enabled = hasPlan;
             if (_executionPlanExecuteButton != null) _executionPlanExecuteButton.Enabled = CanExecuteValidatedExecutionPlan();
 
-            var canConfigure = !_working && _executionPlan != null && hasSelectedStep &&
-                ((canPreviewStep && (selectedStep.Operation ?? string.Empty).StartsWith("Import", StringComparison.OrdinalIgnoreCase)) ||
-                 ExecutionPlanService.IsPushSnapshotStep(selectedStep));
+            var canConfigure = !_working && _executionPlan != null && hasSelectedStep;
 
             if (_executionPlanPreviewStepButton != null) _executionPlanPreviewStepButton.Enabled = canPreviewStep;
             if (_executionPlanConfigureStepButton != null) _executionPlanConfigureStepButton.Enabled = canConfigure;
@@ -982,7 +940,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (_executionPlanStepContextMenu != null)
             {
                 SetContextMenuItemEnabled("Preview", canPreviewStep);
-                SetContextMenuItemEnabled("Configure", canConfigure);
+                SetContextMenuItemEnabled("Reconfigure", canConfigure);
                 SetContextMenuItemEnabled("Execute Step", canExecuteStep);
                 SetContextMenuItemEnabled("Clone", hasSelectedStep);
                 SetContextMenuItemEnabled("Move Up", canMoveUp);
@@ -1166,7 +1124,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
 
             var clone = ExecutionPlanService.CloneStepForEnvironment(step, targetEnvironment);
-            RefreshExecutionPlanStepMappingsForTarget(clone);
             _executionPlan.Steps.Insert(index + 1, clone);
             ExecutionPlanService.ValidatePlan(_executionPlan);
             _executionPlanValidatedForExecution = false;
@@ -1258,7 +1215,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
                     if (evt.Result is ExcelImportPreview importPreview)
                     {
-                        using (var dlg = new ExcelImportPreviewDialog(importPreview, "Close", null, true))
+                        using (var dlg = new ExcelImportPreviewDialog(importPreview, "Close", true))
                             dlg.ShowDialog(ParentForm);
                         return;
                     }
@@ -1280,7 +1237,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             var step = GetSelectedExecutionPlanStep();
             if (step == null)
             {
-                MessageBox.Show("Select a step to configure.", "Execution Plan", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("Select a step to reconfigure.", "Execution Plan", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
@@ -1305,7 +1262,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 {
                     if (dlg.ShowDialog(ParentForm) != DialogResult.OK) return;
                 }
-                step.Snapshot.Mappings = ExecutionPlanService.CloneMappings(BuildMappingsForStepTarget(step, step.Snapshot.ExportSettings ?? GetDefaultImportSettings(Enums.Action.None)));
                 _executionPlanValidatedForExecution = false;
                 ExecutionPlanService.ValidatePlan(_executionPlan);
                 AutoSaveExecutionPlan(true);
@@ -1343,13 +1299,13 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     if (evt.Error != null)
                     {
                         _logger.Log(LogLevel.ERROR, evt.Error.ToString());
-                        MessageBox.Show(evt.Error.Message, "Configure Step", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        MessageBox.Show(evt.Error.Message, "Reconfigure Step", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         return;
                     }
 
                     var preview = evt.Result as ExcelImportPreview;
                     if (preview == null) return;
-                    using (var dlg = new ExcelImportPreviewDialog(preview, "Apply", () => ConfigureMappingsForExecutionTarget(step.TargetEnvironment)))
+                    using (var dlg = new ExcelImportPreviewDialog(preview, "Apply"))
                     {
                         var result = dlg.ShowDialog(ParentForm);
                         if (result == DialogResult.Retry)
@@ -1376,7 +1332,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             step.Snapshot.ImportMatchKeySelection = ExecutionPlanService.CloneImportMatchKeySelection(matchKey);
             if (step.Snapshot.ExcelConfig != null)
                 ApplyImportMatchKeySelection(step.Snapshot.ExcelConfig, matchKey);
-            step.Snapshot.Mappings = ExecutionPlanService.CloneMappings(BuildMappingsForStepTarget(step, settings));
             if (preview != null)
                 step.Validation.Preview = ExecutionPlanService.ToPreviewSummary(preview, "Captured preview", false, false);
             ExecutionPlanService.ValidatePlan(_executionPlan);
@@ -1385,10 +1340,20 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void ValidateExecutionPlan()
         {
+            ValidateExecutionPlan(includePreviewCounts: false, title: "Validating execution plan...", completionTitle: "Validation complete.");
+        }
+
+        private void RefreshExecutionPlanCounts()
+        {
+            ValidateExecutionPlan(includePreviewCounts: true, title: "Refreshing plan counts...", completionTitle: "Preview/count refresh complete.");
+        }
+
+        private void ValidateExecutionPlan(bool includePreviewCounts, string title, string completionTitle)
+        {
             if (!EnsureExecutionPlanLoaded()) return;
             UpdateExecutionPlanTargetEnvironments();
 
-            ManageWorkingState(true, "Validating execution plan...");
+            ManageWorkingState(true, title);
             WorkAsync(new WorkAsyncInfo
             {
                 AsyncArgument = _executionPlan,
@@ -1396,7 +1361,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 Work = (worker, evt) =>
                 {
                     var plan = evt.Argument as ExecutionPlan;
-                    ValidateExecutionPlanInternal(plan, worker, true);
+                    ValidateExecutionPlanInternal(plan, worker, includePreviewCounts);
                     evt.Result = plan;
                 },
                 PostWorkCallBack = evt =>
@@ -1418,7 +1383,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     _executionPlanValidatedForExecution = !_executionPlan.Steps.Any(s => s.Enabled && string.Equals(s.Validation?.Status, "Error", StringComparison.OrdinalIgnoreCase));
                     RenderExecutionPlanMenu();
                     MessageBox.Show(
-                        $"Validation complete.{Environment.NewLine}{Environment.NewLine}Steps: {_executionPlan.Steps.Count}{Environment.NewLine}Errors: {errors}{Environment.NewLine}Warnings: {warnings}",
+                        $"{completionTitle}{Environment.NewLine}{Environment.NewLine}Steps: {_executionPlan.Steps.Count}{Environment.NewLine}Errors: {errors}{Environment.NewLine}Warnings: {warnings}",
                         "Execution Plan",
                         MessageBoxButtons.OK,
                         errors > 0 ? MessageBoxIcon.Error : warnings > 0 ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
@@ -1713,7 +1678,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 {
                     EnsureOutputDirectory(path);
                     var logic = new DataLogic(worker, _sourceClient, ActiveTargetClient);
-                    logic.Export(tableData, step.Snapshot.ExportSettings ?? GetDefaultImportSettings(Enums.Action.None), path, step.Snapshot.Mappings, false);
+                    logic.Export(tableData, step.Snapshot.ExportSettings ?? GetDefaultImportSettings(Enums.Action.None), path, false);
                     return new ExecutionPlanStepExecutionResult { Summary = $"{step.Name}: exported JSON to {path}" };
                 }
                 case "ExportToExcel":
@@ -1733,7 +1698,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     ImportFileDataChecks(collection);
                     ApplyJsonImportMatchKeySelection(collection, tableData, step.Snapshot?.ImportMatchKeySelection);
                     var logic = new DataLogic(worker, _sourceClient, ActiveTargetClient);
-                    var result = logic.Import(tableData, collection, step.Snapshot.ImportSettings ?? GetDefaultImportSettings(Enums.Action.None), step.Snapshot.Mappings, false);
+                    var result = logic.Import(tableData, collection, step.Snapshot.ImportSettings ?? GetDefaultImportSettings(Enums.Action.None), false);
                     AddImportedRecordsToPlanLookupContext(runtimeLookupContexts, step, collection, result?.SuccessfulIdMap ?? GetSuccessfulResultIdMap(result?.Items));
                     return BuildExecutionStepResult(step, result, "imported JSON");
                 }
@@ -1762,7 +1727,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     planLookupResolver);
                     ApplyPlanGuidMatches(collection, tableData, planLookupResolver);
                     var logic = new DataLogic(worker, _sourceClient, ActiveTargetClient);
-                    var result = logic.Import(tableData, collection, step.Snapshot.ImportSettings ?? GetDefaultImportSettings(config, Enums.Action.None), step.Snapshot.Mappings, false);
+                    var result = logic.Import(tableData, collection, step.Snapshot.ImportSettings ?? GetDefaultImportSettings(config, Enums.Action.None), false);
                     if (result != null && config != null)
                     {
                         var importedIds = result.SuccessfulIdMap ?? GetSuccessfulResultIdMap(result.Items);
@@ -1791,7 +1756,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             var settings = step.Snapshot?.ImportSettings ?? new UiSettings { Action = Enums.Action.Create | Enums.Action.Update };
             var pushMatchKey = BuildPushMatchKeySelection(step.Snapshot);
 
-            var result = SqliteDataLogic.Push(_project.Service, snapshotName, sourceEnvId, targetEnvId, ActiveTargetClient, settings, worker, pushMatchKey, step.Snapshot?.LookupMatchKeys);
+            var result = SqliteDataLogic.Push(_project.Service, snapshotName, sourceEnvId, targetEnvId, ActiveTargetClient, settings, worker, pushMatchKey, step.Snapshot?.LookupMatchKeys, step.Snapshot?.SelectedColumns);
 
             var summary = $"{step.Name}: {result?.Created ?? 0} created, {result?.Updated ?? 0} updated, {result?.Skipped ?? 0} skipped";
             if (result?.Errors?.Any() == true)
@@ -1861,7 +1826,19 @@ namespace Dataverse.XrmTools.DataMigrationTool
             else
             {
                 foreach (var step in plan.Steps.Where(s => s.Enabled))
-                    RefreshExecutionPlanStepStatus(step);
+                {
+                    try
+                    {
+                        if (ExecutionPlanService.IsPushSnapshotStep(step))
+                            ValidatePushFromSnapshotStep(step);
+                        else
+                            ValidateExecutionPlanStepSnapshot(step);
+                    }
+                    finally
+                    {
+                        RefreshExecutionPlanStepStatus(step);
+                    }
+                }
             }
         }
 
@@ -1916,15 +1893,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 foreach (var name in missingAttributes)
                     AddExecutionPlanValidationMessage(step, "Error", $"Captured attribute no longer exists on '{step.Table.LogicalName}': {name}");
 
-                var stepTableName = step.Table?.LogicalName;
-                var mappingAttributes = (step.Snapshot?.Mappings ?? new List<Mapping>())
-                    .Where(mapping => string.IsNullOrWhiteSpace(mapping.TableLogicalName)
-                        || string.Equals(mapping.TableLogicalName, stepTableName, StringComparison.OrdinalIgnoreCase))
-                    .Select(m => m.AttributeLogicalName)
-                    .Where(name => !string.IsNullOrWhiteSpace(name))
-                    .Distinct(StringComparer.OrdinalIgnoreCase);
-                foreach (var name in mappingAttributes.Where(name => !allAttributes.Any(attr => attr.LogicalName.Equals(name, StringComparison.OrdinalIgnoreCase))))
-                    AddExecutionPlanValidationMessage(step, "Warning", $"Captured mapping references an attribute that is not in the current table metadata: {name}");
             }
             catch (Exception ex)
             {
@@ -2061,6 +2029,34 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         _project?.Service, srcId, tgtId, planTableNames, targetClient, relData))
                     {
                         if (dlg.ShowDialog(ParentForm) != DialogResult.OK) return;
+                    }
+
+                    // Persist match key selections as per-table defaults for future steps
+                    if (_project?.Service != null && snapshot != null)
+                    {
+                        try
+                        {
+                            var (tc, dn, pid, pna) = _project.Service.GetTableConfig(snapshot.TableLogicalName);
+                            if (tc != null)
+                            {
+                                tc.PushMatchKeyMode = step.Snapshot?.PushMatchKeyMode;
+                                tc.PushMatchKeyFields = step.Snapshot?.PushMatchKeyFields != null
+                                    ? new List<string>(step.Snapshot.PushMatchKeyFields)
+                                    : new List<string>();
+                                tc.PushMatchAlternateKeyName = step.Snapshot?.PushMatchAlternateKeyName;
+                                tc.PushLookupMatchKeys = step.Snapshot?.LookupMatchKeys != null
+                                    ? step.Snapshot.LookupMatchKeys.Select(k => new PushLookupMatchKey
+                                    {
+                                        LogicalName = k.LogicalName,
+                                        Mode = k.Mode,
+                                        AlternateKeyName = k.AlternateKeyName,
+                                        Fields = k.Fields != null ? new List<string>(k.Fields) : new List<string>()
+                                    }).ToList()
+                                    : new List<PushLookupMatchKey>();
+                                _project.Service.SaveTableConfig(snapshot.TableLogicalName, dn, pid, pna, tc);
+                            }
+                        }
+                        catch { }
                     }
 
                     onConfigured(step);
@@ -2367,7 +2363,10 @@ namespace Dataverse.XrmTools.DataMigrationTool
             {
                 PlanName = _executionPlan?.Name,
                 SourceName = _sourceClient?.ConnectedOrgFriendlyName ?? _sourceClient?.ConnectedOrgUniqueName,
-                FallbackTargetName = ActiveTargetClient?.ConnectedOrgFriendlyName ?? ActiveTargetClient?.ConnectedOrgUniqueName
+                FallbackTargetName = ActiveTargetClient?.ConnectedOrgFriendlyName ?? ActiveTargetClient?.ConnectedOrgUniqueName,
+                ProjectDirectory = !string.IsNullOrWhiteSpace(_project?.FilePath)
+                    ? Path.GetDirectoryName(Path.GetFullPath(_project.FilePath))
+                    : null
             };
         }
 
@@ -2395,7 +2394,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             var step = CreateBaseExecutionPlanStep(operation, tableData);
             step.TargetEnvironment = null;
             step.Name = $"{GetOperationDisplayName(operation)} {tableData.Table.DisplayName}";
-            step.Output.PathTemplate = outputPath;
+            step.Output.PathTemplate = NormalizeProjectPlanPath(outputPath);
             step.Snapshot.ExportSettings = uiSettings;
             step.Snapshot.ExcelConfig = excelConfig;
             step.Snapshot.SelectedAttributes = (tableData.SelectedAttributes ?? Enumerable.Empty<Models.Attribute>())
@@ -2404,63 +2403,11 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
             step.Snapshot.Filter = tableData.Settings?.Filter;
-            step.Snapshot.Mappings = ExecutionPlanService.CloneMappings(BuildMappingsForStepTarget(step, uiSettings));
-
             _executionPlan.Steps.Add(step);
             ExecutionPlanService.ValidatePlan(_executionPlan);
             _executionPlanValidatedForExecution = false;
             AutoSaveExecutionPlan(true);
             SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Added '{step.Name}' to execution plan"));
-        }
-
-        private void AddImportStepToExecutionPlan(ExcelImportSession session, TableData tableData, UiSettings uiSettings, ExcelImportMatchKeySelection matchKey, ExcelImportPreview preview)
-        {
-            if (!EnsureExecutionPlanLoaded()) return;
-
-            var operation = string.Equals(session.SourceType, "JSON", StringComparison.OrdinalIgnoreCase)
-                ? "ImportFromJson"
-                : "ImportFromExcel";
-            var step = CreateBaseExecutionPlanStep(operation, tableData);
-            if (session.TargetEnvironment != null)
-                step.TargetEnvironment = session.TargetEnvironment;
-            step.Name = $"{GetOperationDisplayName(operation)} {tableData.Table.DisplayName}";
-            step.Input.Path = session.FilePath;
-            ApplyAutomaticStepLink(step, session.FilePath);
-            step.Snapshot.ImportSettings = uiSettings;
-            step.Snapshot.ExcelConfig = session.Config;
-            step.Snapshot.RecordCollection = session.Collection;
-            step.Snapshot.ImportMatchKeySelection = ExecutionPlanService.CloneImportMatchKeySelection(matchKey);
-            step.Snapshot.Mappings = ExecutionPlanService.CloneMappings(BuildMappingsForStepTarget(step, uiSettings));
-            step.Validation.Preview = preview == null ? null : new ExecutionPlanPreviewSummary
-            {
-                Rows = preview.TotalRows,
-                Creates = preview.CreateCount,
-                Updates = preview.UpdateCount,
-                Skips = preview.SkippedCount,
-                Warnings = preview.ImportErrors?.Count ?? 0,
-                Errors = preview.Items?.Count(i => string.Equals(i.Action, "Skip", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(i.Warnings)) ?? 0,
-                Source = "Captured preview",
-                IsEstimated = false,
-                IsStale = false
-            };
-
-            if (matchKey != null && step.Snapshot.ExcelConfig != null)
-                ApplyImportMatchKeySelection(step.Snapshot.ExcelConfig, matchKey);
-
-            _executionPlan.Steps.Add(step);
-            ExecutionPlanService.ValidatePlan(_executionPlan);
-            _executionPlanValidatedForExecution = false;
-            AutoSaveExecutionPlan(true);
-            SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Added '{step.Name}' to execution plan"));
-        }
-
-        private ImportSourceDialog SelectImportSource(string title, string fileFilter, string linkedExportOperation)
-        {
-            var linkedSteps = GetCompatiblePlanExportSteps(linkedExportOperation);
-            using (var dlg = new ImportSourceDialog(title, fileFilter, linkedSteps))
-            {
-                return dlg.ShowDialog(ParentForm) == DialogResult.OK ? dlg : null;
-            }
         }
 
         private DmtEnvironmentInfo SelectOperationTargetEnvironment(string title)
@@ -2538,69 +2485,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
         }
 
-        private bool TrySelectImportPreviewTarget(string title, out DmtEnvironmentInfo targetEnvironment)
-        {
-            targetEnvironment = null;
-            if (!GetLoadedTargetEnvironments().Any())
-            {
-                MessageBox.Show(
-                    "Connect a target environment before configuring an import from a file.\n\n" +
-                    "The import preview needs a target to determine which rows will be created or updated and to resolve match keys/lookups correctly.",
-                    "Target Required",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
-                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs("Import configuration requires a target environment"));
-                return false;
-            }
-
-            targetEnvironment = SelectOperationTargetEnvironment(title);
-            return targetEnvironment != null;
-        }
-
-        private List<ExecutionPlanStep> GetCompatiblePlanExportSteps(string exportOperation)
-        {
-            return ExecutionPlanService.GetCompatibleExportSteps(_executionPlan, exportOperation);
-        }
-
-        private void AddLinkedImportStepToExecutionPlan(ExecutionPlanStep sourceStep, string importOperation, DmtEnvironmentInfo targetEnvironment)
-        {
-            if (sourceStep == null) return;
-            if (!EnsureExecutionPlanLoaded()) return;
-
-            var tableData = BuildTableDataForExecutionStep(sourceStep);
-            var uiSettings = ReadSettings(Enums.Action.None);
-            var step = CreateBaseExecutionPlanStep(importOperation, tableData);
-            if (targetEnvironment != null)
-                step.TargetEnvironment = targetEnvironment;
-            step.Name = $"{GetOperationDisplayName(importOperation)} {tableData.Table.DisplayName}";
-            step.Input.Mode = "FromStepOutput";
-            step.Input.SourceStepId = sourceStep.Id;
-            step.Input.Path = null;
-            step.Snapshot.ImportSettings = uiSettings;
-            step.Snapshot.ExcelConfig = ExecutionPlanService.CloneExcelConfig(sourceStep.Snapshot?.ExcelConfig);
-            step.Snapshot.ImportMatchKeySelection = ExecutionPlanService.CloneImportMatchKeySelection(sourceStep.Snapshot?.ImportMatchKeySelection);
-            step.Snapshot.SelectedAttributes = sourceStep.Snapshot?.SelectedAttributes?.ToList() ?? new List<string>();
-            step.Snapshot.Filter = sourceStep.Snapshot?.Filter;
-            step.Snapshot.Mappings = ExecutionPlanService.CloneMappings(BuildMappingsForStepTarget(step, uiSettings));
-            step.Validation.Preview = new ExecutionPlanPreviewSummary
-            {
-                Rows = sourceStep.Validation?.Preview?.Rows ?? 0,
-                Source = "Linked export output",
-                IsEstimated = true,
-                IsStale = true
-            };
-
-            var sourceIndex = _executionPlan.Steps.FindIndex(s => string.Equals(s.Id, sourceStep.Id, StringComparison.OrdinalIgnoreCase));
-            if (sourceIndex >= 0)
-                _executionPlan.Steps.Insert(sourceIndex + 1, step);
-            else
-                _executionPlan.Steps.Add(step);
-            ExecutionPlanService.ValidatePlan(_executionPlan);
-            _executionPlanValidatedForExecution = false;
-            AutoSaveExecutionPlan(true);
-            SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Added linked '{step.Name}' to execution plan"));
-        }
-
         private ExecutionPlanStep CreateBaseExecutionPlanStep(string operation, TableData tableData)
         {
             UpdateExecutionPlanTargetEnvironments();
@@ -2610,6 +2494,11 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private void ApplyAutomaticStepLink(ExecutionPlanStep importStep, string inputPath)
         {
             ExecutionPlanService.ApplyAutomaticStepLink(_executionPlan, importStep, inputPath);
+        }
+
+        private string NormalizeProjectPlanPath(string path)
+        {
+            return ExecutionPlanService.NormalizePlanPathForStorage(path, _project?.FilePath);
         }
 
         private string GetOperationDisplayName(string operation)

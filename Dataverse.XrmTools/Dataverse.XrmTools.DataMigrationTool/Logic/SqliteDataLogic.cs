@@ -11,7 +11,6 @@ using Microsoft.Xrm.Sdk.Metadata;
 using Microsoft.Xrm.Sdk.Query;
 
 // DataMigrationTool
-using Dataverse.XrmTools.DataMigrationTool.AppSettings;
 using Dataverse.XrmTools.DataMigrationTool.Models;
 using Dataverse.XrmTools.DataMigrationTool.Repositories;
 using DmtAction = Dataverse.XrmTools.DataMigrationTool.Enums.Action;
@@ -486,7 +485,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             UiSettings settings,
             BackgroundWorker worker,
             ExcelImportMatchKeySelection matchKeyOverride = null,
-            List<PushLookupMatchKey> lookupMatchKeys = null)
+            List<PushLookupMatchKey> lookupMatchKeys = null,
+            List<string> selectedColumns = null)
         {
             var result = new PushResult();
 
@@ -498,6 +498,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 throw new InvalidOperationException($"No table config found for '{snapshot.TableLogicalName}'. Load the table attributes first.");
 
             var cols = snapshot.ColumnConfig;
+            // Apply step-level column filter
+            if (selectedColumns != null && selectedColumns.Any())
+                cols = cols.Where(c =>
+                    selectedColumns.Contains(c.LogicalName, StringComparer.OrdinalIgnoreCase)
+                    || string.Equals(c.LogicalName, primaryIdAttr, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
             var matchKeyMode = matchKeyOverride?.Mode
                 ?? tableConfig?.PushMatchKeyMode
                 ?? snapshot.LoadMatchKeyMode
@@ -506,9 +512,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 ?? (!string.IsNullOrWhiteSpace(tableConfig?.PushMatchKeyMode) ? tableConfig.PushMatchKeyFields : null)
                 ?? snapshot.LoadMatchKeyFields
                 ?? new List<string>();
-
-            // Load user/team/BU mappings for substitution
-            var mappings = project.GetMappings(sourceEnvId, targetEnvId) ?? new List<Mapping>();
 
             // Read all rows
             var allRows = project.ReadSnapshotRecords(snapshot.TableSuffix, cols).ToList();
@@ -634,7 +637,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 var entities = batch.Select(t =>
                 {
                     var entity = RowToEntity(t.row, cols, snapshot.TableLogicalName, primaryIdAttr,
-                        mappings, project, sourceEnvId, targetEnvId, targetRepo, lookupMatchKeys);
+                        project, sourceEnvId, targetEnvId, targetRepo, lookupMatchKeys);
                     // If using GUID mode and source has a real GUID, try to preserve it
                     if (!t.isNew && matchKeyMode == "Guid"
                         && Guid.TryParse(t.sourceId, out var g))
@@ -674,7 +677,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 var entities = batch.Select(t =>
                 {
                     var entity = RowToEntity(t.row, cols, snapshot.TableLogicalName, primaryIdAttr,
-                        mappings, project, sourceEnvId, targetEnvId, targetRepo, lookupMatchKeys);
+                        project, sourceEnvId, targetEnvId, targetRepo, lookupMatchKeys);
                     entity.Id = t.targetId;
                     return entity;
                 }).ToList();
@@ -751,7 +754,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             List<DataTableColumnConfig> cols,
             string tableLogicalName,
             string primaryIdAttr,
-            List<Mapping> mappings,
             SqliteProjectService project,
             string sourceEnvId,
             string targetEnvId,
@@ -768,7 +770,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 if (!row.TryGetValue(col.LogicalName, out var raw) || raw == null)
                     continue;
 
-                var value = ConvertRowValue(raw, col, tableLogicalName, mappings, project, sourceEnvId, targetEnvId, targetRepo, lookupMatchKeys);
+                var value = ConvertRowValue(raw, col, tableLogicalName, project, sourceEnvId, targetEnvId, targetRepo, lookupMatchKeys);
                 if (value != null)
                     entity[col.LogicalName] = value;
             }
@@ -779,7 +781,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             object raw,
             DataTableColumnConfig col,
             string tableLogicalName,
-            List<Mapping> mappings,
             SqliteProjectService project,
             string sourceEnvId,
             string targetEnvId,
@@ -795,13 +796,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 case "Customer":
                 {
                     if (!Guid.TryParse(raw.ToString(), out var srcGuid)) return null;
-
-                    // Apply user/team/BU mapping first
-                    var mapped = mappings?.FirstOrDefault(m =>
-                        string.Equals(m.TableLogicalName, col.RelatedTable, StringComparison.OrdinalIgnoreCase)
-                        && m.SourceId == srcGuid);
-                    if (mapped != null)
-                        return new EntityReference(col.RelatedTable, mapped.TargetId);
 
                     // Resolve via _id_mappings
                     var relatedTable = col.RelatedTable ?? tableLogicalName;

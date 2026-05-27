@@ -440,8 +440,9 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         private CheckBox _create, _update;
         private ComboBox _cboMatchMode;
         private ComboBox _cboAltKey;
-        private Label _lblAltKey, _lblCustomNote;
+        private Label _lblAltKey, _lblCustomFields;
         private ListView _mainColList;
+        private Button _btnCustomFields;
         private DataGridView _lookupGrid;
         private CheckBox _stopOnFatalError;
         private NumericUpDown _batchSize, _maxFailedRecords, _maxFailedPercent;
@@ -453,6 +454,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         private SplitContainer _leftSplit;
 
         private List<string> _customFields = new List<string>();
+        private readonly HashSet<string> _deselectedColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private bool _suppressColumnListCheck;
         private bool _refreshingPreview;
         private bool _pendingPreviewRefresh;
@@ -550,8 +552,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                 try { leftSplit.SplitterDistance = (int)(leftSplit.Height * 0.52); } catch { }
             };
 
-            // Top-left: main record columns (for Custom match key)
-            var mainColGroup = new GroupBox { Text = "Main Record — Match Key Columns", Dock = DockStyle.Fill, Padding = new Padding(4) };
+            // Top-left: columns (checked = include in push payload)
+            var mainColGroup = new GroupBox { Text = "Columns", Dock = DockStyle.Fill, Padding = new Padding(4) };
             _mainColList = new ListView
             {
                 Dock = DockStyle.Fill,
@@ -683,40 +685,47 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             _cboMatchMode.SelectedIndexChanged += (s, e) => { UpdateMatchModeUI(); RefreshPreview(); };
             AddSR(settings, 2, "Match by:", _cboMatchMode);
 
+            var matchKeyLabelPanel = new Panel { Dock = DockStyle.Fill };
             _lblAltKey = new Label { Text = "Alternate key:", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft };
+            _lblCustomFields = new Label { Text = "Custom columns:", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft };
+            matchKeyLabelPanel.Controls.Add(_lblAltKey);
+            matchKeyLabelPanel.Controls.Add(_lblCustomFields);
+
+            var matchKeyControlPanel = new Panel { Dock = DockStyle.Fill };
             _cboAltKey = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
             foreach (var k in _alternateKeys)
                 _cboAltKey.Items.Add(new AltKeyItem(k));
-            _cboAltKey.SelectedIndexChanged += (s, e) => RefreshPreview();
-            settings.Controls.Add(_lblAltKey, 0, 3);
-            settings.Controls.Add(_cboAltKey, 1, 3);
+            _cboAltKey.SelectedIndexChanged += (s, e) => { UpdateMatchModeUI(); RefreshPreview(); };
 
-            _lblCustomNote = new Label
+            _btnCustomFields = new Button
             {
-                Dock = DockStyle.Fill,
-                Text = "Check columns in the left panel as match key fields.",
-                ForeColor = Color.DimGray,
-                TextAlign = ContentAlignment.MiddleLeft,
-                AutoEllipsis = true
+                Dock = DockStyle.Left,
+                Width = 170,
+                Height = 24,
+                Text = "Select columns..."
             };
-            settings.Controls.Add(new Label(), 0, 4);
-            settings.Controls.Add(_lblCustomNote, 1, 4);
+            _btnCustomFields.Click += (s, e) => OpenCustomFieldsDialog();
+            matchKeyControlPanel.Controls.Add(_cboAltKey);
+            matchKeyControlPanel.Controls.Add(_btnCustomFields);
+            settings.Controls.Add(matchKeyLabelPanel, 0, 3);
+            settings.Controls.Add(matchKeyControlPanel, 1, 3);
 
             _batchSize = new NumericUpDown { Minimum = 1, Maximum = 1000, Width = 90, Dock = DockStyle.Left, Value = 50 };
-            AddSR(settings, 5, "Batch size:", _batchSize);
+            AddSR(settings, 4, "Batch size:", _batchSize);
 
             var sepLabel = new Label { Text = "── Failure Policy ─────────────────", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.Gray };
-            settings.Controls.Add(new Label(), 0, 6);
-            settings.Controls.Add(sepLabel, 1, 6);
+            settings.Controls.Add(new Label(), 0, 5);
+            settings.Controls.Add(sepLabel, 1, 5);
 
             _stopOnFatalError = new CheckBox { Dock = DockStyle.Left, Checked = true };
-            AddSR(settings, 7, "Stop on fatal:", _stopOnFatalError);
+            AddSR(settings, 6, "Stop on fatal:", _stopOnFatalError);
 
             _maxFailedRecords = new NumericUpDown { Minimum = 0, Maximum = 1000000, Width = 90, Dock = DockStyle.Left, Value = 10 };
-            AddSR(settings, 8, "Max failed rows:", _maxFailedRecords);
+            AddSR(settings, 7, "Max failed rows:", _maxFailedRecords);
 
             _maxFailedPercent = new NumericUpDown { Minimum = 0, Maximum = 100, DecimalPlaces = 2, Width = 90, Dock = DockStyle.Left, Value = 20m };
-            AddSR(settings, 9, "Max failed %:", _maxFailedPercent);
+            settings.Controls.Add(new Label { Text = "Max failed %:", AutoSize = true, Anchor = AnchorStyles.Left | AnchorStyles.Top, Margin = new Padding(3, 7, 3, 0) }, 0, 8);
+            settings.Controls.Add(_maxFailedPercent, 1, 8);
 
             var panel = new Panel { Dock = DockStyle.Fill };
             panel.Controls.Add(settings);
@@ -968,6 +977,15 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                 var columns = _snapshot?.ColumnConfig;
                 if (columns != null)
                 {
+                    // Compute deselected columns from SelectedColumns (null = all included)
+                    var savedSelected = _step.Snapshot?.SelectedColumns;
+                    if (savedSelected != null && savedSelected.Any())
+                    {
+                        foreach (var col in columns.Where(c => !c.LogicalName.StartsWith("_", StringComparison.OrdinalIgnoreCase)))
+                            if (!savedSelected.Contains(col.LogicalName, StringComparer.OrdinalIgnoreCase))
+                                _deselectedColumns.Add(col.LogicalName);
+                    }
+
                     _suppressColumnListCheck = true;
                     foreach (var col in columns.Where(c => !c.LogicalName.StartsWith("_", StringComparison.OrdinalIgnoreCase)))
                     {
@@ -997,10 +1015,11 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
 
                 _lookupGrid.CellEndEdit += LookupGrid_CellEndEdit;
 
-                if (currentMatchKey?.Fields != null)
-                    _customFields = new List<string>(currentMatchKey.Fields);
-
                 var mode = currentMatchKey?.Mode ?? "Guid";
+                _customFields = string.Equals(mode, "Custom", StringComparison.OrdinalIgnoreCase) && currentMatchKey?.Fields != null
+                    ? new List<string>(currentMatchKey.Fields)
+                    : new List<string>();
+
                 MatchModeItem modeToSelect = null;
                 foreach (MatchModeItem m in _cboMatchMode.Items)
                     if (string.Equals(m.Mode, mode, StringComparison.OrdinalIgnoreCase)) { modeToSelect = m; break; }
@@ -1033,7 +1052,9 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
 
             _lblAltKey.Visible = isAlt;
             _cboAltKey.Visible = isAlt;
-            _lblCustomNote.Visible = isCustom;
+            _lblCustomFields.Visible = isCustom;
+            _btnCustomFields.Visible = isCustom;
+            UpdateCustomFieldsButtonText();
 
             _suppressColumnListCheck = true;
             foreach (ListViewItem item in _mainColList.Items)
@@ -1041,24 +1062,52 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                 var col = item.Tag as DataTableColumnConfig;
                 if (col == null) continue;
 
-                if (isCustom)
+                item.Checked = !_deselectedColumns.Contains(col.LogicalName);
+                if (isAlt && _cboAltKey.SelectedItem is AltKeyItem altKey)
                 {
-                    item.Checked = _customFields.Contains(col.LogicalName, StringComparer.OrdinalIgnoreCase);
-                    item.ForeColor = SystemColors.WindowText;
+                    item.ForeColor = altKey.Option.Fields.Contains(col.LogicalName, StringComparer.OrdinalIgnoreCase)
+                        ? Color.DodgerBlue
+                        : SystemColors.WindowText;
                 }
-                else if (isAlt && _cboAltKey.SelectedItem is AltKeyItem altKey)
+                else if (isCustom && _customFields.Contains(col.LogicalName, StringComparer.OrdinalIgnoreCase))
                 {
-                    item.Checked = altKey.Option.Fields.Contains(col.LogicalName, StringComparer.OrdinalIgnoreCase);
-                    item.ForeColor = item.Checked ? Color.DodgerBlue : SystemColors.WindowText;
+                    item.ForeColor = Color.DodgerBlue;
                 }
                 else
                 {
-                    item.Checked = false;
-                    item.ForeColor = SystemColors.WindowText;
+                    item.ForeColor = _deselectedColumns.Contains(col.LogicalName)
+                        ? Color.Gray
+                        : SystemColors.WindowText;
                 }
             }
             _suppressColumnListCheck = false;
-            _mainColList.Enabled = isCustom;
+            _mainColList.Enabled = true;
+        }
+
+        private void UpdateCustomFieldsButtonText()
+        {
+            if (_btnCustomFields == null) return;
+            var count = _customFields?.Count ?? 0;
+            _btnCustomFields.Text = count == 0
+                ? "Select columns..."
+                : count == 1
+                    ? "1 column selected..."
+                    : $"{count} columns selected...";
+        }
+
+        private void OpenCustomFieldsDialog()
+        {
+            var columns = _snapshot?.ColumnConfig?
+                .Where(c => !c.LogicalName.StartsWith("_", StringComparison.OrdinalIgnoreCase))
+                .ToList() ?? new List<DataTableColumnConfig>();
+            using (var dlg = new LookupCustomFieldsPickerDialog("Select Custom Match Key Columns", columns, _customFields))
+            {
+                if (dlg.ShowDialog(this) != DialogResult.OK) return;
+                _customFields = dlg.SelectedFields ?? new List<string>();
+                UpdateCustomFieldsButtonText();
+                UpdateMatchModeUI();
+                RefreshPreview();
+            }
         }
 
         private void ColList_ItemCheck(object sender, ItemCheckEventArgs e)
@@ -1067,10 +1116,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             var item = _mainColList.Items[e.Index];
             var col = item.Tag as DataTableColumnConfig;
             if (col == null) return;
+
             if (e.NewValue == CheckState.Checked)
-                _customFields.Add(col.LogicalName);
+                _deselectedColumns.Remove(col.LogicalName);
             else
-                _customFields.RemoveAll(f => string.Equals(f, col.LogicalName, StringComparison.OrdinalIgnoreCase));
+                _deselectedColumns.Add(col.LogicalName);
+
             RefreshPreview();
         }
 
@@ -1195,6 +1246,22 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             else
             {
                 ApplyPushMatchKeySelection(new ExcelImportMatchKeySelection { Mode = "Guid" });
+            }
+
+            // Save column selection (null = all included)
+            if (_deselectedColumns.Any())
+            {
+                var allCols = _snapshot?.ColumnConfig?
+                    .Where(c => !c.LogicalName.StartsWith("_", StringComparison.OrdinalIgnoreCase))
+                    .Select(c => c.LogicalName)
+                    .ToList() ?? new List<string>();
+                _step.Snapshot.SelectedColumns = allCols
+                    .Where(c => !_deselectedColumns.Contains(c))
+                    .ToList();
+            }
+            else
+            {
+                _step.Snapshot.SelectedColumns = null;
             }
 
             // Collect per-lookup match key settings from the grid (via LookupRowData)
@@ -1329,11 +1396,11 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             StartPosition = FormStartPosition.CenterParent;
             ShowIcon = false; ShowInTaskbar = false;
             MaximizeBox = false; MinimizeBox = false;
-            ClientSize = new Size(360, 340);
+            ClientSize = new Size(360, 356);
 
-            var outer = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1, Padding = new Padding(10, 8, 10, 4) };
+            var outer = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1, Padding = new Padding(10, 8, 10, 8) };
             outer.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            outer.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
+            outer.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
 
             _list = new CheckedListBox { Dock = DockStyle.Fill, CheckOnClick = true };
             foreach (var col in columns)
@@ -1346,9 +1413,9 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             }
             outer.Controls.Add(_list, 0, 0);
 
-            var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(0, 4, 0, 0) };
-            var ok = new Button { Text = "OK", Width = 80, Height = 26, DialogResult = DialogResult.OK };
-            var cancel = new Button { Text = "Cancel", Width = 80, Height = 26, DialogResult = DialogResult.Cancel };
+            var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(0, 6, 0, 0) };
+            var ok = new Button { Text = "OK", Width = 80, Height = 28, DialogResult = DialogResult.OK };
+            var cancel = new Button { Text = "Cancel", Width = 80, Height = 28, DialogResult = DialogResult.Cancel };
             ok.Click += (s, e) =>
             {
                 SelectedFields = new List<string>();

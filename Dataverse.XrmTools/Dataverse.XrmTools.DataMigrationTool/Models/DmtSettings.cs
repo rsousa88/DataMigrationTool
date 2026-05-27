@@ -1,9 +1,6 @@
 // System
 using System.Collections.Generic;
 
-// DataMigrationTool
-using Dataverse.XrmTools.DataMigrationTool.AppSettings;
-
 namespace Dataverse.XrmTools.DataMigrationTool.Models
 {
     public class DmtSettings
@@ -13,7 +10,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
         public DmtTableInfo Table { get; set; }
         public List<string> DeselectedAttributes { get; set; } = new List<string>();
         public string Filter { get; set; }
-        public List<Mapping> Mappings { get; set; } = new List<Mapping>();
         public ExcelExportConfig ExcelConfig { get; set; }
         public DmtImportSettings ImportSettings { get; set; } = new DmtImportSettings();
     }

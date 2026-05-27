@@ -57,6 +57,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
         public string PushMatchKeyMode { get; set; }
         public List<string> PushMatchKeyFields { get; set; } = new List<string>();
         public string PushMatchAlternateKeyName { get; set; }
+        public List<PushLookupMatchKey> PushLookupMatchKeys { get; set; } = new List<PushLookupMatchKey>();
 
         public ExcelExportConfig ExcelConfig { get; set; }
     }
@@ -143,7 +144,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
         public ExecutionPlanSettingsProvenance SettingsProvenance { get; set; }
         public List<string> SelectedAttributes { get; set; } = new List<string>();
         public string Filter { get; set; }
-        public List<Mapping> Mappings { get; set; } = new List<Mapping>();
         public ExcelExportConfig ExcelConfig { get; set; }
         public RecordCollection RecordCollection { get; set; }
         public ExcelImportMatchKeySelection ImportMatchKeySelection { get; set; }

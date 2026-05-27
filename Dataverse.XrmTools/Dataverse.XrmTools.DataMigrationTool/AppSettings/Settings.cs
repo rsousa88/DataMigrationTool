@@ -29,7 +29,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.AppSettings
 
                 if (!Instances.Any(org => org.Id.Equals(orgId)))
                 {
-                    Instances.Add(new Instance { Id = orgId, Mappings = new List<Mapping>() });
+                    Instances.Add(new Instance { Id = orgId });
                 }
 
                 return Instances.Where(org => org.Id.Equals(orgId)).FirstOrDefault();

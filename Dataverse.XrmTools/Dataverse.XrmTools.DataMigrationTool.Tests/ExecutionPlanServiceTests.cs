@@ -3,8 +3,6 @@ using System;
 using System.Collections.Generic;
 
 // DataMigrationTool
-using Dataverse.XrmTools.DataMigrationTool.AppSettings;
-using Dataverse.XrmTools.DataMigrationTool.Enums;
 using Dataverse.XrmTools.DataMigrationTool.Logic;
 using Dataverse.XrmTools.DataMigrationTool.Models;
 
@@ -283,30 +281,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
         }
 
         [Fact]
-        public void CloneMappings_ReturnsIndependentCopies()
-        {
-            var mappings = new List<Mapping>
-            {
-                new Mapping
-                {
-                    Type = MappingType.Attribute,
-                    TableLogicalName = "account",
-                    AttributeLogicalName = "ownerid",
-                    SourceInstanceName = "Source",
-                    TargetInstanceName = "Target",
-                    State = MappingState.Existing
-                }
-            };
-
-            var clone = ExecutionPlanService.CloneMappings(mappings);
-            clone[0].TargetInstanceName = "Changed";
-
-            Assert.Single(clone);
-            Assert.Equal("Target", mappings[0].TargetInstanceName);
-            Assert.Equal("Changed", clone[0].TargetInstanceName);
-        }
-
-        [Fact]
         public void CloneExcelConfig_ReturnsIndependentCopy()
         {
             var config = new ExcelExportConfig
@@ -352,13 +326,11 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
             source.Input.Mode = "FromStepOutput";
             source.Input.SourceStepId = "export-1";
             source.Snapshot.SelectedAttributes.Add("name");
-            source.Snapshot.Mappings.Add(new Mapping { AttributeLogicalName = "ownerid", TargetInstanceName = "DEV" });
             source.Validation.Status = "Ready";
             source.Validation.Preview = new ExecutionPlanPreviewSummary { Rows = 10, Creates = 4, Source = "Captured preview" };
             var target = new DmtEnvironmentInfo { UniqueName = "test", FriendlyName = "TEST" };
 
             var clone = ExecutionPlanService.CloneStepForEnvironment(source, target);
-            clone.Snapshot.Mappings[0].TargetInstanceName = "Changed";
 
             Assert.NotEqual(source.Id, clone.Id);
             Assert.Equal("Import Accounts - TEST", clone.Name);
@@ -367,7 +339,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
             Assert.Equal("export-1", clone.Input.SourceStepId);
             Assert.Equal("Unknown", clone.Validation.Status);
             Assert.True(clone.Validation.Preview.IsStale);
-            Assert.Equal("DEV", source.Snapshot.Mappings[0].TargetInstanceName);
         }
 
         [Fact]
@@ -412,8 +383,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
                 Mode = "Custom",
                 Fields = new List<string> { "accountnumber" }
             };
-            import.Snapshot.Mappings.Add(new Mapping { AttributeLogicalName = "ownerid", TargetInstanceName = "TEST" });
-
             var plan = Plan(export, import);
             plan.Name = "Project Plan";
             plan.Defaults.MaxFailedRecords = 3;
@@ -435,7 +404,34 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
             Assert.Equal("export-1", loaded.Steps[1].Input.SourceStepId);
             Assert.Equal("test-env", loaded.Steps[1].TargetEnvironment.UniqueName);
             Assert.Equal("accountnumber", Assert.Single(loaded.Steps[1].Snapshot.ImportMatchKeySelection.Fields));
-            Assert.Equal("TEST", Assert.Single(loaded.Steps[1].Snapshot.Mappings).TargetInstanceName);
+        }
+
+        [Theory]
+        [InlineData(@"C:\projects\migration.dmtproj", @"C:\projects\exports\accounts.json", @"exports\accounts.json")]
+        [InlineData(@"C:\projects\migration.dmtproj", @"C:\projects\accounts.json", @"accounts.json")]
+        [InlineData(@"C:\projects\migration.dmtproj", @"D:\other\accounts.json", @"D:\other\accounts.json")]
+        [InlineData(@"C:\projects\migration.dmtproj", @"exports\accounts.json", @"exports\accounts.json")]
+        [InlineData(@"C:\projects\migration.dmtproj", null, null)]
+        public void NormalizePlanPathForStorage_MakesInsideProjectRelative(string projectFile, string inputPath, string expected)
+        {
+            var result = ExecutionPlanService.NormalizePlanPathForStorage(inputPath, projectFile);
+            Assert.Equal(expected, result);
+        }
+
+        [Fact]
+        public void ResolveExecutionStepPath_ResolvesRelativePathAgainstProjectDirectory()
+        {
+            var step = Step("export", "ExportToJson", "account");
+            step.Output.PathTemplate = @"exports\accounts.json";
+            var plan = Plan(step);
+
+            var path = ExecutionPlanService.ResolveExecutionStepPath(plan, step, 1, new ExecutionPlanPathContext
+            {
+                ProjectDirectory = @"C:\projects",
+                Now = new DateTime(2026, 5, 15)
+            });
+
+            Assert.Equal(@"C:\projects\exports\accounts.json", path);
         }
 
         private static ExecutionPlan Plan(params ExecutionPlanStep[] steps)

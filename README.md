@@ -5,6 +5,9 @@ An [XrmToolBox](https://www.xrmtoolbox.com/) plugin for migrating reference data
 ## Features
 
 - Export and import Dataverse rows using JSON or Excel workbooks
+- Create portable `.dmtproj` project files that keep table configs, snapshots, execution plans, mappings, ID mappings, and run history together
+- Pull source records into named project snapshots, load JSON/Excel files into snapshots, and push snapshots to target environments
+- Export project snapshots back to JSON or Excel
 - Supports **Create**, **Update**, and **Delete** operations for JSON imports, and create/update workflows for Excel imports
 - Preview imports before execution, including row numbers, create/update decisions, warnings, mapping count, and matching key details
 - Match import rows by record GUID, Dataverse alternate keys, or multiple selected custom columns
@@ -16,8 +19,8 @@ An [XrmToolBox](https://www.xrmtoolbox.com/) plugin for migrating reference data
 - Integrate with [FetchXML Builder](https://www.xrmtoolbox.com/plugins/Cinteros.Xrm.FetchXmlBuilder/) and SQL 4 CDS
 - Select the attributes included in the migration and hide invalid attributes when configuring tables
 - Define organization mappings for users, teams, business units, and lookup values
-- Save portable migration settings in `.dmt.json` files, including selected attributes, filters, mappings, Excel export configuration, and import defaults
-- Build execution plans (`.dmtplan.json`) to sequence multiple export and import steps and run them unattended
+- Save portable legacy migration settings in `.dmt.json` files, including selected attributes, filters, mappings, Excel export configuration, and import defaults
+- Build execution plans in the active project to sequence snapshot, file, export, import, and push steps
 
 ## Installation
 
@@ -27,23 +30,31 @@ Install directly from the **XrmToolBox Tool Library** - search for *Data Migrati
 
 ### 1. Connect environments
 
-Open the plugin from the source environment. Use **Environments > Connect Target** to connect the target environment. Use **Environments > Switch Source / Target** when you need to reverse the migration direction.
+Open the plugin from the source environment. Use **Environments > Connect Target** to connect one or more target environments.
 
-### 2. Load and select a table
+### 2. Create or open a project
+
+Use the project actions to create or open a `.dmtproj` file. The project stores table configuration, snapshots, mappings, execution plans, ID mappings, and run history in one portable SQLite file.
+
+### 3. Load and select a table
 
 Use **Environments > Reload Tables** to load Dataverse tables from the source environment. Select a table, then choose which attributes should be included.
 
-### 3. Create or load a settings file
+### 4. Create or load a legacy settings file
 
 Use **Settings File > New...** or **Settings File > Load...** to work with a portable `.dmt.json` settings file. The file stores the selected table, source environment info, deselected attributes, FetchXML filter, mappings, Excel configuration, and import settings.
 
 Legacy `.settings.json` table settings can still be imported with **Import > Import legacy table settings...** and merged into the current `.dmt.json` file.
 
-### 4. Configure filters
+### 5. Configure filters
 
 Enter FetchXML filter and link-entity nodes in the filter panel. You can send the current filter to FetchXML Builder or SQL 4 CDS from the toolbar integrations.
 
-### 5. Export
+### 6. Work with snapshots
+
+Use project snapshot actions to pull source data into a named snapshot, load JSON or Excel files into a snapshot, inspect snapshot rows, export snapshots to files, and add snapshots to an execution plan for push operations.
+
+### 7. Export
 
 Use **Export > To JSON** for compact migration data files.
 
@@ -57,15 +68,27 @@ Use **Export > To Excel** when users need a workbook/template they can review or
 
 Excel workbooks include hidden metadata so the import wizard can preload the table, column mappings, match key, and import settings later.
 
-### 6. Import
+### 8. Import
 
 Use **Import > From JSON**, **Import > From Excel**, or **Import > From Last Exported**. Imports open a preview wizard where you can review row actions, warnings, matching key values, and import settings before writing to Dataverse.
 
 For Excel imports, workbook metadata is used first. If an older workbook does not contain the latest metadata shape, it is upgraded when loaded. After a successful Excel import, the workbook is updated with the record GUIDs and resolved lookup GUIDs for rows that completed successfully.
 
-## Settings Files
+## Project Files
 
-The current settings format is `.dmt.json`. It is intended to be portable and can be committed or shared with migration templates when useful.
+The current project format is `.dmtproj`. It is a portable SQLite project file that stores:
+
+- source and target environment identities
+- table configurations
+- snapshots and snapshot column metadata
+- source-to-target ID mappings
+- organization mappings per source/target pair
+- execution plans and step configuration
+- run history
+
+## Legacy Settings Files
+
+The legacy settings format is `.dmt.json`. It is still supported for compatibility and can be committed or shared with migration templates when useful.
 
 A settings file contains:
 
@@ -77,16 +100,28 @@ A settings file contains:
 - Excel export configuration
 - import settings such as batch size and matching key
 
-Settings are auto-saved during normal work, including before preview/export/import, after mapping changes, and after Excel export configuration changes.
+Settings are auto-saved during legacy export/import work, including before preview/export/import, after mapping changes, and after Excel export configuration changes.
+
+## Project Snapshots
+
+Snapshots are named copies of table data stored inside a `.dmtproj` project. A snapshot can come from a source pull or from a loaded JSON/Excel file, can be exported back to JSON/Excel, and can be pushed to a connected target environment.
+
+Push configuration supports:
+
+- create/update operation selection
+- payload column selection
+- matching by record GUID, alternate key, or selected custom columns
+- per-lookup matching by source GUID, alternate key, custom columns, or skipped lookup field
+- persistent source-to-target ID mappings for later pushes and lookup resolution
 
 ## Execution Plans
 
-An execution plan (`.dmtplan.json`) groups multiple export and import steps into a single file that can be validated and run sequentially without manual intervention.
+An execution plan groups multiple steps in the active project and can be validated and run sequentially without manual intervention.
 
 Each step captures:
 
-- the operation (ExportToJson, ExportToExcel, ImportFromJson, ImportFromExcel)
-- a table snapshot with selected attributes, FetchXML filter, mappings, and import settings
+- the operation, such as source pull, file load, file export, JSON/Excel import/export, or snapshot push
+- a table snapshot with selected attributes, FetchXML filter, mappings, and import settings when applicable
 - an output path template (exports) or input file path (imports)
 - an optional link to a preceding export step so the import reads the output directly
 - a failure policy (max failed records, max failed percent, stop on fatal error)
@@ -94,7 +129,7 @@ Each step captures:
 
 ### Creating a plan
 
-Open the **Execution Plan** panel on the right side of the plugin. Use **New** to create a `.dmtplan.json` file. Add export and import steps through the toolbar menus or by linking an import to an existing export step. Steps are validated automatically — the panel shows status (Ready / Warning / Error) and validation messages for each step.
+Open the **Execution Plan** panel on the right side of the plugin. Use **New** to create a plan in the active project. Add steps through the plan toolbar menus, by linking an import to an existing export step, or by adding a snapshot from the Deploy/snapshot actions. The panel shows status (Ready / Warning / Error) and validation messages for each step.
 
 ### Linked steps
 
@@ -102,7 +137,7 @@ When adding an import step, choose **Use output from an execution plan export st
 
 ### Executing a plan
 
-Enable or disable individual steps using the checkboxes, then click **Execute**. The plan runs each enabled step in order. A results dialog opens at the end showing per-step status, record counts, and errors.
+Enable or disable individual steps using the checkboxes, then click **Execute**. The plan runs each enabled step in order. A results dialog opens at the end showing per-step status, record counts, and errors. Use **Refresh Counts** when you want heavier preview/count analysis without slowing down structural validation.
 
 ## Excel Imports
 
@@ -119,9 +154,9 @@ Excel import supports:
 
 ## Mappings
 
-Manual mappings can be defined for lookup fields. Organization mappings can also be used during import when configured in the import wizard.
+Manual mappings can be defined for lookup fields. Organization mappings can also be used during import or push when configured.
 
-Mappings are stored in `.dmt.json` settings files and can be reviewed from the **Mappings** button in the main toolbar.
+In project workflows, mappings are stored in the active `.dmtproj` per source/target pair and can be reviewed from **Deploy > Configure Mappings...**.
 
 ## Notes
 
@@ -130,6 +165,17 @@ Mappings are stored in `.dmt.json` settings files and can be reviewed from the *
 - Result dialogs show failed rows by default, with a checkbox to show all rows and an option to retry failed rows only.
 
 ## Release Notes
+
+### 2026.5.27.x
+- [NEW] Project-backed migration workflows are now centered on portable `.dmtproj` files with table configs, snapshots, mappings, execution plans, ID mappings, and run history stored together
+- [NEW] Snapshot actions now support pulling source data, loading files into project snapshots, exporting snapshots to JSON or Excel, and pushing snapshots to target environments
+- [NEW] Push step configuration now separates payload column selection from GUID, alternate-key, and custom-column matching keys
+- [NEW] Push lookup matching can now be configured per lookup column using source GUIDs, alternate keys, custom columns, or skipped fields
+- [FIX] Plan validation is faster and separated from explicit count refreshes for heavier preview analysis
+- [FIX] Project-local plan file paths are stored relatively and resolved from the `.dmtproj` location
+- [FIX] Reconfigure is now available consistently for selected plan steps and no longer depends on preview state
+- [FIX] Clean installations now include the SQLitePCLRaw batteries assembly required to create and open `.dmtproj` project files
+- [FIX] Legacy mapping UI/code paths and obsolete mapping settings were removed from the active plugin surface
 
 ### 2026.5.25.x
 - [NEW] Execution plan steps can now be cloned to another target environment from the plan panel or step context menu

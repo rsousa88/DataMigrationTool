@@ -60,33 +60,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
                 var attribute = value as Models.Attribute;
                 return new ListViewItem(new string[] { attribute.LogicalName, attribute.DisplayName, attribute.Type }); ;
             }
-            if (value is Mapping) {
-                var mapping = value as Mapping;
-                if (parameters == null || !parameters.Item1.Equals("mappingtype") || !(parameters.Item2 is Enums.MappingType mappingType)) { throw new Exception("Invalid parameters for Mapping type cast"); }
-
-                var columns = new List<string>
-                {
-                    mapping.Type.ToString(),
-                    mapping.TableDisplayName,
-                    mapping.TableLogicalName
-                };
-
-                if (mappingType.Equals(Enums.MappingType.Attribute))
-                {
-                    columns.Add(mapping.AttributeDisplayName);
-                    columns.Add(mapping.AttributeLogicalName);
-                }
-                if (mappingType.Equals(Enums.MappingType.Value))
-                {
-                    columns.Add(mapping.SourceId.ToString());
-                    columns.Add(mapping.TargetId.ToString());
-                    columns.Add(mapping.TargetInstanceName.ToString());
-                }
-
-                columns.Add(mapping.State.ToString());
-
-                return new ListViewItem(columns.ToArray());
-            }
             if (value is Entity)
             {
                 var entity = value as Entity;
@@ -153,33 +126,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Helpers
                     DisplayName = lvItem.SubItems[1].Text,
                     Type = lvItem.SubItems[2].Text
                 };
-            }
-            if (output is Mapping)
-            {
-                if (parameters == null || !parameters.Item1.Equals("mappingtype") || !(parameters.Item2 is Enums.MappingType mappingType)) { throw new Exception("Invalid parameters for Mapping type cast"); }
-                var mapping = new Mapping
-                {
-                    Type = lvItem.SubItems[0].Text.ToEnum<Enums.MappingType>(),
-                    TableDisplayName = lvItem.SubItems[1].Text,
-                    TableLogicalName = lvItem.SubItems[2].Text
-                };
-
-                if(mappingType.Equals(Enums.MappingType.Attribute))
-                {
-                    mapping.AttributeDisplayName = lvItem.SubItems[3].Text;
-                    mapping.AttributeLogicalName = lvItem.SubItems[4].Text;
-                    mapping.State = lvItem.SubItems[5].Text.ToEnum<MappingState>();
-                }
-
-                if (mappingType.Equals(Enums.MappingType.Value))
-                {
-                    mapping.SourceId = lvItem.SubItems[3].Text.ToGuid();
-                    mapping.TargetId = lvItem.SubItems[4].Text.ToGuid();
-                    mapping.TargetInstanceName = lvItem.SubItems[5].Text;
-                    mapping.State = lvItem.SubItems[6].Text.ToEnum<MappingState>();
-                }
-
-                return mapping;
             }
             if (output is Entity)
             {

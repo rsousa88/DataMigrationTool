@@ -21,8 +21,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
     {
         public Action Action { get; set; }
         public int BatchSize { get; set; } = 25;
-        public bool ApplyMappings { get; set; }
-        public bool MapBusinessUnit { get; set; }
         public string MatchKeyMode { get; set; } = "Guid";
         public List<string> MatchKeyFields { get; set; } = new List<string>();
         public string MatchAlternateKeyName { get; set; }
