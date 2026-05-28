@@ -95,6 +95,9 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
         public DateTime UpdatedOn { get; set; } = DateTime.UtcNow;
         public int RowCount { get; set; }
         public string Source { get; set; }               // "Pull" | "Excel" | "JSON"
+        public string SourceFilePath { get; set; }       // Excel/JSON refresh source; relative to project when possible
+        public string PullFilter { get; set; }           // Pull refresh filter snapshot
+        public string PrimaryIdAttribute { get; set; }
         public string LoadMatchKeyMode { get; set; }
         public List<string> LoadMatchKeyFields { get; set; } = new List<string>();
         public int SortOrder { get; set; }               // display order (#) — assigned once at creation

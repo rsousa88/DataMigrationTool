@@ -36,7 +36,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             var columns = (config.SelectedAttributes?.Any() == true
                 ? config.SelectedAttributes.ToList()
                 : config.AllColumns.Select(c => c.LogicalName).ToList());
-            if (!columns.Contains(primaryIdAttr, StringComparer.OrdinalIgnoreCase))
+            if (!string.IsNullOrWhiteSpace(primaryIdAttr)
+                && !columns.Contains(primaryIdAttr, StringComparer.OrdinalIgnoreCase))
                 columns.Add(primaryIdAttr);
 
             worker?.ReportProgress(5, $"Pulling {tableLogicalName} records from Dataverse...");
@@ -65,6 +66,10 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 snapshot.UpdatedOn = DateTime.UtcNow;
                 snapshot.RowCount = rows.Count;
                 snapshot.ColumnConfig = colsInSnapshot;
+                snapshot.SourceEnvId = sourceEnvId;
+                snapshot.Source = "Pull";
+                snapshot.PullFilter = config.Filter;
+                snapshot.PrimaryIdAttribute = primaryIdAttr;
                 snapshot.LoadMatchKeyMode = config.LoadMatchKeyMode;
                 snapshot.LoadMatchKeyFields = config.LoadMatchKeyFields ?? new List<string>();
             }
@@ -78,6 +83,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     TableLogicalName = tableLogicalName,
                     SourceEnvId = sourceEnvId,
                     Source = "Pull",
+                    PullFilter = config.Filter,
+                    PrimaryIdAttribute = primaryIdAttr,
                     RowCount = rows.Count,
                     LoadMatchKeyMode = config.LoadMatchKeyMode ?? "Guid",
                     LoadMatchKeyFields = config.LoadMatchKeyFields ?? new List<string>(),

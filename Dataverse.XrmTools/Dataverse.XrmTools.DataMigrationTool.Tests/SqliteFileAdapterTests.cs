@@ -70,6 +70,18 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
         }
 
         [Fact]
+        public void LoadFromJson_StoresRefreshSourceFilePath()
+        {
+            var collection = TestDataBuilder.RecordCollection();
+            var jsonPath = _tmp.WriteJson("test.json", collection);
+
+            SqliteFileAdapter.LoadFromJson(_svc, jsonPath, "my-snapshot", "env1", null, null, null, "imports\\test.json");
+
+            var snapshot = _svc.GetSnapshot("my-snapshot");
+            Assert.Equal("imports\\test.json", snapshot.SourceFilePath);
+        }
+
+        [Fact]
         public void LoadFromJson_RowsAreReadable_FromProject()
         {
             var collection = TestDataBuilder.RecordCollection("account", "accountid");

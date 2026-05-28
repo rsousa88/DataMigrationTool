@@ -104,7 +104,8 @@
             this.tsbAbort});
             this.tsMain.Location = new System.Drawing.Point(0, 0);
             this.tsMain.Name = "tsMain";
-            this.tsMain.Size = new System.Drawing.Size(1610, 25);
+            this.tsMain.Padding = new System.Windows.Forms.Padding(0, 3, 1, 1);
+            this.tsMain.Size = new System.Drawing.Size(1610, 31);
             this.tsMain.TabIndex = 90;
             this.tsMain.Text = "toolStrip1";
             // tsSeparator1
@@ -281,7 +282,7 @@
             this.pnlMain.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 100F));
             this.pnlMain.Controls.Add(this.pnlBody, 0, 0);
             this.pnlMain.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.pnlMain.Location = new System.Drawing.Point(0, 25);
+            this.pnlMain.Location = new System.Drawing.Point(0, 31);
             this.pnlMain.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
             this.pnlMain.Name = "pnlMain";
             this.pnlMain.RowCount = 1;
@@ -613,9 +614,9 @@
             this.btnFetchXmlBuilder.FlatStyle = System.Windows.Forms.FlatStyle.Popup;
             this.btnFetchXmlBuilder.Image = global::Dataverse.XrmTools.DataMigrationTool.Properties.Resources.fetchXmlBuilder20;
             this.btnFetchXmlBuilder.ImageAlign = System.Drawing.ContentAlignment.MiddleLeft;
-            this.btnFetchXmlBuilder.Location = new System.Drawing.Point(1402, 11);
+            this.btnFetchXmlBuilder.Location = new System.Drawing.Point(1426, 11);
             this.btnFetchXmlBuilder.Name = "btnFetchXmlBuilder";
-            this.btnFetchXmlBuilder.Size = new System.Drawing.Size(194, 28);
+            this.btnFetchXmlBuilder.Size = new System.Drawing.Size(170, 26);
             this.btnFetchXmlBuilder.TabIndex = 1;
             this.btnFetchXmlBuilder.Text = "Edit in FetchXML Builder";
             this.btnFetchXmlBuilder.UseVisualStyleBackColor = true;
@@ -628,9 +629,9 @@
             this.btnSql4Cds.FlatStyle = System.Windows.Forms.FlatStyle.Popup;
             this.btnSql4Cds.Image = global::Dataverse.XrmTools.DataMigrationTool.Properties.Resources.sql4cds20;
             this.btnSql4Cds.ImageAlign = System.Drawing.ContentAlignment.MiddleLeft;
-            this.btnSql4Cds.Location = new System.Drawing.Point(1201, 11);
+            this.btnSql4Cds.Location = new System.Drawing.Point(1249, 11);
             this.btnSql4Cds.Name = "btnSql4Cds";
-            this.btnSql4Cds.Size = new System.Drawing.Size(194, 28);
+            this.btnSql4Cds.Size = new System.Drawing.Size(170, 26);
             this.btnSql4Cds.TabIndex = 2;
             this.btnSql4Cds.Text = "Edit in SQL 4 CDS";
             this.btnSql4Cds.UseVisualStyleBackColor = true;

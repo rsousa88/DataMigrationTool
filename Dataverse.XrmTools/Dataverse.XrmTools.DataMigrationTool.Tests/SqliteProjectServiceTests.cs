@@ -217,6 +217,29 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
         }
 
         [Fact]
+        public void SaveSnapshot_GetSnapshot_RoundTripsRefreshMetadata()
+        {
+            var snapshot = MakeSnapshot("snap-refresh", "account", "env-001",
+                new List<DataTableColumnConfig>
+                {
+                    new DataTableColumnConfig { LogicalName = "accountid", Type = "Uniqueidentifier", SqliteType = "TEXT" },
+                    new DataTableColumnConfig { LogicalName = "name", Type = "String", SqliteType = "TEXT" }
+                });
+            snapshot.Source = "JSON";
+            snapshot.SourceFilePath = "imports\\accounts.json";
+            snapshot.PullFilter = "<filter><condition attribute='statecode' operator='eq' value='0'/></filter>";
+            snapshot.PrimaryIdAttribute = "accountid";
+
+            _svc.SaveSnapshot(snapshot);
+
+            var result = _svc.GetSnapshot("snap-refresh");
+            Assert.NotNull(result);
+            Assert.Equal("imports\\accounts.json", result.SourceFilePath);
+            Assert.Equal("<filter><condition attribute='statecode' operator='eq' value='0'/></filter>", result.PullFilter);
+            Assert.Equal("accountid", result.PrimaryIdAttribute);
+        }
+
+        [Fact]
         public void HasSnapshot_ReturnsTrueWhenExists()
         {
             CreateSnapshotWithData("snap1", "account", "env-001");

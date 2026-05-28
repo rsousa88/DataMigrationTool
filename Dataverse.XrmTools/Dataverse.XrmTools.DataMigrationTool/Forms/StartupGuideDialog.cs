@@ -59,8 +59,8 @@ A project file (.dmtproj) stores all snapshots, ID mappings, and run history in 
 2. Use Project > New... to create a project file, or Project > Open... to resume one.
 3. Select a table on the left and load its attributes.
 4. Load data into the project:
-     Project > Pull to Project  — fetch records from the connected source environment.
-     Project > Load File to Project  — import an existing JSON or Excel file.
+     Import > Pull from Dataverse  — fetch records from the connected source environment.
+     Import > Import from File  — import an existing JSON or Excel file.
 5. Connect to a target environment using Additional Connections in XrmToolBox.
 6. Use Project > Push Snapshot to Target to push a snapshot to the selected target.
      Source→target GUID mappings are saved automatically for subsequent runs.

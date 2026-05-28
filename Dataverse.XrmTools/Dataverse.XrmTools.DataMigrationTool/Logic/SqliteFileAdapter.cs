@@ -53,6 +53,19 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             IOrganizationService sourceClient,
             BackgroundWorker worker)
         {
+            return LoadFromJson(project, filePath, snapshotName, sourceEnvId, config, sourceClient, worker, null);
+        }
+
+        public static DmtSnapshot LoadFromJson(
+            SqliteProjectService project,
+            string filePath,
+            string snapshotName,
+            string sourceEnvId,
+            DataTableConfig config,
+            IOrganizationService sourceClient,
+            BackgroundWorker worker,
+            string sourceFilePath)
+        {
             worker?.ReportProgress(5, "Reading JSON file...");
             var json = File.ReadAllText(filePath);
             var collection = JsonConvert.DeserializeObject<RecordCollection>(json, _json);
@@ -71,7 +84,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             ResolveSourceIdentity(rows, columns, tableLogicalName, primaryIdAttr, config, sourceClient, worker);
 
             return WriteSnapshot(project, rows, columns, snapshotName, tableLogicalName,
-                primaryIdAttr, sourceEnvId, "JSON", config, worker);
+                primaryIdAttr, sourceEnvId, "JSON", config, worker, sourceFilePath);
         }
 
         // ─── Excel ─────────────────────────────────────────────────────────────
@@ -95,6 +108,19 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             DataTableConfig config,
             IOrganizationService sourceClient,
             BackgroundWorker worker)
+        {
+            return LoadFromExcel(project, filePath, snapshotName, sourceEnvId, config, sourceClient, worker, null);
+        }
+
+        public static DmtSnapshot LoadFromExcel(
+            SqliteProjectService project,
+            string filePath,
+            string snapshotName,
+            string sourceEnvId,
+            DataTableConfig config,
+            IOrganizationService sourceClient,
+            BackgroundWorker worker,
+            string sourceFilePath)
         {
             worker?.ReportProgress(5, "Reading Excel file...");
             using (var wb = new XLWorkbook(filePath))
@@ -123,7 +149,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 ResolveSourceIdentity(rows, columns, tableLogicalName, primaryIdAttr, effectiveConfig, sourceClient, worker);
 
                 var snapshot = WriteSnapshot(project, rows, columns, snapshotName, tableLogicalName,
-                    primaryIdAttr, sourceEnvId, "Excel", effectiveConfig, worker);
+                    primaryIdAttr, sourceEnvId, "Excel", effectiveConfig, worker, sourceFilePath);
                 SaveExcelOptionSetValues(project, tableLogicalName, excelConfig);
                 return snapshot;
             }
@@ -141,7 +167,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             string sourceEnvId,
             string source,
             DataTableConfig config,
-            BackgroundWorker worker)
+            BackgroundWorker worker,
+            string sourceFilePath = null)
         {
             var existing = project.GetSnapshot(snapshotName);
             string tableSuffix;
@@ -155,6 +182,11 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 snapshot.RowCount = rows.Count;
                 snapshot.ColumnConfig = columns;
                 snapshot.Source = source;
+                snapshot.SourceEnvId = sourceEnvId;
+                snapshot.SourceFilePath = sourceFilePath ?? snapshot.SourceFilePath;
+                snapshot.PrimaryIdAttribute = primaryIdAttr;
+                snapshot.LoadMatchKeyMode = config?.LoadMatchKeyMode ?? snapshot.LoadMatchKeyMode ?? "Guid";
+                snapshot.LoadMatchKeyFields = config?.LoadMatchKeyFields ?? snapshot.LoadMatchKeyFields ?? new List<string>();
             }
             else
             {
@@ -166,6 +198,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     TableLogicalName = tableLogicalName,
                     SourceEnvId = sourceEnvId,
                     Source = source,
+                    SourceFilePath = sourceFilePath,
+                    PrimaryIdAttribute = primaryIdAttr,
                     RowCount = rows.Count,
                     LoadMatchKeyMode = config?.LoadMatchKeyMode ?? "Guid",
                     LoadMatchKeyFields = config?.LoadMatchKeyFields ?? new List<string>(),

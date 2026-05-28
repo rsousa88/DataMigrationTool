@@ -134,6 +134,9 @@ namespace Dataverse.XrmTools.DataMigrationTool
             MoveImportSettingsIntoDialogs();
             InitializeDmtAutoSave();
             InitializeWorkingTips();
+            VisibleChanged += DataMigrationControl_VisibleChanged;
+            Enter += DataMigrationControl_Enter;
+            Leave += DataMigrationControl_Leave;
 
             _logger = new Logger();
             _logger.OnLog += Log;
@@ -641,14 +644,27 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 var btnOpen = new Button { Text = "Open Project", Width = 100, Height = 26, DialogResult = DialogResult.OK };
                 var btnSkip = new Button { Text = "Skip", Width = 60, Height = 26, DialogResult = DialogResult.Cancel };
 
-                var panel = new FlowLayoutPanel
+                var buttonRow = new FlowLayoutPanel
+                {
+                    FlowDirection = FlowDirection.LeftToRight,
+                    AutoSize = true,
+                    AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                    Anchor = AnchorStyles.None,
+                    WrapContents = false,
+                    Margin = Padding.Empty
+                };
+                buttonRow.Controls.AddRange(new Control[] { btnNew, btnOpen, btnSkip });
+
+                var panel = new TableLayoutPanel
                 {
                     Dock = DockStyle.Fill,
-                    FlowDirection = FlowDirection.LeftToRight,
-                    Padding = new Padding(16, 4, 0, 0),
-                    WrapContents = false
+                    ColumnCount = 1,
+                    RowCount = 1,
+                    Padding = new Padding(0, 4, 0, 0)
                 };
-                panel.Controls.AddRange(new Control[] { btnNew, btnOpen, btnSkip });
+                panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+                panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+                panel.Controls.Add(buttonRow, 0, 0);
 
                 dlg.Controls.Add(panel);
                 dlg.Controls.Add(lbl);
@@ -1617,7 +1633,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void ShowWorkingDialog(string message)
         {
-            if (ParentForm == null || ParentForm.IsDisposed) return;
+            if (ParentForm == null || ParentForm.IsDisposed || !Visible) return;
 
             if (_workingDialog == null || _workingDialog.IsDisposed)
             {
@@ -1636,16 +1652,46 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
 
             _workingDialog.CenterOverOwner();
-            _workingDialog.BringToFront();
-            _workingDialog.Activate();
+            if (ContainsFocus)
+                _workingDialog.BringToFront();
         }
 
         private Form GetWorkingDialogOwner()
         {
-            var active = Form.ActiveForm;
-            if (active != null && !active.IsDisposed && active != _workingDialog)
-                return active;
             return ParentForm;
+        }
+
+        private void DataMigrationControl_VisibleChanged(object sender, EventArgs e)
+        {
+            if (_workingDialog == null || _workingDialog.IsDisposed) return;
+
+            if (!Visible)
+            {
+                _workingDialog.Hide();
+                return;
+            }
+
+            if (_working)
+                ShowWorkingDialog(_currentWorkingMessage);
+        }
+
+        private void DataMigrationControl_Enter(object sender, EventArgs e)
+        {
+            if (_working)
+                ShowWorkingDialog(_currentWorkingMessage);
+        }
+
+        private void DataMigrationControl_Leave(object sender, EventArgs e)
+        {
+            if (_workingDialog == null || _workingDialog.IsDisposed) return;
+
+            BeginInvoke(new System.Action(() =>
+            {
+                if (_workingDialog == null || _workingDialog.IsDisposed) return;
+                if (_workingDialog.ContainsFocus) return;
+                if (!ContainsFocus)
+                    _workingDialog.Hide();
+            }));
         }
 
         private void WorkingDialogAbortRequested(object sender, EventArgs e)

@@ -166,6 +166,13 @@ In project workflows, mappings are stored in the active `.dmtproj` per source/ta
 
 ## Release Notes
 
+### 2026.5.28.x
+- [NEW] Snapshot refresh can now update one or all snapshots, including Dataverse pulls using saved table/filter/attribute settings and file snapshots from their original JSON or Excel source
+- [NEW] File snapshot refresh now prompts for a replacement source file when the saved path is missing, moved, or unavailable on the current machine
+- [FIX] Execution plan and snapshot controls now use clearer global versus selected-step action grouping with standardized move arrows and renamed import actions
+- [FIX] The DMT working dialog is scoped to the active DMT tab instead of staying above other XrmToolBox plugin tabs
+- [FIX] Execution plan and startup layouts were polished, including a 30/70 default split, smaller external-editor buttons, centered startup choices, and less cramped toolbar spacing
+
 ### 2026.5.27.x
 - [NEW] Project-backed migration workflows are now centered on portable `.dmtproj` files with table configs, snapshots, mappings, execution plans, ID mappings, and run history stored together
 - [NEW] Snapshot actions now support pulling source data, loading files into project snapshots, exporting snapshots to JSON or Excel, and pushing snapshots to target environments

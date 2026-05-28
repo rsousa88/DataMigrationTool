@@ -33,6 +33,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private bool _fittingSnapshotColumns;
         private ToolStripButton _snapMoveUpBtn;
         private ToolStripButton _snapMoveDownBtn;
+        private bool _inlineShowNewColumn;
 
         #endregion
 
@@ -68,10 +69,14 @@ namespace Dataverse.XrmTools.DataMigrationTool
             };
             var pullBtn = new ToolStripButton("Pull") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true };
             pullBtn.Click += (s, e) => PullToProject();
-            var loadBtn = new ToolStripButton("Load File") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true };
+            var loadBtn = new ToolStripButton("Import") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true };
             loadBtn.Click += (s, e) => LoadFileToProject();
             var exportBtn = new ToolStripButton("Export") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, ToolTipText = "Export selected snapshot" };
             exportBtn.Click += (s, e) => ExportInlineSnapshot();
+            var refreshBtn = new ToolStripButton("Refresh") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, ToolTipText = "Refresh selected snapshot from its original source" };
+            refreshBtn.Click += (s, e) => RefreshInlineSnapshot();
+            var refreshAllBtn = new ToolStripButton("Refresh All") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, ToolTipText = "Refresh all snapshots from their original sources" };
+            refreshAllBtn.Click += (s, e) => RefreshAllSnapshots();
             _snapMoveUpBtn = new ToolStripButton("↑") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, Enabled = false, ToolTipText = "Move snapshot up" };
             _snapMoveUpBtn.Click += (s, e) => MoveInlineSnapshot(-1);
             _snapMoveDownBtn = new ToolStripButton("↓") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, Enabled = false, ToolTipText = "Move snapshot down" };
@@ -79,6 +84,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
             headerStrip.Items.Add(pullBtn);
             headerStrip.Items.Add(loadBtn);
             headerStrip.Items.Add(exportBtn);
+            headerStrip.Items.Add(refreshBtn);
+            headerStrip.Items.Add(refreshAllBtn);
             headerStrip.Items.Add(new ToolStripSeparator());
             headerStrip.Items.Add(_snapMoveUpBtn);
             headerStrip.Items.Add(_snapMoveDownBtn);
@@ -193,6 +200,10 @@ namespace Dataverse.XrmTools.DataMigrationTool
             var export = new ToolStripMenuItem("Export Snapshot");
             export.Click += (s, e) => ExportInlineSnapshot();
             menu.Items.Add(export);
+
+            var refresh = new ToolStripMenuItem("Refresh Snapshot");
+            refresh.Click += (s, e) => RefreshInlineSnapshot();
+            menu.Items.Add(refresh);
 
             menu.Items.Add(new ToolStripSeparator());
 
@@ -333,6 +344,222 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
         }
 
+        private void RefreshInlineSnapshot()
+        {
+            var snap = GetInlineContextSnapshot();
+            if (snap == null) return;
+            RefreshSnapshots(new List<DmtSnapshot> { snap }, $"Refreshing snapshot '{snap.Name}'...");
+        }
+
+        private void RefreshAllSnapshots()
+        {
+            if (_project?.Service == null) return;
+            var snapshots = _project.Service.GetSnapshots();
+            if (snapshots.Count == 0) return;
+
+            var result = MessageBox.Show(this,
+                $"Refresh all {snapshots.Count:N0} snapshots from their original sources?",
+                "Refresh Snapshots", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
+            if (result != DialogResult.Yes) return;
+
+            RefreshSnapshots(snapshots, "Refreshing all snapshots...");
+        }
+
+        private void RefreshSnapshots(List<DmtSnapshot> snapshots, string workingMessage)
+        {
+            if (snapshots == null || snapshots.Count == 0 || _project?.Service == null) return;
+            if (_sourceClient == null || _project.IsSourceMismatch)
+            {
+                MessageBox.Show(this, "Connect the project's source environment before refreshing snapshots.", "Source Required", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            if (!ResolveMissingSnapshotSourceFiles(snapshots))
+                return;
+
+            ManageWorkingState(true, workingMessage);
+            WorkAsync(new XrmToolBox.Extensibility.WorkAsyncInfo
+            {
+                Work = (worker, args) =>
+                {
+                    var refreshed = 0;
+                    foreach (var snapshot in snapshots)
+                    {
+                        worker?.ReportProgress(0, $"Refreshing snapshot '{snapshot.Name}'...");
+                        RefreshSnapshot(snapshot, worker);
+                        refreshed++;
+                    }
+                    args.Result = refreshed;
+                },
+                PostWorkCallBack = args =>
+                {
+                    ManageWorkingState(false);
+                    if (args.Error != null)
+                    {
+                        MessageBox.Show(this, $"Refresh failed: {args.Error.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+
+                    RefreshInlineSnapshotList();
+                    var count = args.Result is int n ? n : snapshots.Count;
+                    SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Refreshed {count:N0} snapshot(s)"));
+                },
+                ProgressChanged = ReportWorkProgress
+            });
+        }
+
+        private bool ResolveMissingSnapshotSourceFiles(List<DmtSnapshot> snapshots)
+        {
+            foreach (var snapshot in snapshots.Where(IsFileSnapshot))
+            {
+                var path = ResolveSnapshotSourcePath(snapshot);
+                if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
+                    continue;
+
+                var message = string.IsNullOrWhiteSpace(snapshot.SourceFilePath)
+                    ? $"Snapshot '{snapshot.Name}' does not have a stored source file path. Select the source file to refresh it."
+                    : $"Source file for snapshot '{snapshot.Name}' was not found:\r\n{snapshot.SourceFilePath}\r\n\r\nSelect the source file to refresh it.";
+
+                if (MessageBox.Show(this, message, "Locate Source File", MessageBoxButtons.OKCancel, MessageBoxIcon.Information) != DialogResult.OK)
+                    return false;
+
+                using (var dialog = new OpenFileDialog
+                {
+                    Title = $"Locate source file for {snapshot.Name}",
+                    Filter = GetSnapshotSourceFileFilter(snapshot),
+                    CheckFileExists = true
+                })
+                {
+                    if (dialog.ShowDialog(ParentForm) != DialogResult.OK)
+                        return false;
+
+                    snapshot.SourceFilePath = NormalizeProjectFilePath(dialog.FileName);
+                    snapshot.UpdatedOn = DateTime.UtcNow;
+                    _project.Service.SaveSnapshot(snapshot);
+                }
+            }
+
+            return true;
+        }
+
+        private static bool IsFileSnapshot(DmtSnapshot snapshot)
+        {
+            return string.Equals(snapshot?.Source, "JSON", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(snapshot?.Source, "Excel", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string GetSnapshotSourceFileFilter(DmtSnapshot snapshot)
+        {
+            if (string.Equals(snapshot?.Source, "JSON", StringComparison.OrdinalIgnoreCase))
+                return "JSON files (*.json)|*.json|All files (*.*)|*.*";
+            if (string.Equals(snapshot?.Source, "Excel", StringComparison.OrdinalIgnoreCase))
+                return "Excel files (*.xlsx)|*.xlsx|All files (*.*)|*.*";
+            return "Supported files (*.json;*.xlsx)|*.json;*.xlsx|All files (*.*)|*.*";
+        }
+
+        private void RefreshSnapshot(DmtSnapshot snapshot, System.ComponentModel.BackgroundWorker worker)
+        {
+            if (snapshot == null) return;
+            var source = snapshot.Source ?? string.Empty;
+            var sourceEnvId = !string.IsNullOrWhiteSpace(snapshot.SourceEnvId)
+                ? snapshot.SourceEnvId
+                : _project.SourceEnvironment?.Id ?? string.Empty;
+
+            if (string.Equals(source, "Pull", StringComparison.OrdinalIgnoreCase))
+            {
+                var primaryIdAttr = ResolveSnapshotPrimaryIdAttribute(snapshot);
+                var config = BuildSnapshotRefreshConfig(snapshot);
+                var repo = new Repositories.CrmRepo(_sourceClient);
+                var metadata = repo.GetTableMetadata(snapshot.TableLogicalName);
+                SqliteDataLogic.Pull(_project.Service, _sourceClient, snapshot.TableLogicalName, primaryIdAttr,
+                    sourceEnvId, config, snapshot.Name, metadata.Attributes, worker);
+                return;
+            }
+
+            if (string.Equals(source, "JSON", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(source, "Excel", StringComparison.OrdinalIgnoreCase))
+            {
+                var path = ResolveSnapshotSourcePath(snapshot);
+                if (string.IsNullOrWhiteSpace(path))
+                    throw new InvalidOperationException($"Snapshot '{snapshot.Name}' does not have a stored source file path. Load the file again to enable refresh.");
+                if (!File.Exists(path))
+                    throw new FileNotFoundException($"Source file for snapshot '{snapshot.Name}' was not found.", path);
+
+                var config = BuildSnapshotRefreshConfig(snapshot);
+                if (string.Equals(source, "JSON", StringComparison.OrdinalIgnoreCase))
+                    SqliteFileAdapter.LoadFromJson(_project.Service, path, snapshot.Name, sourceEnvId, config, _sourceClient, worker, snapshot.SourceFilePath);
+                else
+                    SqliteFileAdapter.LoadFromExcel(_project.Service, path, snapshot.Name, sourceEnvId, config, _sourceClient, worker, snapshot.SourceFilePath);
+                return;
+            }
+
+            throw new InvalidOperationException($"Snapshot '{snapshot.Name}' has unsupported source '{snapshot.Source}'.");
+        }
+
+        private DataTableConfig BuildSnapshotRefreshConfig(DmtSnapshot snapshot)
+        {
+            return new DataTableConfig
+            {
+                Filter = snapshot.PullFilter,
+                SelectedAttributes = snapshot.ColumnConfig?
+                    .Where(c => !string.IsNullOrWhiteSpace(c.LogicalName))
+                    .Select(c => c.LogicalName)
+                    .ToList() ?? new List<string>(),
+                AllColumns = snapshot.ColumnConfig != null
+                    ? snapshot.ColumnConfig.Select(CloneSnapshotColumn).ToList()
+                    : new List<DataTableColumnConfig>(),
+                BatchSize = 25,
+                LoadMatchKeyMode = snapshot.LoadMatchKeyMode ?? "Guid",
+                LoadMatchKeyFields = snapshot.LoadMatchKeyFields != null
+                    ? new List<string>(snapshot.LoadMatchKeyFields)
+                    : new List<string>()
+            };
+        }
+
+        private static DataTableColumnConfig CloneSnapshotColumn(DataTableColumnConfig col)
+        {
+            return new DataTableColumnConfig
+            {
+                LogicalName = col.LogicalName,
+                DisplayName = col.DisplayName,
+                Type = col.Type,
+                SqliteType = col.SqliteType,
+                RelatedTable = col.RelatedTable,
+                Resolution = col.Resolution,
+                AlternateKeyFields = col.AlternateKeyFields != null ? new List<string>(col.AlternateKeyFields) : new List<string>(),
+                IsMultiSelect = col.IsMultiSelect
+            };
+        }
+
+        private string ResolveSnapshotPrimaryIdAttribute(DmtSnapshot snapshot)
+        {
+            if (!string.IsNullOrWhiteSpace(snapshot.PrimaryIdAttribute))
+                return snapshot.PrimaryIdAttribute;
+
+            var (_, _, primaryIdAttr, _) = _project.Service.GetTableConfig(snapshot.TableLogicalName);
+            if (!string.IsNullOrWhiteSpace(primaryIdAttr))
+                return primaryIdAttr;
+
+            return snapshot.ColumnConfig?.FirstOrDefault(c =>
+                    string.Equals(c.Type, "Uniqueidentifier", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(c.Type, "Guid", StringComparison.OrdinalIgnoreCase)
+                    || c.LogicalName.EndsWith("id", StringComparison.OrdinalIgnoreCase))
+                ?.LogicalName;
+        }
+
+        private string ResolveSnapshotSourcePath(DmtSnapshot snapshot)
+        {
+            var path = snapshot?.SourceFilePath;
+            if (string.IsNullOrWhiteSpace(path)) return null;
+            if (Path.IsPathRooted(path)) return path;
+
+            var projectDir = !string.IsNullOrWhiteSpace(_project?.FilePath)
+                ? Path.GetDirectoryName(Path.GetFullPath(_project.FilePath))
+                : null;
+            return string.IsNullOrWhiteSpace(projectDir)
+                ? path
+                : Path.GetFullPath(Path.Combine(projectDir, path));
+        }
+
         private void RenameInlineSnapshot()
         {
             var snap = GetInlineContextSnapshot();
@@ -461,7 +688,9 @@ namespace Dataverse.XrmTools.DataMigrationTool
             _inlineDataGrid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
             _inlineDataGrid.Columns.Clear();
             AddInlineGridColumn("_source_id", "Source ID", 230);
-            AddInlineGridColumn("_is_new", "New?", 42);
+            _inlineShowNewColumn = !string.Equals(snap.Source, "Pull", StringComparison.OrdinalIgnoreCase);
+            if (_inlineShowNewColumn)
+                AddInlineGridColumn("_is_new", "New?", 42);
             foreach (var col in snap.ColumnConfig)
             {
                 var header = string.IsNullOrEmpty(col.DisplayName) ? col.LogicalName : col.DisplayName;
@@ -510,7 +739,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
             {
                 var cells = new List<object>();
                 cells.Add(row.TryGetValue("_source_id", out var sid) ? sid?.ToString() ?? "" : "");
-                cells.Add(row.TryGetValue("_is_new", out var isn) && isn is bool b && b ? "Yes" : "");
+                if (_inlineShowNewColumn)
+                    cells.Add(row.TryGetValue("_is_new", out var isn) && isn is bool b && b ? "Yes" : "");
                 foreach (var col in snap.ColumnConfig)
                 {
                     row.TryGetValue(col.LogicalName, out var val);
@@ -550,6 +780,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (_inlineDataPrevButton != null) _inlineDataPrevButton.Enabled = false;
             if (_inlineDataNextButton != null) _inlineDataNextButton.Enabled = false;
             _inlineSelectedSnapshot = null;
+            _inlineShowNewColumn = false;
         }
 
         private static string FormatInlineValue(object val, DataTableColumnConfig col, Dictionary<string, Dictionary<int, string>> optCache)

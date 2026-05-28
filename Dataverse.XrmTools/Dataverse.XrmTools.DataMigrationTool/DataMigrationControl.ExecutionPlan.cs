@@ -448,8 +448,10 @@ namespace Dataverse.XrmTools.DataMigrationTool
             _executionPlanExecuteStepButton = AddExecutionPlanToolStripButton(stepActions, "Execute Step", (s, e) => ExecuteSelectedExecutionPlanStep());
             stepActions.Items.Add(new ToolStripSeparator());
             _executionPlanCloneStepButton = AddExecutionPlanToolStripButton(stepActions, "Clone", (s, e) => CloneSelectedExecutionPlanStep());
-            _executionPlanMoveStepUpButton = AddExecutionPlanToolStripButton(stepActions, "Move Up", (s, e) => MoveSelectedExecutionPlanStep(-1));
-            _executionPlanMoveStepDownButton = AddExecutionPlanToolStripButton(stepActions, "Move Down", (s, e) => MoveSelectedExecutionPlanStep(1));
+            _executionPlanMoveStepUpButton = AddExecutionPlanToolStripButton(stepActions, "↑", (s, e) => MoveSelectedExecutionPlanStep(-1));
+            _executionPlanMoveStepUpButton.ToolTipText = "Move step up";
+            _executionPlanMoveStepDownButton = AddExecutionPlanToolStripButton(stepActions, "↓", (s, e) => MoveSelectedExecutionPlanStep(1));
+            _executionPlanMoveStepDownButton.ToolTipText = "Move step down";
             _executionPlanRemoveStepButton = AddExecutionPlanToolStripButton(stepActions, "Remove", (s, e) => RemoveSelectedExecutionPlanStep());
 
             layout.Controls.Add(headerLayout, 0, 0);
@@ -477,7 +479,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             {
                 if (_executionPlanSplitContainer?.Width > 0)
                 {
-                    SetExecutionPlanPanelWidthRatio(0.50m);
+                    SetExecutionPlanPanelWidthRatio(0.70m);
                     ResizeExecutionPlanColumns();
                 }
                 if (_rightSplitContainer?.Height > 0)
@@ -497,7 +499,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             if (_executionPlanSplitContainer == null || _executionPlanSplitContainer.Width <= 0) return;
 
-            ratio = Math.Max(0.25m, Math.Min(0.50m, ratio));
+            ratio = Math.Max(0.30m, Math.Min(0.70m, ratio));
             var total = _executionPlanSplitContainer.Width - _executionPlanSplitContainer.SplitterWidth;
             if (total <= 0) return;
 
@@ -513,8 +515,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (total <= 0) return;
 
             var planWidth = _executionPlanSplitContainer.Panel2.Width;
-            var min = (int)Math.Round(total * 0.25m);
-            var max = (int)Math.Round(total * 0.50m);
+            var min = (int)Math.Round(total * 0.30m);
+            var max = (int)Math.Round(total * 0.70m);
             if (planWidth < min)
                 _executionPlanSplitContainer.SplitterDistance = total - min;
             else if (planWidth > max)

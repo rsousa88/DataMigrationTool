@@ -27,7 +27,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void InitializeLoadFilePanel()
         {
-            _tsmiLoadFile = new ToolStripMenuItem("Load File to Project");
+            _tsmiLoadFile = new ToolStripMenuItem("Import from File");
             _tsmiLoadFile.Click += (s, e) => LoadFileToProject();
             _tsmiData.DropDownItems.Add(_tsmiLoadFile);
         }
@@ -80,9 +80,9 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     Work = (worker, args) =>
                     {
                         if (ext == ".json")
-                            args.Result = SqliteFileAdapter.LoadFromJson(_project.Service, filePath, snapshotName, sourceEnvId, config, _sourceClient, worker);
+                            args.Result = SqliteFileAdapter.LoadFromJson(_project.Service, filePath, snapshotName, sourceEnvId, config, _sourceClient, worker, NormalizeProjectFilePath(filePath));
                         else
-                            args.Result = SqliteFileAdapter.LoadFromExcel(_project.Service, filePath, snapshotName, sourceEnvId, config, _sourceClient, worker);
+                            args.Result = SqliteFileAdapter.LoadFromExcel(_project.Service, filePath, snapshotName, sourceEnvId, config, _sourceClient, worker, NormalizeProjectFilePath(filePath));
                     },
                     PostWorkCallBack = args =>
                     {
@@ -102,6 +102,11 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     ProgressChanged = ReportWorkProgress
                 });
             }
+        }
+
+        private string NormalizeProjectFilePath(string path)
+        {
+            return ExecutionPlanService.NormalizePlanPathForStorage(path, _project?.FilePath);
         }
 
         #endregion
