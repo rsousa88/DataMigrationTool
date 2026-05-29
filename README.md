@@ -168,6 +168,10 @@ In project workflows, mappings are stored in the active `.dmtproj` per source/ta
 ## Release Notes
 
 ### 2026.5.29.x
+- [NEW] Added Rowcraft connector integration for opening project snapshots in Rowcraft through a local authenticated bridge without uploading `.dmtproj` data to Rowcraft cloud storage
+- [NEW] Rowcraft can stage snapshot row creates, updates, and deletes back to DMT while DMT remains the system of record and applies changes only when the user clicks Apply Rowcraft
+- [NEW] Snapshot lists now show pending Rowcraft change counts and include actions to open, apply, or discard Rowcraft edits
+- [FIX] Applying Rowcraft changes updates snapshot row counts and marks dependent execution-plan previews stale before push
 - [NEW] Project-specific environment tags can now be configured and used in push step names, execution plan target cells, and target selectors
 - [NEW] Configure Push Step now lets users change the target environment and updates the step name with the selected environment tag
 - [FIX] The top command bar now contains only global actions, with table actions moved to the left-side strip and snapshot/plan actions kept in their local strips

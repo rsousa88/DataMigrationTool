@@ -189,4 +189,53 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
         public string Status { get; set; }               // "Completed" | "Failed" | "Cancelled"
         public ExecutionPlanRunLog Log { get; set; }
     }
+
+    public class RowcraftEditSession
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString("D");
+        public string SnapshotName { get; set; }
+        public string TableLogicalName { get; set; }
+        public DateTime? BaseSnapshotUpdatedOn { get; set; }
+        public string Status { get; set; } = "Pending";  // "Pending" | "Applied" | "Discarded"
+        public DateTime CreatedOn { get; set; } = DateTime.UtcNow;
+        public DateTime UpdatedOn { get; set; } = DateTime.UtcNow;
+        public DateTime? AppliedOn { get; set; }
+        public DateTime? DiscardedOn { get; set; }
+    }
+
+    public class RowcraftPendingChange
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString("D");
+        public string SessionId { get; set; }
+        public string SnapshotName { get; set; }
+        public string TableLogicalName { get; set; }
+        public string Operation { get; set; }             // "Create" | "Update" | "Delete"
+        public long? RowId { get; set; }
+        public string ClientRowId { get; set; }
+        public Dictionary<string, object> ChangedColumns { get; set; } = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, object> Before { get; set; }
+        public Dictionary<string, object> After { get; set; }
+        public DateTime StagedOn { get; set; } = DateTime.UtcNow;
+    }
+
+    public class RowcraftChangeSummary
+    {
+        public string SessionId { get; set; }
+        public string SnapshotName { get; set; }
+        public string Status { get; set; }
+        public int Creates { get; set; }
+        public int Updates { get; set; }
+        public int Deletes { get; set; }
+        public int Total => Creates + Updates + Deletes;
+    }
+
+    public class RowcraftApplyResult
+    {
+        public string SessionId { get; set; }
+        public string SnapshotName { get; set; }
+        public int Created { get; set; }
+        public int Updated { get; set; }
+        public int Deleted { get; set; }
+        public int RowCount { get; set; }
+    }
 }

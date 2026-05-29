@@ -189,6 +189,100 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
 
         // ─── Snapshot name sanitization ────────────────────────────────────────
 
+        [Fact]
+        public void RowcraftEditSession_StagesWithoutChangingSnapshot()
+        {
+            var snapshot = CreateSnapshotWithRows();
+            var firstRow = _svc.ReadSnapshotRecords(snapshot.TableSuffix, snapshot.ColumnConfig).First();
+            var rowId = (long)firstRow["_row_id"];
+
+            var session = _svc.StartRowcraftEditSession(snapshot.Name);
+            _svc.StageRowcraftUpdate(session.Id, rowId, new Dictionary<string, object> { ["name"] = "Edited" });
+            _svc.StageRowcraftCreate(session.Id, new Dictionary<string, object> { ["name"] = "Created", ["count"] = 3 });
+
+            var rows = _svc.ReadSnapshotRecords(snapshot.TableSuffix, snapshot.ColumnConfig).ToList();
+            Assert.Equal(2, rows.Count);
+            Assert.Equal("A", rows[0]["name"]);
+
+            var summary = _svc.GetRowcraftChangeSummary(session.Id);
+            Assert.Equal(1, summary.Creates);
+            Assert.Equal(1, summary.Updates);
+            Assert.Equal(0, summary.Deletes);
+        }
+
+        [Fact]
+        public void ApplyRowcraftEditSession_AppliesCreateUpdateDelete()
+        {
+            var snapshot = CreateSnapshotWithRows();
+            var rowsBefore = _svc.ReadSnapshotRecords(snapshot.TableSuffix, snapshot.ColumnConfig).ToList();
+            var updateRowId = (long)rowsBefore[0]["_row_id"];
+            var deleteRowId = (long)rowsBefore[1]["_row_id"];
+
+            var session = _svc.StartRowcraftEditSession(snapshot.Name);
+            _svc.StageRowcraftUpdate(session.Id, updateRowId, new Dictionary<string, object> { ["name"] = "Edited", ["count"] = 10 });
+            _svc.StageRowcraftDelete(session.Id, deleteRowId);
+            _svc.StageRowcraftCreate(session.Id, new Dictionary<string, object> { ["name"] = "Created", ["count"] = 3 });
+
+            var result = _svc.ApplyRowcraftEditSession(session.Id);
+
+            Assert.Equal(1, result.Created);
+            Assert.Equal(1, result.Updated);
+            Assert.Equal(1, result.Deleted);
+            Assert.Equal(2, result.RowCount);
+
+            var rowsAfter = _svc.ReadSnapshotRecords(snapshot.TableSuffix, snapshot.ColumnConfig).ToList();
+            Assert.Equal(2, rowsAfter.Count);
+            Assert.Contains(rowsAfter, r => (string)r["name"] == "Edited" && (long)r["count"] == 10L);
+            Assert.Contains(rowsAfter, r => (string)r["name"] == "Created" && (bool)r["_is_new"]);
+            Assert.DoesNotContain(rowsAfter, r => (string)r["name"] == "B");
+        }
+
+        [Fact]
+        public void DiscardRowcraftEditSession_LeavesSnapshotUnchanged()
+        {
+            var snapshot = CreateSnapshotWithRows();
+            var firstRow = _svc.ReadSnapshotRecords(snapshot.TableSuffix, snapshot.ColumnConfig).First();
+            var rowId = (long)firstRow["_row_id"];
+
+            var session = _svc.StartRowcraftEditSession(snapshot.Name);
+            _svc.StageRowcraftUpdate(session.Id, rowId, new Dictionary<string, object> { ["name"] = "Edited" });
+            _svc.DiscardRowcraftEditSession(session.Id);
+
+            Assert.Throws<InvalidOperationException>(() =>
+                _svc.StageRowcraftCreate(session.Id, new Dictionary<string, object> { ["name"] = "AfterDiscard" }));
+
+            var rows = _svc.ReadSnapshotRecords(snapshot.TableSuffix, snapshot.ColumnConfig).ToList();
+            Assert.Equal("A", rows[0]["name"]);
+            Assert.Equal("Discarded", _svc.GetRowcraftEditSession(session.Id).Status);
+        }
+
+        [Fact]
+        public void StageRowcraftUpdate_BlocksInternalColumns()
+        {
+            var snapshot = CreateSnapshotWithRows();
+            var firstRow = _svc.ReadSnapshotRecords(snapshot.TableSuffix, snapshot.ColumnConfig).First();
+            var rowId = (long)firstRow["_row_id"];
+            var session = _svc.StartRowcraftEditSession(snapshot.Name);
+
+            Assert.Throws<InvalidOperationException>(() =>
+                _svc.StageRowcraftUpdate(session.Id, rowId, new Dictionary<string, object> { ["_source_id"] = "bad" }));
+        }
+
+        [Fact]
+        public void StageRowcraftCreate_PreservesClientRowId()
+        {
+            var snapshot = CreateSnapshotWithRows();
+            var session = _svc.StartRowcraftEditSession(snapshot.Name);
+
+            var change = _svc.StageRowcraftCreate(
+                session.Id,
+                new Dictionary<string, object> { ["name"] = "Created", ["count"] = 3 },
+                "rowcraft-temp-1");
+
+            Assert.Equal("rowcraft-temp-1", change.ClientRowId);
+            Assert.Equal("Created", change.After["name"]);
+        }
+
         [Theory]
         [InlineData("My Accounts", "my_accounts")]
         [InlineData("Account (Active)", "account_active")]
@@ -808,6 +902,25 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
             var snapshot = MakeSnapshot(name, table, envId, columns);
             _svc.SaveSnapshot(snapshot);
             _svc.CreateSnapshotTable(snapshot.TableSuffix, columns);
+        }
+
+        private DmtSnapshot CreateSnapshotWithRows()
+        {
+            var columns = new List<DataTableColumnConfig>
+            {
+                new DataTableColumnConfig { LogicalName = "name", Type = "String", SqliteType = "TEXT" },
+                new DataTableColumnConfig { LogicalName = "count", Type = "Integer", SqliteType = "INTEGER" }
+            };
+            var snapshot = MakeSnapshot("rowcraft_snap", "account", "env-001", columns);
+            snapshot.Source = "Excel";
+            _svc.SaveSnapshot(snapshot);
+            _svc.CreateSnapshotTable(snapshot.TableSuffix, columns);
+            _svc.WriteSnapshotRecords(snapshot.TableSuffix, new[]
+            {
+                new Dictionary<string, object> { ["_source_id"] = "src-a", ["name"] = "A", ["count"] = 1 },
+                new Dictionary<string, object> { ["_source_id"] = "src-b", ["name"] = "B", ["count"] = 2 }
+            }, columns);
+            return _svc.GetSnapshot(snapshot.Name);
         }
     }
 }

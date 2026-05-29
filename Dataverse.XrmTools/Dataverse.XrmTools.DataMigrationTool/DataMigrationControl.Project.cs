@@ -211,6 +211,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (_project == null) return;
 
             var name = _project.ProjectName;
+            StopRowcraftBridge();
             try { _project.Service?.Dispose(); } catch { }
             _project = null;
             _executionPlan = null;

@@ -8,11 +8,10 @@ TestResults/
 
 TODO.md
 DEV-NOTES.md
-TEST-PLAN.md
-PLAN-*.md
+DEV-NOTES-ISSUES.md
+*-PLAN.md
 
 .claude/
 CLAUDE.md
 
 debug/
-DEV-NOTES-ISSUES.md

@@ -23,7 +23,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
         private SqliteConnection _connection;
         private bool _disposed;
 
-        private const int CurrentSchemaVersion = 4;
+        private const int CurrentSchemaVersion = 5;
         private static readonly string[] ReservedColumnNames = { "_row_id", "_source_id", "_is_new" };
 
         private static readonly JsonSerializerSettings _json = new JsonSerializerSettings
@@ -232,6 +232,69 @@ CREATE TABLE IF NOT EXISTS _run_logs (
     status       TEXT NOT NULL,
     log_json     TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS _rowcraft_edit_sessions (
+    id                       TEXT PRIMARY KEY,
+    snapshot_name            TEXT NOT NULL,
+    table_logical_name       TEXT NOT NULL,
+    base_snapshot_updated_on TEXT,
+    status                   TEXT NOT NULL,
+    created_on               TEXT NOT NULL,
+    updated_on               TEXT NOT NULL,
+    applied_on               TEXT,
+    discarded_on             TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_rowcraft_sessions_snapshot_status
+    ON _rowcraft_edit_sessions(snapshot_name, status);
+
+CREATE INDEX IF NOT EXISTS idx_rowcraft_sessions_updated
+    ON _rowcraft_edit_sessions(updated_on);
+
+CREATE TABLE IF NOT EXISTS _rowcraft_pending_changes (
+    id                   TEXT PRIMARY KEY,
+    session_id           TEXT NOT NULL,
+    snapshot_name        TEXT NOT NULL,
+    table_logical_name   TEXT NOT NULL,
+    operation            TEXT NOT NULL,
+    row_id               INTEGER,
+    client_row_id        TEXT,
+    changed_columns_json TEXT,
+    before_json          TEXT,
+    after_json           TEXT,
+    staged_on            TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_rowcraft_pending_session_operation
+    ON _rowcraft_pending_changes(session_id, operation);
+
+CREATE INDEX IF NOT EXISTS idx_rowcraft_pending_snapshot_row
+    ON _rowcraft_pending_changes(snapshot_name, row_id);
+
+CREATE INDEX IF NOT EXISTS idx_rowcraft_pending_staged
+    ON _rowcraft_pending_changes(staged_on);
+
+CREATE TABLE IF NOT EXISTS _rowcraft_edit_log (
+    id                   TEXT PRIMARY KEY,
+    session_id           TEXT NOT NULL,
+    snapshot_name        TEXT NOT NULL,
+    table_logical_name   TEXT NOT NULL,
+    row_id               INTEGER,
+    client_row_id        TEXT,
+    operation            TEXT NOT NULL,
+    changed_columns_json TEXT NOT NULL,
+    before_json          TEXT,
+    after_json           TEXT,
+    status               TEXT NOT NULL,
+    staged_on            TEXT NOT NULL,
+    applied_on           TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_rowcraft_edit_log_snapshot_row
+    ON _rowcraft_edit_log(snapshot_name, row_id);
+
+CREATE INDEX IF NOT EXISTS idx_rowcraft_edit_log_staged
+    ON _rowcraft_edit_log(staged_on);
 ";
             cmd.ExecuteNonQuery();
         }
@@ -271,7 +334,73 @@ UPDATE _snapshots SET sort_order = (SELECT rn FROM ranked WHERE ranked.id = _sna
                 cmd.ExecuteNonQuery();
             }
 
+            if (fromVersion < 5)
+            {
+                CreateRowcraftSchema();
+            }
+
             SetProjectValue("version", CurrentSchemaVersion.ToString());
+        }
+
+        private void CreateRowcraftSchema()
+        {
+            using var cmd = _connection.CreateCommand();
+            cmd.CommandText = @"
+CREATE TABLE IF NOT EXISTS _rowcraft_edit_sessions (
+    id                       TEXT PRIMARY KEY,
+    snapshot_name            TEXT NOT NULL,
+    table_logical_name       TEXT NOT NULL,
+    base_snapshot_updated_on TEXT,
+    status                   TEXT NOT NULL,
+    created_on               TEXT NOT NULL,
+    updated_on               TEXT NOT NULL,
+    applied_on               TEXT,
+    discarded_on             TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_rowcraft_sessions_snapshot_status
+    ON _rowcraft_edit_sessions(snapshot_name, status);
+CREATE INDEX IF NOT EXISTS idx_rowcraft_sessions_updated
+    ON _rowcraft_edit_sessions(updated_on);
+CREATE TABLE IF NOT EXISTS _rowcraft_pending_changes (
+    id                   TEXT PRIMARY KEY,
+    session_id           TEXT NOT NULL,
+    snapshot_name        TEXT NOT NULL,
+    table_logical_name   TEXT NOT NULL,
+    operation            TEXT NOT NULL,
+    row_id               INTEGER,
+    client_row_id        TEXT,
+    changed_columns_json TEXT,
+    before_json          TEXT,
+    after_json           TEXT,
+    staged_on            TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_rowcraft_pending_session_operation
+    ON _rowcraft_pending_changes(session_id, operation);
+CREATE INDEX IF NOT EXISTS idx_rowcraft_pending_snapshot_row
+    ON _rowcraft_pending_changes(snapshot_name, row_id);
+CREATE INDEX IF NOT EXISTS idx_rowcraft_pending_staged
+    ON _rowcraft_pending_changes(staged_on);
+CREATE TABLE IF NOT EXISTS _rowcraft_edit_log (
+    id                   TEXT PRIMARY KEY,
+    session_id           TEXT NOT NULL,
+    snapshot_name        TEXT NOT NULL,
+    table_logical_name   TEXT NOT NULL,
+    row_id               INTEGER,
+    client_row_id        TEXT,
+    operation            TEXT NOT NULL,
+    changed_columns_json TEXT NOT NULL,
+    before_json          TEXT,
+    after_json           TEXT,
+    status               TEXT NOT NULL,
+    staged_on            TEXT NOT NULL,
+    applied_on           TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_rowcraft_edit_log_snapshot_row
+    ON _rowcraft_edit_log(snapshot_name, row_id);
+CREATE INDEX IF NOT EXISTS idx_rowcraft_edit_log_staged
+    ON _rowcraft_edit_log(staged_on);
+";
+            cmd.ExecuteNonQuery();
         }
 
         // ─── Project metadata ──────────────────────────────────────────────────
@@ -806,6 +935,505 @@ VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @sfp, @pf, @pid, @
             return (int)(long)cmd.ExecuteScalar();
         }
 
+        public RowcraftEditSession StartRowcraftEditSession(string snapshotName)
+        {
+            var snapshot = GetSnapshot(snapshotName)
+                ?? throw new InvalidOperationException($"Snapshot '{snapshotName}' does not exist.");
+
+            var existing = GetPendingRowcraftEditSession(snapshotName);
+            if (existing != null) return existing;
+
+            var now = DateTime.UtcNow;
+            var session = new RowcraftEditSession
+            {
+                Id = Guid.NewGuid().ToString("D"),
+                SnapshotName = snapshot.Name,
+                TableLogicalName = snapshot.TableLogicalName,
+                BaseSnapshotUpdatedOn = snapshot.UpdatedOn,
+                Status = "Pending",
+                CreatedOn = now,
+                UpdatedOn = now
+            };
+
+            using var cmd = _connection.CreateCommand();
+            cmd.CommandText = @"
+INSERT INTO _rowcraft_edit_sessions(id,snapshot_name,table_logical_name,base_snapshot_updated_on,status,created_on,updated_on)
+VALUES(@id,@sn,@t,@base,@st,@co,@uo);";
+            cmd.Parameters.AddWithValue("@id", session.Id);
+            cmd.Parameters.AddWithValue("@sn", session.SnapshotName);
+            cmd.Parameters.AddWithValue("@t", session.TableLogicalName);
+            cmd.Parameters.AddWithValue("@base", session.BaseSnapshotUpdatedOn.HasValue ? (object)session.BaseSnapshotUpdatedOn.Value.ToString("O") : DBNull.Value);
+            cmd.Parameters.AddWithValue("@st", session.Status);
+            cmd.Parameters.AddWithValue("@co", session.CreatedOn.ToString("O"));
+            cmd.Parameters.AddWithValue("@uo", session.UpdatedOn.ToString("O"));
+            cmd.ExecuteNonQuery();
+            return session;
+        }
+
+        public RowcraftEditSession GetRowcraftEditSession(string sessionId)
+        {
+            using var cmd = _connection.CreateCommand();
+            cmd.CommandText = "SELECT id,snapshot_name,table_logical_name,base_snapshot_updated_on,status,created_on,updated_on,applied_on,discarded_on FROM _rowcraft_edit_sessions WHERE id=@id;";
+            cmd.Parameters.AddWithValue("@id", sessionId);
+            using var reader = cmd.ExecuteReader();
+            return reader.Read() ? ReadRowcraftEditSession(reader) : null;
+        }
+
+        public RowcraftEditSession GetPendingRowcraftEditSession(string snapshotName)
+        {
+            using var cmd = _connection.CreateCommand();
+            cmd.CommandText = @"
+SELECT id,snapshot_name,table_logical_name,base_snapshot_updated_on,status,created_on,updated_on,applied_on,discarded_on
+FROM _rowcraft_edit_sessions
+WHERE snapshot_name=@sn AND status='Pending'
+ORDER BY updated_on DESC LIMIT 1;";
+            cmd.Parameters.AddWithValue("@sn", snapshotName);
+            using var reader = cmd.ExecuteReader();
+            return reader.Read() ? ReadRowcraftEditSession(reader) : null;
+        }
+
+        public List<RowcraftChangeSummary> GetPendingRowcraftChangeSummaries()
+        {
+            using var cmd = _connection.CreateCommand();
+            cmd.CommandText = @"
+SELECT s.id,s.snapshot_name,s.status,
+       SUM(CASE WHEN c.operation='Create' THEN 1 ELSE 0 END) AS creates,
+       SUM(CASE WHEN c.operation='Update' THEN 1 ELSE 0 END) AS updates,
+       SUM(CASE WHEN c.operation='Delete' THEN 1 ELSE 0 END) AS deletes
+FROM _rowcraft_edit_sessions s
+LEFT JOIN _rowcraft_pending_changes c ON c.session_id=s.id
+WHERE s.status='Pending'
+GROUP BY s.id,s.snapshot_name,s.status
+ORDER BY s.updated_on DESC;";
+            var result = new List<RowcraftChangeSummary>();
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+                result.Add(ReadRowcraftChangeSummary(reader));
+            return result;
+        }
+
+        public RowcraftChangeSummary GetRowcraftChangeSummary(string sessionId)
+        {
+            using var cmd = _connection.CreateCommand();
+            cmd.CommandText = @"
+SELECT s.id,s.snapshot_name,s.status,
+       SUM(CASE WHEN c.operation='Create' THEN 1 ELSE 0 END) AS creates,
+       SUM(CASE WHEN c.operation='Update' THEN 1 ELSE 0 END) AS updates,
+       SUM(CASE WHEN c.operation='Delete' THEN 1 ELSE 0 END) AS deletes
+FROM _rowcraft_edit_sessions s
+LEFT JOIN _rowcraft_pending_changes c ON c.session_id=s.id
+WHERE s.id=@id
+GROUP BY s.id,s.snapshot_name,s.status;";
+            cmd.Parameters.AddWithValue("@id", sessionId);
+            using var reader = cmd.ExecuteReader();
+            return reader.Read() ? ReadRowcraftChangeSummary(reader) : null;
+        }
+
+        public RowcraftPendingChange StageRowcraftCreate(string sessionId, Dictionary<string, object> values, string clientRowId = null)
+        {
+            var session = RequirePendingRowcraftSession(sessionId);
+            var snapshot = GetSnapshot(session.SnapshotName)
+                ?? throw new InvalidOperationException($"Snapshot '{session.SnapshotName}' does not exist.");
+            var after = ValidateRowcraftValues(snapshot, values);
+            var change = new RowcraftPendingChange
+            {
+                SessionId = session.Id,
+                SnapshotName = session.SnapshotName,
+                TableLogicalName = session.TableLogicalName,
+                Operation = "Create",
+                ClientRowId = string.IsNullOrWhiteSpace(clientRowId) ? Guid.NewGuid().ToString("D") : clientRowId,
+                ChangedColumns = new Dictionary<string, object>(after, StringComparer.OrdinalIgnoreCase),
+                After = after
+            };
+            SaveRowcraftPendingChange(change);
+            TouchRowcraftSession(session.Id);
+            return change;
+        }
+
+        public RowcraftPendingChange StageRowcraftUpdate(string sessionId, long rowId, Dictionary<string, object> values)
+        {
+            var session = RequirePendingRowcraftSession(sessionId);
+            var snapshot = GetSnapshot(session.SnapshotName)
+                ?? throw new InvalidOperationException($"Snapshot '{session.SnapshotName}' does not exist.");
+            var before = ReadSnapshotRecordByRowId(snapshot.TableSuffix, rowId)
+                ?? throw new InvalidOperationException($"Snapshot row '{rowId}' does not exist.");
+            var changed = ValidateRowcraftValues(snapshot, values);
+            var after = new Dictionary<string, object>(before, StringComparer.OrdinalIgnoreCase);
+            foreach (var pair in changed) after[pair.Key] = pair.Value;
+
+            var change = new RowcraftPendingChange
+            {
+                SessionId = session.Id,
+                SnapshotName = session.SnapshotName,
+                TableLogicalName = session.TableLogicalName,
+                Operation = "Update",
+                RowId = rowId,
+                ChangedColumns = changed,
+                Before = before,
+                After = after
+            };
+            SaveRowcraftPendingChange(change);
+            TouchRowcraftSession(session.Id);
+            return change;
+        }
+
+        public RowcraftPendingChange StageRowcraftDelete(string sessionId, long rowId)
+        {
+            var session = RequirePendingRowcraftSession(sessionId);
+            var snapshot = GetSnapshot(session.SnapshotName)
+                ?? throw new InvalidOperationException($"Snapshot '{session.SnapshotName}' does not exist.");
+            var before = ReadSnapshotRecordByRowId(snapshot.TableSuffix, rowId)
+                ?? throw new InvalidOperationException($"Snapshot row '{rowId}' does not exist.");
+            var change = new RowcraftPendingChange
+            {
+                SessionId = session.Id,
+                SnapshotName = session.SnapshotName,
+                TableLogicalName = session.TableLogicalName,
+                Operation = "Delete",
+                RowId = rowId,
+                Before = before,
+                ChangedColumns = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+            };
+            SaveRowcraftPendingChange(change);
+            TouchRowcraftSession(session.Id);
+            return change;
+        }
+
+        public void DiscardRowcraftEditSession(string sessionId)
+        {
+            var session = RequirePendingRowcraftSession(sessionId);
+            var now = DateTime.UtcNow;
+            using var cmd = _connection.CreateCommand();
+            cmd.CommandText = "UPDATE _rowcraft_edit_sessions SET status='Discarded', updated_on=@uo, discarded_on=@do WHERE id=@id;";
+            cmd.Parameters.AddWithValue("@uo", now.ToString("O"));
+            cmd.Parameters.AddWithValue("@do", now.ToString("O"));
+            cmd.Parameters.AddWithValue("@id", session.Id);
+            cmd.ExecuteNonQuery();
+        }
+
+        public RowcraftApplyResult ApplyRowcraftEditSession(string sessionId)
+        {
+            var session = RequirePendingRowcraftSession(sessionId);
+            var snapshot = GetSnapshot(session.SnapshotName)
+                ?? throw new InvalidOperationException($"Snapshot '{session.SnapshotName}' does not exist.");
+            var changes = GetRowcraftPendingChanges(session.Id);
+
+            using var tx = _connection.BeginTransaction();
+            try
+            {
+                var result = new RowcraftApplyResult { SessionId = session.Id, SnapshotName = session.SnapshotName };
+                foreach (var change in changes)
+                {
+                    if (string.Equals(change.Operation, "Create", StringComparison.OrdinalIgnoreCase))
+                    {
+                        ApplyRowcraftCreate(snapshot, change, tx);
+                        result.Created++;
+                    }
+                    else if (string.Equals(change.Operation, "Update", StringComparison.OrdinalIgnoreCase))
+                    {
+                        ApplyRowcraftUpdate(snapshot, change, tx);
+                        result.Updated++;
+                    }
+                    else if (string.Equals(change.Operation, "Delete", StringComparison.OrdinalIgnoreCase))
+                    {
+                        ApplyRowcraftDelete(snapshot, change, tx);
+                        result.Deleted++;
+                    }
+                }
+
+                result.RowCount = UpdateSnapshotRowCount(snapshot.TableSuffix, tx);
+                var now = DateTime.UtcNow;
+                using (var sess = _connection.CreateCommand())
+                {
+                    sess.Transaction = tx;
+                    sess.CommandText = "UPDATE _rowcraft_edit_sessions SET status='Applied', updated_on=@uo, applied_on=@ao WHERE id=@id;";
+                    sess.Parameters.AddWithValue("@uo", now.ToString("O"));
+                    sess.Parameters.AddWithValue("@ao", now.ToString("O"));
+                    sess.Parameters.AddWithValue("@id", session.Id);
+                    sess.ExecuteNonQuery();
+                }
+                using (var log = _connection.CreateCommand())
+                {
+                    log.Transaction = tx;
+                    log.CommandText = "UPDATE _rowcraft_edit_log SET status='Applied', applied_on=@ao WHERE session_id=@sid AND status='Staged';";
+                    log.Parameters.AddWithValue("@ao", now.ToString("O"));
+                    log.Parameters.AddWithValue("@sid", session.Id);
+                    log.ExecuteNonQuery();
+                }
+
+                tx.Commit();
+                return result;
+            }
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
+        }
+
+        private Dictionary<string, object> ReadSnapshotRecordByRowId(string tableSuffix, long rowId)
+        {
+            using var check = _connection.CreateCommand();
+            check.CommandText = $"SELECT name FROM sqlite_master WHERE type='table' AND name='data_{tableSuffix}';";
+            if (check.ExecuteScalar() == null) return null;
+
+            using var cmd = _connection.CreateCommand();
+            cmd.CommandText = $"SELECT * FROM [data_{tableSuffix}] WHERE _row_id=@id LIMIT 1;";
+            cmd.Parameters.AddWithValue("@id", rowId);
+            using var reader = cmd.ExecuteReader();
+            if (!reader.Read()) return null;
+
+            var row = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < reader.FieldCount; i++)
+                row[reader.GetName(i)] = reader.IsDBNull(i) ? null : reader.GetValue(i);
+            return row;
+        }
+
+        private RowcraftEditSession RequirePendingRowcraftSession(string sessionId)
+        {
+            var session = GetRowcraftEditSession(sessionId)
+                ?? throw new InvalidOperationException($"Rowcraft edit session '{sessionId}' does not exist.");
+            if (!string.Equals(session.Status, "Pending", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException($"Rowcraft edit session '{sessionId}' is {session.Status}.");
+            return session;
+        }
+
+        private Dictionary<string, object> ValidateRowcraftValues(DmtSnapshot snapshot, Dictionary<string, object> values)
+        {
+            if (snapshot == null) throw new ArgumentNullException(nameof(snapshot));
+            var result = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            var columns = (snapshot.ColumnConfig ?? new List<DataTableColumnConfig>())
+                .ToDictionary(c => c.LogicalName, StringComparer.OrdinalIgnoreCase);
+            foreach (var pair in values ?? new Dictionary<string, object>())
+            {
+                if (ReservedColumnNames.Contains(pair.Key, StringComparer.OrdinalIgnoreCase))
+                    throw new InvalidOperationException($"Column '{pair.Key}' is managed by DMT and cannot be edited from Rowcraft.");
+                if (!columns.TryGetValue(pair.Key, out var col))
+                    throw new InvalidOperationException($"Column '{pair.Key}' is not part of snapshot '{snapshot.Name}'.");
+                result[col.LogicalName] = CoerceRowcraftValue(pair.Value, col.SqliteType);
+            }
+            return result;
+        }
+
+        private static object CoerceRowcraftValue(object value, string sqliteType)
+        {
+            if (value == null) return null;
+            if (value is Newtonsoft.Json.Linq.JValue jv) value = jv.Value;
+            if (value == null) return null;
+            if (sqliteType == "INTEGER")
+            {
+                if (value is bool b) return b ? 1L : 0L;
+                if (value is long l) return l;
+                if (value is int i) return (long)i;
+                if (long.TryParse(value.ToString(), out var parsed)) return parsed;
+                throw new InvalidOperationException($"Value '{value}' is not a valid integer.");
+            }
+            if (sqliteType == "REAL")
+            {
+                if (value is double d) return d;
+                if (value is float f) return (double)f;
+                if (value is decimal m) return (double)m;
+                if (double.TryParse(value.ToString(), out var parsed)) return parsed;
+                throw new InvalidOperationException($"Value '{value}' is not a valid number.");
+            }
+            return value.ToString();
+        }
+
+        private void SaveRowcraftPendingChange(RowcraftPendingChange change)
+        {
+            change.Id = string.IsNullOrWhiteSpace(change.Id) ? Guid.NewGuid().ToString("D") : change.Id;
+            change.StagedOn = DateTime.UtcNow;
+            var changedJson = JsonConvert.SerializeObject(change.ChangedColumns ?? new Dictionary<string, object>(), _json);
+            var beforeJson = change.Before != null ? JsonConvert.SerializeObject(change.Before, _json) : null;
+            var afterJson = change.After != null ? JsonConvert.SerializeObject(change.After, _json) : null;
+
+            using var tx = _connection.BeginTransaction();
+            try
+            {
+                using (var cmd = _connection.CreateCommand())
+                {
+                    cmd.Transaction = tx;
+                    cmd.CommandText = @"
+INSERT INTO _rowcraft_pending_changes(id,session_id,snapshot_name,table_logical_name,operation,row_id,client_row_id,changed_columns_json,before_json,after_json,staged_on)
+VALUES(@id,@sid,@sn,@t,@op,@rid,@crid,@cc,@bj,@aj,@so);";
+                    BindRowcraftChangeParameters(cmd, change, changedJson, beforeJson, afterJson);
+                    cmd.ExecuteNonQuery();
+                }
+                using (var log = _connection.CreateCommand())
+                {
+                    log.Transaction = tx;
+                    log.CommandText = @"
+INSERT INTO _rowcraft_edit_log(id,session_id,snapshot_name,table_logical_name,row_id,client_row_id,operation,changed_columns_json,before_json,after_json,status,staged_on)
+VALUES(@id,@sid,@sn,@t,@rid,@crid,@op,@cc,@bj,@aj,'Staged',@so);";
+                    BindRowcraftChangeParameters(log, change, changedJson, beforeJson, afterJson);
+                    log.ExecuteNonQuery();
+                }
+                tx.Commit();
+            }
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
+        }
+
+        private static void BindRowcraftChangeParameters(SqliteCommand cmd, RowcraftPendingChange change, string changedJson, string beforeJson, string afterJson)
+        {
+            cmd.Parameters.AddWithValue("@id", change.Id);
+            cmd.Parameters.AddWithValue("@sid", change.SessionId);
+            cmd.Parameters.AddWithValue("@sn", change.SnapshotName);
+            cmd.Parameters.AddWithValue("@t", change.TableLogicalName);
+            cmd.Parameters.AddWithValue("@op", change.Operation);
+            cmd.Parameters.AddWithValue("@rid", change.RowId.HasValue ? (object)change.RowId.Value : DBNull.Value);
+            cmd.Parameters.AddWithValue("@crid", (object)change.ClientRowId ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@cc", changedJson);
+            cmd.Parameters.AddWithValue("@bj", (object)beforeJson ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@aj", (object)afterJson ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@so", change.StagedOn.ToString("O"));
+        }
+
+        private void TouchRowcraftSession(string sessionId)
+        {
+            using var cmd = _connection.CreateCommand();
+            cmd.CommandText = "UPDATE _rowcraft_edit_sessions SET updated_on=@uo WHERE id=@id;";
+            cmd.Parameters.AddWithValue("@uo", DateTime.UtcNow.ToString("O"));
+            cmd.Parameters.AddWithValue("@id", sessionId);
+            cmd.ExecuteNonQuery();
+        }
+
+        private List<RowcraftPendingChange> GetRowcraftPendingChanges(string sessionId)
+        {
+            using var cmd = _connection.CreateCommand();
+            cmd.CommandText = @"
+SELECT id,session_id,snapshot_name,table_logical_name,operation,row_id,client_row_id,changed_columns_json,before_json,after_json,staged_on
+FROM _rowcraft_pending_changes WHERE session_id=@sid ORDER BY staged_on,id;";
+            cmd.Parameters.AddWithValue("@sid", sessionId);
+            var result = new List<RowcraftPendingChange>();
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read()) result.Add(ReadRowcraftPendingChange(reader));
+            return result;
+        }
+
+        private void ApplyRowcraftCreate(DmtSnapshot snapshot, RowcraftPendingChange change, SqliteTransaction tx)
+        {
+            var columns = snapshot.ColumnConfig ?? new List<DataTableColumnConfig>();
+            var colNames = columns.Select(c => c.LogicalName).ToList();
+            var insertCols = string.Join(", ", new[] { "_source_id", "_is_new" }.Concat(colNames.Select(n => $"[{n}]")));
+            var insertParams = string.Join(", ", new[] { "@_source_id", "@_is_new" }.Concat(colNames.Select(n => $"@{n}")));
+            using var cmd = _connection.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.CommandText = $"INSERT INTO [data_{snapshot.TableSuffix}]({insertCols}) VALUES({insertParams});";
+            cmd.Parameters.AddWithValue("@_source_id", "rowcraft:" + (change.ClientRowId ?? Guid.NewGuid().ToString("D")));
+            cmd.Parameters.AddWithValue("@_is_new", 1L);
+            foreach (var col in columns)
+            {
+                object val = null;
+                change.After?.TryGetValue(col.LogicalName, out val);
+                cmd.Parameters.AddWithValue($"@{col.LogicalName}", BindValue(val, col.SqliteType));
+            }
+            cmd.ExecuteNonQuery();
+        }
+
+        private void ApplyRowcraftUpdate(DmtSnapshot snapshot, RowcraftPendingChange change, SqliteTransaction tx)
+        {
+            if (!change.RowId.HasValue) throw new InvalidOperationException("Update change is missing row ID.");
+            var columns = (snapshot.ColumnConfig ?? new List<DataTableColumnConfig>())
+                .ToDictionary(c => c.LogicalName, StringComparer.OrdinalIgnoreCase);
+            var changed = change.ChangedColumns ?? new Dictionary<string, object>();
+            if (!changed.Any()) return;
+            var sets = string.Join(", ", changed.Keys.Select(k => $"[{columns[k].LogicalName}]=@{columns[k].LogicalName}"));
+            using var cmd = _connection.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.CommandText = $"UPDATE [data_{snapshot.TableSuffix}] SET {sets} WHERE _row_id=@rowid;";
+            foreach (var pair in changed)
+            {
+                var col = columns[pair.Key];
+                cmd.Parameters.AddWithValue($"@{col.LogicalName}", BindValue(pair.Value, col.SqliteType));
+            }
+            cmd.Parameters.AddWithValue("@rowid", change.RowId.Value);
+            if (cmd.ExecuteNonQuery() == 0)
+                throw new InvalidOperationException($"Snapshot row '{change.RowId.Value}' no longer exists.");
+        }
+
+        private void ApplyRowcraftDelete(DmtSnapshot snapshot, RowcraftPendingChange change, SqliteTransaction tx)
+        {
+            if (!change.RowId.HasValue) throw new InvalidOperationException("Delete change is missing row ID.");
+            using var cmd = _connection.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.CommandText = $"DELETE FROM [data_{snapshot.TableSuffix}] WHERE _row_id=@rowid;";
+            cmd.Parameters.AddWithValue("@rowid", change.RowId.Value);
+            cmd.ExecuteNonQuery();
+        }
+
+        private int UpdateSnapshotRowCount(string tableSuffix, SqliteTransaction tx)
+        {
+            using var countCmd = _connection.CreateCommand();
+            countCmd.Transaction = tx;
+            countCmd.CommandText = $"SELECT COUNT(*) FROM [data_{tableSuffix}];";
+            var count = (long)countCmd.ExecuteScalar();
+
+            using var update = _connection.CreateCommand();
+            update.Transaction = tx;
+            update.CommandText = "UPDATE _snapshots SET row_count=@rc, updated_on=@uo WHERE table_suffix=@s;";
+            update.Parameters.AddWithValue("@rc", count);
+            update.Parameters.AddWithValue("@uo", DateTime.UtcNow.ToString("O"));
+            update.Parameters.AddWithValue("@s", tableSuffix);
+            update.ExecuteNonQuery();
+            return (int)count;
+        }
+
+        private static RowcraftEditSession ReadRowcraftEditSession(SqliteDataReader r)
+        {
+            string baseUpdated = r.IsDBNull(3) ? null : r.GetString(3);
+            string applied = r.IsDBNull(7) ? null : r.GetString(7);
+            string discarded = r.IsDBNull(8) ? null : r.GetString(8);
+            return new RowcraftEditSession
+            {
+                Id = r.GetString(0),
+                SnapshotName = r.GetString(1),
+                TableLogicalName = r.GetString(2),
+                BaseSnapshotUpdatedOn = baseUpdated != null ? DateTime.Parse(baseUpdated) : (DateTime?)null,
+                Status = r.GetString(4),
+                CreatedOn = DateTime.Parse(r.GetString(5)),
+                UpdatedOn = DateTime.Parse(r.GetString(6)),
+                AppliedOn = applied != null ? DateTime.Parse(applied) : (DateTime?)null,
+                DiscardedOn = discarded != null ? DateTime.Parse(discarded) : (DateTime?)null
+            };
+        }
+
+        private static RowcraftChangeSummary ReadRowcraftChangeSummary(SqliteDataReader r)
+        {
+            return new RowcraftChangeSummary
+            {
+                SessionId = r.GetString(0),
+                SnapshotName = r.GetString(1),
+                Status = r.GetString(2),
+                Creates = r.IsDBNull(3) ? 0 : (int)r.GetInt64(3),
+                Updates = r.IsDBNull(4) ? 0 : (int)r.GetInt64(4),
+                Deletes = r.IsDBNull(5) ? 0 : (int)r.GetInt64(5)
+            };
+        }
+
+        private static RowcraftPendingChange ReadRowcraftPendingChange(SqliteDataReader r)
+        {
+            return new RowcraftPendingChange
+            {
+                Id = r.GetString(0),
+                SessionId = r.GetString(1),
+                SnapshotName = r.GetString(2),
+                TableLogicalName = r.GetString(3),
+                Operation = r.GetString(4),
+                RowId = r.IsDBNull(5) ? (long?)null : r.GetInt64(5),
+                ClientRowId = r.IsDBNull(6) ? null : r.GetString(6),
+                ChangedColumns = r.IsDBNull(7)
+                    ? new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+                    : JsonConvert.DeserializeObject<Dictionary<string, object>>(r.GetString(7), _json),
+                Before = r.IsDBNull(8) ? null : JsonConvert.DeserializeObject<Dictionary<string, object>>(r.GetString(8), _json),
+                After = r.IsDBNull(9) ? null : JsonConvert.DeserializeObject<Dictionary<string, object>>(r.GetString(9), _json),
+                StagedOn = DateTime.Parse(r.GetString(10))
+            };
+        }
+
         private void DropDataTableIfExists(string tableSuffix, SqliteTransaction tx = null)
         {
             using var cmd = _connection.CreateCommand();
@@ -816,6 +1444,7 @@ VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @sfp, @pf, @pid, @
 
         private static object BindValue(object value, string sqliteType)
         {
+            if (value is Newtonsoft.Json.Linq.JValue jv) value = jv.Value;
             if (value == null) return DBNull.Value;
             if (sqliteType == "INTEGER")
             {
@@ -1095,6 +1724,26 @@ VALUES(@id,@pid,@so,@name,@en,@op,@tln,@seid,@teid,@sn,@ft,@fp,@sj,@fpj,@vj);";
             cmd.CommandText = "DELETE FROM _plan_steps WHERE id=@id;";
             cmd.Parameters.AddWithValue("@id", id);
             cmd.ExecuteNonQuery();
+        }
+
+        public int MarkPlanPreviewsStaleForSnapshot(string snapshotName)
+        {
+            var changed = 0;
+            foreach (var plan in GetPlans())
+            {
+                foreach (var step in GetPlanSteps(plan.Id))
+                {
+                    if (!string.Equals(step.SnapshotName, snapshotName, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    if (step.Validation?.Preview == null || step.Validation.Preview.IsStale)
+                        continue;
+
+                    step.Validation.Preview.IsStale = true;
+                    SavePlanStep(step);
+                    changed++;
+                }
+            }
+            return changed;
         }
 
         // ─── ID mappings ───────────────────────────────────────────────────────

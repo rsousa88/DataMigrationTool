@@ -113,6 +113,10 @@
       <DependentUpon>DataMigrationControl.cs</DependentUpon>
       <SubType>UserControl</SubType>
     </Compile>
+    <Compile Include="DataMigrationControl.Rowcraft.cs">
+      <DependentUpon>DataMigrationControl.cs</DependentUpon>
+      <SubType>UserControl</SubType>
+    </Compile>
     <Compile Include="DataMigrationControl.History.cs">
       <DependentUpon>DataMigrationControl.cs</DependentUpon>
       <SubType>UserControl</SubType>
@@ -194,6 +198,7 @@
     <Compile Include="Logic\ImportWorkflowService.cs" />
     <Compile Include="Logic\PlanLookupContext.cs" />
     <Compile Include="Logic\RecordCollectionService.cs" />
+    <Compile Include="Logic\RowcraftBridgeService.cs" />
     <Compile Include="Models\DmtProject.cs" />
     <Compile Include="Models\Attribute.cs" />
     <Compile Include="Models\CrmBulkResponse.cs" />

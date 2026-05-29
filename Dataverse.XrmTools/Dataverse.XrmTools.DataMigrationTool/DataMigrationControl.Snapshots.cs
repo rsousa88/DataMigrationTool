@@ -81,6 +81,10 @@ namespace Dataverse.XrmTools.DataMigrationTool
             refreshAllBtn.Click += (s, e) => RefreshAllSnapshots();
             var addToPlanBtn = new ToolStripButton("Add to Plan") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, ToolTipText = "Add selected snapshot to the execution plan" };
             addToPlanBtn.Click += (s, e) => AddInlineSnapshotToPlan();
+            var openRowcraftBtn = new ToolStripButton("Open in Rowcraft") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, ToolTipText = "Open selected snapshot in Rowcraft" };
+            openRowcraftBtn.Click += (s, e) => OpenInlineSnapshotInRowcraft();
+            var applyRowcraftBtn = new ToolStripButton("Apply Rowcraft") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, ToolTipText = "Apply staged Rowcraft changes to selected snapshot" };
+            applyRowcraftBtn.Click += (s, e) => ApplyInlineRowcraftChanges();
             _snapMoveUpBtn = new ToolStripButton("↑") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, Enabled = false, ToolTipText = "Move snapshot up" };
             _snapMoveUpBtn.Click += (s, e) => MoveInlineSnapshot(-1);
             _snapMoveDownBtn = new ToolStripButton("↓") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, Enabled = false, ToolTipText = "Move snapshot down" };
@@ -92,6 +96,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
             headerStrip.Items.Add(refreshBtn);
             headerStrip.Items.Add(refreshAllBtn);
             headerStrip.Items.Add(addToPlanBtn);
+            headerStrip.Items.Add(openRowcraftBtn);
+            headerStrip.Items.Add(applyRowcraftBtn);
             headerStrip.Items.Add(new ToolStripSeparator());
             headerStrip.Items.Add(_snapMoveUpBtn);
             headerStrip.Items.Add(_snapMoveDownBtn);
@@ -130,6 +136,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             _inlineSnapList.Columns.Add("Table", 90);
             _inlineSnapList.Columns.Add("Rows", 48, HorizontalAlignment.Right);
             _inlineSnapList.Columns.Add("Src", 36);
+            _inlineSnapList.Columns.Add("RC", 48, HorizontalAlignment.Right);
             _inlineSnapList.Resize += (s, e) => FitSnapshotListColumns();
             _inlineSnapList.SelectedIndexChanged += InlineSnapList_SelectionChanged;
             _inlineSnapList.MouseDown += (s, e) =>
@@ -211,6 +218,18 @@ namespace Dataverse.XrmTools.DataMigrationTool
             refresh.Click += (s, e) => RefreshInlineSnapshot();
             menu.Items.Add(refresh);
 
+            var openRowcraft = new ToolStripMenuItem("Open in Rowcraft");
+            openRowcraft.Click += (s, e) => OpenInlineSnapshotInRowcraft();
+            menu.Items.Add(openRowcraft);
+
+            var applyRowcraft = new ToolStripMenuItem("Apply Rowcraft Changes");
+            applyRowcraft.Click += (s, e) => ApplyInlineRowcraftChanges();
+            menu.Items.Add(applyRowcraft);
+
+            var discardRowcraft = new ToolStripMenuItem("Discard Rowcraft Changes");
+            discardRowcraft.Click += (s, e) => DiscardInlineRowcraftChanges();
+            menu.Items.Add(discardRowcraft);
+
             menu.Items.Add(new ToolStripSeparator());
 
             var rename = new ToolStripMenuItem("Rename");
@@ -278,6 +297,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (_project?.Service == null) return;
 
             var snapshots = _project.Service.GetSnapshots();
+            var pending = _project.Service.GetPendingRowcraftChangeSummaries()
+                .ToDictionary(s => s.SnapshotName, StringComparer.OrdinalIgnoreCase);
             foreach (var s in snapshots)
             {
                 var item = new ListViewItem(s.SortOrder.ToString());
@@ -285,7 +306,10 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 item.SubItems.Add(s.TableLogicalName);
                 item.SubItems.Add(s.RowCount.ToString("N0"));
                 item.SubItems.Add(s.Source ?? "");
+                item.SubItems.Add(pending.TryGetValue(s.Name, out var summary) && summary.Total > 0 ? summary.Total.ToString("N0") : "");
                 item.Tag = s;
+                if (pending.TryGetValue(s.Name, out summary) && summary.Total > 0)
+                    item.BackColor = Color.FromArgb(255, 248, 225);
                 _inlineSnapList.Items.Add(item);
             }
 
