@@ -79,16 +79,16 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private static readonly string[] WorkingTips =
         {
-            "Build a plan first, then validate it before execution. Even one-off operations follow the same flow.",
-            "You can connect multiple target environments and run steps across them in a single execution plan.",
-            "Each plan step has its own target. Select a step to quickly change its target in the plan grid.",
+            "Use the left-side strip for table configuration actions such as Reload Tables, Preview, and Export.",
+            "Use the Snapshots strip to pull from Dataverse, import files, refresh data, export snapshots, and add snapshots to a plan.",
+            "Environment tags are project-specific. Configure them from Environments > Environment Tags before building push steps.",
+            "Push step names include the target environment tag, which makes multi-environment plans easier to scan.",
+            "Each plan step has its own target. Select a step or reconfigure it to change the target environment.",
+            "Refreshing a file snapshot reloads its original JSON or Excel source; if the path is missing, you can locate the file again.",
+            "Refreshing a Dataverse pull snapshot reuses the saved table, attributes, and FetchXML filter from the snapshot.",
             "Linked imports can reuse the output from an earlier export step, which keeps file paths consistent.",
-            "Validation checks disconnected targets, linked-step order, missing files, duplicate outputs, and preview counts where possible.",
             "Use variables such as {date}, {datetime}, {table}, {source}, {target}, and {planName} in plan file paths.",
-            "Excel import write-back only fills generated GUIDs for workbook rows that did not already contain a main GUID.",
-            "Project plans are stored in the open .dmtproj file, so plan steps stay with their snapshots and mappings.",
-            "Changing a step target refreshes that step's mapping snapshot and requires validation again.",
-            "For chained plans, keep export steps before their linked imports; the plan review blocks invalid moves."
+            "Project plans are stored in the open .dmtproj file, so plan steps stay with their snapshots and mappings."
         };
         private GroupBox _executionPlanGroup;
         private SplitContainer _executionPlanSplitContainer;
@@ -108,6 +108,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private ToolStripButton _executionPlanMoveStepUpButton;
         private ToolStripButton _executionPlanMoveStepDownButton;
         private ToolStripButton _executionPlanRemoveStepButton;
+        private ToolStrip _leftCommandStrip;
+        private ToolStripMenuItem _tsmiEnvironmentTags;
         private ContextMenuStrip _executionPlanStepContextMenu;
         private bool _suppressExecutionPlanStepChecked;
         private bool _suppressExecutionPlanInlineTargetChanged;
@@ -131,7 +133,9 @@ namespace Dataverse.XrmTools.DataMigrationTool
             InitializeComponent();
             tsmiEnvironments.Image = CreateEnvironmentsIcon();
             tsmiExecutionPlan.Image = CreateExecutionPlanIcon();
+            InitializeEnvironmentTagsMenu();
             MoveImportSettingsIntoDialogs();
+            InitializeLeftCommandStrip();
             InitializeDmtAutoSave();
             InitializeWorkingTips();
             VisibleChanged += DataMigrationControl_VisibleChanged;
@@ -169,15 +173,43 @@ namespace Dataverse.XrmTools.DataMigrationTool
             tsMain.Items.Add(_tsmiProject);
             tsMain.Items.Add(_tsmiProjectName);
             tsMain.Items.Add(new ToolStripSeparator());
-            tsMain.Items.Add(tsbPreview);
-            tsMain.Items.Add(tsmiExport);
-            tsMain.Items.Add(new ToolStripSeparator());
-            tsMain.Items.Add(_tsmiData);
-            tsMain.Items.Add(_tsmiDeploy);
-            tsMain.Items.Add(new ToolStripSeparator());
             tsMain.Items.Add(tsbShowInstructions);
             tsMain.Items.Add(tsbAbort);
             tsMain.ResumeLayout();
+        }
+
+        private void InitializeLeftCommandStrip()
+        {
+            if (_leftCommandStrip != null) return;
+
+            _leftCommandStrip = new ToolStrip
+            {
+                Dock = DockStyle.Fill,
+                GripStyle = ToolStripGripStyle.Hidden,
+                RenderMode = ToolStripRenderMode.System,
+                Padding = new Padding(0),
+                Stretch = true
+            };
+            if (tsmiReloadTables.Owner != null)
+                tsmiReloadTables.Owner.Items.Remove(tsmiReloadTables);
+            if (tsSeparatorEnv.Owner != null)
+                tsSeparatorEnv.Owner.Items.Remove(tsSeparatorEnv);
+            _leftCommandStrip.Items.Add(tsmiReloadTables);
+            _leftCommandStrip.Items.Add(tsbPreview);
+            _leftCommandStrip.Items.Add(tsmiExport);
+
+            pnlBody.SuspendLayout();
+            pnlBody.RowStyles.Clear();
+            pnlBody.RowCount = 4;
+            pnlBody.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+            pnlBody.RowStyles.Add(new RowStyle(SizeType.Percent, 38F));
+            pnlBody.RowStyles.Add(new RowStyle(SizeType.Percent, 40F));
+            pnlBody.RowStyles.Add(new RowStyle(SizeType.Percent, 22F));
+            pnlBody.SetRow(gbTables, 1);
+            pnlBody.SetRow(gbAttributes, 2);
+            pnlBody.SetRow(gbFilters, 3);
+            pnlBody.Controls.Add(_leftCommandStrip, 0, 0);
+            pnlBody.ResumeLayout();
         }
 
         #region Interface Methods
@@ -496,7 +528,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 : new DmtEnvironmentInfo
                 {
                     UniqueName = GetClientEnvironmentId(ActiveTargetClient),
-                    FriendlyName = ActiveTargetClient.ConnectedOrgFriendlyName
+                    FriendlyName = ActiveTargetClient.ConnectedOrgFriendlyName,
+                    Tag = GetProjectEnvironmentTag(GetClientEnvironmentId(ActiveTargetClient), "target")
                 };
         }
 
@@ -507,11 +540,22 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 .Select(client => new DmtEnvironmentInfo
                 {
                     UniqueName = GetClientEnvironmentId(client),
-                    FriendlyName = client.ConnectedOrgFriendlyName
+                    FriendlyName = client.ConnectedOrgFriendlyName,
+                    Tag = GetProjectEnvironmentTag(GetClientEnvironmentId(client), "target")
                 })
                 .GroupBy(env => env.UniqueName, StringComparer.OrdinalIgnoreCase)
                 .Select(group => group.First())
                 .ToList();
+        }
+
+        private string GetProjectEnvironmentTag(string environmentId, string role)
+        {
+            if (_project?.Service == null || string.IsNullOrWhiteSpace(environmentId)) return null;
+
+            return _project.Service.GetEnvironments(role)
+                .FirstOrDefault(env => string.Equals(env.Id, environmentId, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(env.UniqueName, environmentId, StringComparison.OrdinalIgnoreCase))
+                ?.Tag;
         }
 
         private static string GetClientEnvironmentId(CrmServiceClient client)

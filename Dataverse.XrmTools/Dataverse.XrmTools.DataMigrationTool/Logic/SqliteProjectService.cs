@@ -23,7 +23,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
         private SqliteConnection _connection;
         private bool _disposed;
 
-        private const int CurrentSchemaVersion = 3;
+        private const int CurrentSchemaVersion = 4;
         private static readonly string[] ReservedColumnNames = { "_row_id", "_source_id", "_is_new" };
 
         private static readonly JsonSerializerSettings _json = new JsonSerializerSettings
@@ -145,6 +145,7 @@ CREATE TABLE IF NOT EXISTS _environments (
     id            TEXT NOT NULL,
     unique_name   TEXT NOT NULL,
     friendly_name TEXT NOT NULL,
+    tag           TEXT,
     url           TEXT,
     role          TEXT NOT NULL,
     PRIMARY KEY (id, role)
@@ -263,6 +264,13 @@ UPDATE _snapshots SET sort_order = (SELECT rn FROM ranked WHERE ranked.id = _sna
                 cmd.ExecuteNonQuery();
             }
 
+            if (fromVersion < 4)
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = "ALTER TABLE _environments ADD COLUMN tag TEXT;";
+                cmd.ExecuteNonQuery();
+            }
+
             SetProjectValue("version", CurrentSchemaVersion.ToString());
         }
 
@@ -293,8 +301,12 @@ UPDATE _snapshots SET sort_order = (SELECT rn FROM ranked WHERE ranked.id = _sna
         {
             if (env.Role == "source")
             {
-                // Source is locked once data exists
-                if (HasAnySnapshot())
+                var existing = GetSourceEnvironment();
+                var changingSource = existing == null
+                    || !string.Equals(existing.Id, env.Id, StringComparison.OrdinalIgnoreCase);
+
+                // Source identity is locked once data exists, but labels can still be edited.
+                if (HasAnySnapshot() && changingSource)
                     throw new InvalidOperationException(
                         "Cannot change the source environment after snapshots exist. Create a new project.");
 
@@ -306,11 +318,12 @@ UPDATE _snapshots SET sort_order = (SELECT rn FROM ranked WHERE ranked.id = _sna
 
             using var cmd = _connection.CreateCommand();
             cmd.CommandText = @"
-INSERT OR REPLACE INTO _environments(id, unique_name, friendly_name, url, role)
-VALUES(@id, @unique_name, @friendly_name, @url, @role);";
+INSERT OR REPLACE INTO _environments(id, unique_name, friendly_name, tag, url, role)
+VALUES(@id, @unique_name, @friendly_name, @tag, @url, @role);";
             cmd.Parameters.AddWithValue("@id", env.Id);
             cmd.Parameters.AddWithValue("@unique_name", env.UniqueName);
             cmd.Parameters.AddWithValue("@friendly_name", env.FriendlyName);
+            cmd.Parameters.AddWithValue("@tag", (object)env.Tag ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@url", (object)env.Url ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@role", env.Role);
             cmd.ExecuteNonQuery();
@@ -319,7 +332,7 @@ VALUES(@id, @unique_name, @friendly_name, @url, @role);";
         public DmtProjectEnvironment GetSourceEnvironment()
         {
             using var cmd = _connection.CreateCommand();
-            cmd.CommandText = "SELECT id, unique_name, friendly_name, url, role FROM _environments WHERE role = 'source' LIMIT 1;";
+            cmd.CommandText = "SELECT id, unique_name, friendly_name, tag, url, role FROM _environments WHERE role = 'source' LIMIT 1;";
             using var reader = cmd.ExecuteReader();
             return reader.Read() ? ReadEnvironment(reader) : null;
         }
@@ -329,12 +342,12 @@ VALUES(@id, @unique_name, @friendly_name, @url, @role);";
             using var cmd = _connection.CreateCommand();
             if (role != null)
             {
-                cmd.CommandText = "SELECT id, unique_name, friendly_name, url, role FROM _environments WHERE role = @role;";
+                cmd.CommandText = "SELECT id, unique_name, friendly_name, tag, url, role FROM _environments WHERE role = @role;";
                 cmd.Parameters.AddWithValue("@role", role);
             }
             else
             {
-                cmd.CommandText = "SELECT id, unique_name, friendly_name, url, role FROM _environments;";
+                cmd.CommandText = "SELECT id, unique_name, friendly_name, tag, url, role FROM _environments;";
             }
 
             var result = new List<DmtProjectEnvironment>();
@@ -349,8 +362,9 @@ VALUES(@id, @unique_name, @friendly_name, @url, @role);";
             Id            = r.GetString(0),
             UniqueName    = r.GetString(1),
             FriendlyName  = r.GetString(2),
-            Url           = r.IsDBNull(3) ? null : r.GetString(3),
-            Role          = r.GetString(4)
+            Tag           = r.IsDBNull(3) ? null : r.GetString(3),
+            Url           = r.IsDBNull(4) ? null : r.GetString(4),
+            Role          = r.GetString(5)
         };
 
         // ─── Table configs ─────────────────────────────────────────────────────

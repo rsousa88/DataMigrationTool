@@ -61,8 +61,34 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
             Assert.Equal("env-001", result.Id);
             Assert.Equal("org1", result.UniqueName);
             Assert.Equal("Org One", result.FriendlyName);
+            Assert.Null(result.Tag);
             Assert.Equal("https://org1.crm.dynamics.com", result.Url);
             Assert.Equal("source", result.Role);
+        }
+
+        [Fact]
+        public void SaveEnvironment_Target_RoundTripsTag()
+        {
+            var env = TargetEnv("t1", "dev", "Development");
+            env.Tag = "DEV";
+
+            _svc.SaveEnvironment(env);
+
+            var result = Assert.Single(_svc.GetEnvironments("target"));
+            Assert.Equal("DEV", result.Tag);
+        }
+
+        [Fact]
+        public void SaveEnvironment_Source_AllowsTagUpdate_WhenSnapshotsExist()
+        {
+            _svc.SaveEnvironment(SourceEnv("env-001", "org1", "Org One"));
+            CreateSnapshotWithData("snap1", "account", "env-001");
+
+            var env = SourceEnv("env-001", "org1", "Org One");
+            env.Tag = "SRC";
+            _svc.SaveEnvironment(env);
+
+            Assert.Equal("SRC", _svc.GetSourceEnvironment().Tag);
         }
 
         [Fact]

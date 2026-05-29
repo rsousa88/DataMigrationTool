@@ -24,6 +24,14 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
     public static class ExecutionPlanService
     {
+        public static string BuildPushSnapshotStepName(DmtSnapshot snapshot, DmtEnvironmentInfo targetEnvironment)
+        {
+            var tableName = snapshot?.TableLogicalName ?? "snapshot";
+            var snapshotName = snapshot?.Name ?? "snapshot";
+            var sortOrder = snapshot?.SortOrder ?? 0;
+            return $"[{EnvironmentTagHelper.GetTag(targetEnvironment)}] Push {tableName} (#{sortOrder} {snapshotName})";
+        }
+
         public static ExecutionPlan CreateNewProjectPlan(string name, DmtEnvironmentInfo sourceEnvironment, DmtEnvironmentInfo targetEnvironment, IEnumerable<DmtEnvironmentInfo> targetEnvironments)
         {
             var targets = (targetEnvironments ?? Enumerable.Empty<DmtEnvironmentInfo>())
@@ -548,7 +556,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             return new DmtEnvironmentInfo
             {
                 UniqueName = environment.UniqueName,
-                FriendlyName = environment.FriendlyName
+                FriendlyName = environment.FriendlyName,
+                Tag = environment.Tag
             };
         }
 

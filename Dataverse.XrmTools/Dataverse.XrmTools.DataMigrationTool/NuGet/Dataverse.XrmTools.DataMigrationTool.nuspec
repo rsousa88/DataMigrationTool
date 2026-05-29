@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
   <metadata>
     <id>Dataverse.XrmTools.DataMigrationTool</id>
-    <version>2026.5.28.1</version>
+    <version>2026.5.29.1</version>
     <title>Data Migration Tool</title>
     <authors>Rui Sousa</authors>
     <owners>Rui Sousa</owners>
@@ -24,6 +24,13 @@
     </description>
     <summary>Migrate data between Dataverse instances</summary>
 	<releaseNotes>
+		2026.5.29.x
+		- [NEW] Project-specific environment tags can now be configured and used in push step names, execution plan target cells, and target selectors
+		- [NEW] Configure Push Step now lets users change the target environment and updates the step name with the selected environment tag
+		- [FIX] The top command bar now contains only global actions, with table actions moved to the left-side strip and snapshot/plan actions kept in their local strips
+		- [FIX] Startup instructions and working tips now describe the project, snapshot, environment tag, and execution plan workflow
+		- [FIX] Removed the trailing separator from the Project dropdown
+
 		2026.5.28.x
 		- [NEW] Snapshot refresh can now update one or all snapshots, including Dataverse pulls using saved table/filter/attribute settings and file snapshots from their original JSON or Excel source
 		- [NEW] File snapshot refresh now prompts for a replacement source file when the saved path is missing, moved, or unavailable on the current machine

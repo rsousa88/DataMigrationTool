@@ -73,10 +73,14 @@ namespace Dataverse.XrmTools.DataMigrationTool
             loadBtn.Click += (s, e) => LoadFileToProject();
             var exportBtn = new ToolStripButton("Export") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, ToolTipText = "Export selected snapshot" };
             exportBtn.Click += (s, e) => ExportInlineSnapshot();
+            var viewBtn = new ToolStripButton("View") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, ToolTipText = "View snapshots full screen" };
+            viewBtn.Click += (s, e) => ShowSnapshotViewer();
             var refreshBtn = new ToolStripButton("Refresh") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, ToolTipText = "Refresh selected snapshot from its original source" };
             refreshBtn.Click += (s, e) => RefreshInlineSnapshot();
             var refreshAllBtn = new ToolStripButton("Refresh All") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, ToolTipText = "Refresh all snapshots from their original sources" };
             refreshAllBtn.Click += (s, e) => RefreshAllSnapshots();
+            var addToPlanBtn = new ToolStripButton("Add to Plan") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, ToolTipText = "Add selected snapshot to the execution plan" };
+            addToPlanBtn.Click += (s, e) => AddInlineSnapshotToPlan();
             _snapMoveUpBtn = new ToolStripButton("↑") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, Enabled = false, ToolTipText = "Move snapshot up" };
             _snapMoveUpBtn.Click += (s, e) => MoveInlineSnapshot(-1);
             _snapMoveDownBtn = new ToolStripButton("↓") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, Enabled = false, ToolTipText = "Move snapshot down" };
@@ -84,8 +88,10 @@ namespace Dataverse.XrmTools.DataMigrationTool
             headerStrip.Items.Add(pullBtn);
             headerStrip.Items.Add(loadBtn);
             headerStrip.Items.Add(exportBtn);
+            headerStrip.Items.Add(viewBtn);
             headerStrip.Items.Add(refreshBtn);
             headerStrip.Items.Add(refreshAllBtn);
+            headerStrip.Items.Add(addToPlanBtn);
             headerStrip.Items.Add(new ToolStripSeparator());
             headerStrip.Items.Add(_snapMoveUpBtn);
             headerStrip.Items.Add(_snapMoveDownBtn);

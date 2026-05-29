@@ -34,6 +34,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
         public string Id { get; set; }
         public string UniqueName { get; set; }
         public string FriendlyName { get; set; }
+        public string Tag { get; set; }
         public string Url { get; set; }
         public string Role { get; set; }  // "source" | "target"
     }

@@ -50,7 +50,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             _tsmiProject.DropDownItems.Add(openItem);
             _tsmiProject.DropDownItems.Add(new ToolStripSeparator());
             _tsmiProject.DropDownItems.Add(closeItem);
-            _tsmiProject.DropDownItems.Add(new ToolStripSeparator());
             _tsmiProject.DropDownOpening += (s, e) => closeItem.Enabled = _project != null;
 
             _tsmiProjectName = new ToolStripLabel("No project open")
@@ -242,6 +241,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     Id = envId,
                     UniqueName = client.ConnectedOrgUniqueName,
                     FriendlyName = client.ConnectedOrgFriendlyName,
+                    Tag = EnvironmentTagHelper.DeriveTag(client.ConnectedOrgFriendlyName, client.ConnectedOrgUniqueName),
                     Url = client.CrmConnectOrgUriActual?.ToString() ?? string.Empty,
                     Role = "source"
                 };
@@ -266,6 +266,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
             var env = existing ?? new DmtProjectEnvironment { Id = envId, Role = "target" };
             env.UniqueName = client.ConnectedOrgUniqueName;
             env.FriendlyName = client.ConnectedOrgFriendlyName;
+            env.Tag = EnvironmentTagHelper.NormalizeTag(env.Tag)
+                ?? EnvironmentTagHelper.DeriveTag(client.ConnectedOrgFriendlyName, client.ConnectedOrgUniqueName);
             env.Url = client.CrmConnectOrgUriActual?.ToString() ?? string.Empty;
             env.Role = "target";
             _project.Service.SaveEnvironment(env);

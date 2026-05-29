@@ -78,7 +78,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (targets.Count == 1)
             {
                 var t = targets[0];
-                targetEnv = new DmtEnvironmentInfo { UniqueName = t.UniqueName, FriendlyName = t.FriendlyName };
+                targetEnv = new DmtEnvironmentInfo { UniqueName = t.UniqueName, FriendlyName = t.FriendlyName, Tag = t.Tag };
             }
             else
             {
@@ -90,7 +90,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         string.Equals(t.FriendlyName, dlg.SelectedItem, StringComparison.OrdinalIgnoreCase) ||
                         string.Equals(t.UniqueName, dlg.SelectedItem, StringComparison.OrdinalIgnoreCase));
                     if (chosen == null) return;
-                    targetEnv = new DmtEnvironmentInfo { UniqueName = chosen.UniqueName, FriendlyName = chosen.FriendlyName };
+                    targetEnv = new DmtEnvironmentInfo { UniqueName = chosen.UniqueName, FriendlyName = chosen.FriendlyName, Tag = chosen.Tag };
                 }
             }
 
@@ -101,7 +101,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             var step = new ExecutionPlanStep
             {
                 Operation = "PushFromSnapshot",
-                Name = $"Push {snapshot.TableLogicalName} (#{snapshot.SortOrder} {snapshot.Name})",
+                Name = ExecutionPlanService.BuildPushSnapshotStepName(snapshot, targetEnv),
                 Enabled = true,
                 Table = new DmtTableInfo { LogicalName = snapshot.TableLogicalName },
                 TargetEnvironment = targetEnv,

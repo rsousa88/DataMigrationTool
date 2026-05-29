@@ -73,7 +73,6 @@
             this.chAttrType = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
             this.chAttrDescription = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
             this.gbFilters = new System.Windows.Forms.GroupBox();
-            this.lblFetchDescription = new System.Windows.Forms.Label();
             this.btnFetchXmlBuilder = new System.Windows.Forms.Button();
             this.btnSql4Cds = new System.Windows.Forms.Button();
             this.rtbFilter = new System.Windows.Forms.RichTextBox();
@@ -584,7 +583,6 @@
             // 
             // gbFilters
             // 
-            this.gbFilters.Controls.Add(this.lblFetchDescription);
             this.gbFilters.Controls.Add(this.btnFetchXmlBuilder);
             this.gbFilters.Controls.Add(this.btnSql4Cds);
             this.gbFilters.Controls.Add(this.rtbFilter);
@@ -597,15 +595,6 @@
             this.gbFilters.TabIndex = 2;
             this.gbFilters.TabStop = false;
             this.gbFilters.Text = "Filters";
-            // 
-            // lblFetchDescription
-            // 
-            this.lblFetchDescription.AutoSize = true;
-            this.lblFetchDescription.Location = new System.Drawing.Point(6, 19);
-            this.lblFetchDescription.Name = "lblFetchDescription";
-            this.lblFetchDescription.Size = new System.Drawing.Size(232, 13);
-            this.lblFetchDescription.TabIndex = 0;
-            this.lblFetchDescription.Text = "Records will be filtered using query defined here";
             // 
             // btnFetchXmlBuilder
             // 
@@ -751,7 +740,6 @@
 
         // Filters Group
         private System.Windows.Forms.GroupBox gbFilters;
-        private System.Windows.Forms.Label lblFetchDescription;
         private System.Windows.Forms.Button btnFetchXmlBuilder;
         private System.Windows.Forms.Button btnSql4Cds;
         private System.Windows.Forms.RichTextBox rtbFilter;

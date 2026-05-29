@@ -18,6 +18,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
     {
         public string UniqueName { get; set; }
         public string FriendlyName { get; set; }
+        public string Tag { get; set; }
     }
 
     public class DmtTableInfo

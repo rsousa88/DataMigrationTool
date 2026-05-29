@@ -24,6 +24,27 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
         }
 
         [Fact]
+        public void BuildPushSnapshotStepName_UsesEnvironmentTag()
+        {
+            var snapshot = new DmtSnapshot
+            {
+                Name = "snapshot_001",
+                TableLogicalName = "new_table",
+                SortOrder = 1
+            };
+            var target = new DmtEnvironmentInfo
+            {
+                FriendlyName = "Development",
+                UniqueName = "org-dev",
+                Tag = "DEV"
+            };
+
+            var name = ExecutionPlanService.BuildPushSnapshotStepName(snapshot, target);
+
+            Assert.Equal("[DEV] Push new_table (#1 snapshot_001)", name);
+        }
+
+        [Fact]
         public void CanMoveStep_BlocksLinkedImportBeforeSourceExport()
         {
             var export = Step("export", "ExportToJson");

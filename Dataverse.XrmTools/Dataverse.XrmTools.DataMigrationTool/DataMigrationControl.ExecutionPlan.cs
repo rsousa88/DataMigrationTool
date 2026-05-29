@@ -394,6 +394,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             _executionPlanValidateButton = AddExecutionPlanToolStripButton(globalActions, "Validate", (s, e) => ValidateExecutionPlan());
             _executionPlanRefreshCountsButton = AddExecutionPlanToolStripButton(globalActions, "Refresh Counts", (s, e) => RefreshExecutionPlanCounts());
             _executionPlanExecuteButton = AddExecutionPlanToolStripButton(globalActions, "Execute Plan", (s, e) => ExecuteExecutionPlan());
+            AddExecutionPlanToolStripButton(globalActions, "History", (s, e) => ShowRunHistory());
 
             _executionPlanSteps = new ListView
             {
@@ -594,11 +595,17 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             public string UniqueName { get; set; }
             public string FriendlyName { get; set; }
+            public string Tag { get; set; }
             public string DisplayName { get; set; }
             public override string ToString()
             {
                 if (!string.IsNullOrWhiteSpace(DisplayName)) return DisplayName;
-                return string.IsNullOrWhiteSpace(FriendlyName) ? UniqueName : FriendlyName;
+                return EnvironmentTagHelper.GetTag(new DmtEnvironmentInfo
+                {
+                    UniqueName = UniqueName,
+                    FriendlyName = FriendlyName,
+                    Tag = Tag
+                });
             }
         }
 
@@ -778,7 +785,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         {
                             UniqueName = env.UniqueName,
                             FriendlyName = env.FriendlyName,
-                            DisplayName = string.IsNullOrWhiteSpace(env.FriendlyName) ? env.UniqueName : env.FriendlyName
+                            Tag = env.Tag
                         });
                     }
 
@@ -844,7 +851,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
             step.TargetEnvironment = new DmtEnvironmentInfo
             {
                 UniqueName = option.UniqueName,
-                FriendlyName = option.FriendlyName
+                FriendlyName = option.FriendlyName,
+                Tag = option.Tag
             };
             _executionPlanValidatedForExecution = false;
             ExecutionPlanService.ValidatePlan(_executionPlan);
@@ -1034,7 +1042,9 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (IsExportStep(step))
             {
                 var source = _executionPlan?.SourceEnvironment;
-                var sourceName = source?.FriendlyName ?? source?.UniqueName ?? _sourceClient?.ConnectedOrgFriendlyName ?? _sourceClient?.ConnectedOrgUniqueName;
+                var sourceName = source != null
+                    ? EnvironmentTagHelper.GetTag(source)
+                    : _sourceClient?.ConnectedOrgFriendlyName ?? _sourceClient?.ConnectedOrgUniqueName;
                 return string.IsNullOrWhiteSpace(sourceName) ? string.Empty : $"Source: {sourceName}";
             }
 
@@ -1045,8 +1055,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             var env = step?.TargetEnvironment;
             if (env == null || string.IsNullOrWhiteSpace(env.UniqueName))
-                return _targetClient?.ConnectedOrgFriendlyName ?? _targetClient?.ConnectedOrgUniqueName ?? string.Empty;
-            return env.FriendlyName ?? env.UniqueName;
+                return EnvironmentTagHelper.GetTag(GetActiveTargetEnvironmentInfo());
+            return EnvironmentTagHelper.GetTag(env);
         }
 
         private void RenderExecutionPlanMessages()
@@ -2027,8 +2037,15 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     var relData = result?.relatedTableData as Dictionary<string, PushStepConfigDialog.LookupRelatedTableInfo>
                         ?? new Dictionary<string, PushStepConfigDialog.LookupRelatedTableInfo>(StringComparer.OrdinalIgnoreCase);
 
+                    var availableTargets = GetLoadedTargetEnvironments();
+                    var targetClientsByEnvironment = _targetClients
+                        .Where(kvp => !string.IsNullOrWhiteSpace(kvp.Key) && kvp.Value != null)
+                        .GroupBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase)
+                        .ToDictionary(group => group.Key, group => (IOrganizationService)group.First().Value, StringComparer.OrdinalIgnoreCase);
+
                     using (var dlg = new PushStepConfigDialog(step, snapshot, altKeys, preview, acceptButtonText,
-                        _project?.Service, srcId, tgtId, planTableNames, targetClient, relData))
+                        _project?.Service, srcId, tgtId, planTableNames, targetClient, availableTargets,
+                        targetClientsByEnvironment, relData))
                     {
                         if (dlg.ShowDialog(ParentForm) != DialogResult.OK) return;
                     }
@@ -2451,7 +2468,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     {
                         UniqueName = target.UniqueName,
                         FriendlyName = target.FriendlyName,
-                        DisplayName = string.IsNullOrWhiteSpace(target.FriendlyName) ? target.UniqueName : target.FriendlyName
+                        Tag = target.Tag
                     });
                 }
 
@@ -2482,7 +2499,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 return selected == null ? null : new DmtEnvironmentInfo
                 {
                     UniqueName = selected.UniqueName,
-                    FriendlyName = selected.FriendlyName
+                    FriendlyName = selected.FriendlyName,
+                    Tag = selected.Tag
                 };
             }
         }

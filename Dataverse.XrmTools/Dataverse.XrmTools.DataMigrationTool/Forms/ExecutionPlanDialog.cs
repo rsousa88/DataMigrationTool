@@ -9,6 +9,7 @@ using System.Windows.Forms;
 using Dataverse.XrmTools.DataMigrationTool.Models;
 using Dataverse.XrmTools.DataMigrationTool.Logic;
 using DmtAction = Dataverse.XrmTools.DataMigrationTool.Enums.Action;
+using IOrganizationService = Microsoft.Xrm.Sdk.IOrganizationService;
 
 namespace Dataverse.XrmTools.DataMigrationTool.Forms
 {
@@ -424,6 +425,16 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             }
         }
 
+        private sealed class TargetEnvironmentItem
+        {
+            public DmtEnvironmentInfo Environment { get; }
+            public TargetEnvironmentItem(DmtEnvironmentInfo environment) { Environment = environment; }
+            public override string ToString()
+            {
+                return EnvironmentTagHelper.GetTag(Environment);
+            }
+        }
+
         // ── Fields ───────────────────────────────────────────────────────────────
         private readonly ExecutionPlanStep _step;
         private readonly DmtSnapshot _snapshot;
@@ -431,12 +442,15 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         private readonly SqliteDataLogic.PushPreview _preview;
         private readonly SqliteProjectService _project;
         private readonly string _sourceEnvId;
-        private readonly string _targetEnvId;
+        private string _targetEnvId;
         private readonly ISet<string> _allPlanTableNames;
-        private readonly Microsoft.Xrm.Sdk.IOrganizationService _targetClient;
+        private readonly IOrganizationService _targetClient;
+        private readonly List<DmtEnvironmentInfo> _availableTargets;
+        private readonly Dictionary<string, IOrganizationService> _targetClientsByEnvironment;
         private readonly Dictionary<string, LookupRelatedTableInfo> _relatedTableData;
 
         private TextBox _name;
+        private ComboBox _cboTargetEnvironment;
         private CheckBox _create, _update;
         private ComboBox _cboMatchMode;
         private ComboBox _cboAltKey;
@@ -469,7 +483,9 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             string sourceEnvId = null,
             string targetEnvId = null,
             ISet<string> allPlanTableNames = null,
-            Microsoft.Xrm.Sdk.IOrganizationService targetClient = null,
+            IOrganizationService targetClient = null,
+            IEnumerable<DmtEnvironmentInfo> availableTargets = null,
+            IDictionary<string, IOrganizationService> targetClientsByEnvironment = null,
             Dictionary<string, LookupRelatedTableInfo> relatedTableData = null)
         {
             _step = step;
@@ -482,6 +498,14 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             _targetEnvId = targetEnvId ?? string.Empty;
             _allPlanTableNames = allPlanTableNames;
             _targetClient = targetClient;
+            _availableTargets = (availableTargets ?? Enumerable.Empty<DmtEnvironmentInfo>())
+                .Where(env => env != null && !string.IsNullOrWhiteSpace(env.UniqueName))
+                .GroupBy(env => env.UniqueName, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .ToList();
+            _targetClientsByEnvironment = targetClientsByEnvironment != null
+                ? new Dictionary<string, IOrganizationService>(targetClientsByEnvironment, StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, IOrganizationService>(StringComparer.OrdinalIgnoreCase);
             _relatedTableData = relatedTableData ?? new Dictionary<string, LookupRelatedTableInfo>(StringComparer.OrdinalIgnoreCase);
 
             Text = "Configure Push Step";
@@ -661,29 +685,38 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 2,
-                RowCount = 10,
+                RowCount = 11,
                 Padding = new Padding(4, 2, 4, 2)
             };
             settings.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110));
             settings.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            for (int i = 0; i < 10; i++)
+            for (int i = 0; i < 11; i++)
                 settings.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
 
             _name = new TextBox { Dock = DockStyle.Fill };
             AddSR(settings, 0, "Name:", _name);
 
+            _cboTargetEnvironment = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
+            _cboTargetEnvironment.SelectedIndexChanged += (s, e) =>
+            {
+                if (_initializing) return;
+                ApplySelectedTargetToName();
+                RefreshPreview();
+            };
+            AddSR(settings, 1, "Target:", _cboTargetEnvironment);
+
             var actionsPanel = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Padding = Padding.Empty };
             _create = new CheckBox { Text = "Create", AutoSize = true, Padding = new Padding(0, 3, 6, 0) };
             _update = new CheckBox { Text = "Update", AutoSize = true, Padding = new Padding(0, 3, 6, 0) };
             actionsPanel.Controls.AddRange(new Control[] { _create, _update });
-            AddSR(settings, 1, "Operations:", actionsPanel);
+            AddSR(settings, 2, "Operations:", actionsPanel);
 
             _cboMatchMode = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
             _cboMatchMode.Items.Add(new MatchModeItem("Guid", "Record GUID"));
             _cboMatchMode.Items.Add(new MatchModeItem("AlternateKey", "Alternate key"));
             _cboMatchMode.Items.Add(new MatchModeItem("Custom", "Custom columns"));
             _cboMatchMode.SelectedIndexChanged += (s, e) => { UpdateMatchModeUI(); RefreshPreview(); };
-            AddSR(settings, 2, "Match by:", _cboMatchMode);
+            AddSR(settings, 3, "Match by:", _cboMatchMode);
 
             var matchKeyLabelPanel = new Panel { Dock = DockStyle.Fill };
             _lblAltKey = new Label { Text = "Alternate key:", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft };
@@ -707,25 +740,25 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             _btnCustomFields.Click += (s, e) => OpenCustomFieldsDialog();
             matchKeyControlPanel.Controls.Add(_cboAltKey);
             matchKeyControlPanel.Controls.Add(_btnCustomFields);
-            settings.Controls.Add(matchKeyLabelPanel, 0, 3);
-            settings.Controls.Add(matchKeyControlPanel, 1, 3);
+            settings.Controls.Add(matchKeyLabelPanel, 0, 4);
+            settings.Controls.Add(matchKeyControlPanel, 1, 4);
 
             _batchSize = new NumericUpDown { Minimum = 1, Maximum = 1000, Width = 90, Dock = DockStyle.Left, Value = 50 };
-            AddSR(settings, 4, "Batch size:", _batchSize);
+            AddSR(settings, 5, "Batch size:", _batchSize);
 
             var sepLabel = new Label { Text = "── Failure Policy ─────────────────", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.Gray };
-            settings.Controls.Add(new Label(), 0, 5);
-            settings.Controls.Add(sepLabel, 1, 5);
+            settings.Controls.Add(new Label(), 0, 6);
+            settings.Controls.Add(sepLabel, 1, 6);
 
             _stopOnFatalError = new CheckBox { Dock = DockStyle.Left, Checked = true };
-            AddSR(settings, 6, "Stop on fatal:", _stopOnFatalError);
+            AddSR(settings, 7, "Stop on fatal:", _stopOnFatalError);
 
             _maxFailedRecords = new NumericUpDown { Minimum = 0, Maximum = 1000000, Width = 90, Dock = DockStyle.Left, Value = 10 };
-            AddSR(settings, 7, "Max failed rows:", _maxFailedRecords);
+            AddSR(settings, 8, "Max failed rows:", _maxFailedRecords);
 
             _maxFailedPercent = new NumericUpDown { Minimum = 0, Maximum = 100, DecimalPlaces = 2, Width = 90, Dock = DockStyle.Left, Value = 20m };
-            settings.Controls.Add(new Label { Text = "Max failed %:", AutoSize = true, Anchor = AnchorStyles.Left | AnchorStyles.Top, Margin = new Padding(3, 7, 3, 0) }, 0, 8);
-            settings.Controls.Add(_maxFailedPercent, 1, 8);
+            settings.Controls.Add(new Label { Text = "Max failed %:", AutoSize = true, Anchor = AnchorStyles.Left | AnchorStyles.Top, Margin = new Padding(3, 7, 3, 0) }, 0, 9);
+            settings.Controls.Add(_maxFailedPercent, 1, 9);
 
             var panel = new Panel { Dock = DockStyle.Fill };
             panel.Controls.Add(settings);
@@ -854,11 +887,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             var matchKey = BuildCurrentMatchKeySelectionFromUI();
             var lookupKeys = BuildCurrentLookupMatchKeysFromUI();
             var allPlanTableNames = _allPlanTableNames;
-            var targetClient = _targetClient;
+            var targetClient = GetSelectedTargetClient();
             var project = _project;
             var snapshotName = _snapshot.Name;
             var sourceEnvId = _sourceEnvId;
-            var targetEnvId = _targetEnvId;
+            var selectedTarget = GetSelectedTargetEnvironment();
+            var targetEnvId = selectedTarget?.UniqueName ?? _targetEnvId;
 
             System.Threading.Tasks.Task.Run(() =>
                 SqliteDataLogic.PreviewPush(project, snapshotName, sourceEnvId, targetEnvId,
@@ -955,6 +989,82 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             layout.Controls.Add(control, 1, row);
         }
 
+        private void PopulateTargetEnvironmentList()
+        {
+            if (_cboTargetEnvironment == null) return;
+
+            var targets = new List<DmtEnvironmentInfo>(_availableTargets);
+            var current = _step.TargetEnvironment;
+            if (current != null && !string.IsNullOrWhiteSpace(current.UniqueName)
+                && !targets.Any(env => string.Equals(env.UniqueName, current.UniqueName, StringComparison.OrdinalIgnoreCase)))
+            {
+                targets.Add(current);
+            }
+
+            _cboTargetEnvironment.Items.Clear();
+            foreach (var target in targets)
+                _cboTargetEnvironment.Items.Add(new TargetEnvironmentItem(target));
+
+            var selectedUniqueName = !string.IsNullOrWhiteSpace(_step.TargetEnvironment?.UniqueName)
+                ? _step.TargetEnvironment.UniqueName
+                : _targetEnvId;
+
+            for (var i = 0; i < _cboTargetEnvironment.Items.Count; i++)
+            {
+                var item = _cboTargetEnvironment.Items[i] as TargetEnvironmentItem;
+                if (string.Equals(item?.Environment?.UniqueName, selectedUniqueName, StringComparison.OrdinalIgnoreCase))
+                {
+                    _cboTargetEnvironment.SelectedIndex = i;
+                    break;
+                }
+            }
+
+            if (_cboTargetEnvironment.SelectedIndex < 0 && _cboTargetEnvironment.Items.Count > 0)
+                _cboTargetEnvironment.SelectedIndex = 0;
+
+            _cboTargetEnvironment.Enabled = _cboTargetEnvironment.Items.Count > 1;
+            var selected = GetSelectedTargetEnvironment();
+            _targetEnvId = selected?.UniqueName ?? _targetEnvId;
+            if (selected != null)
+            {
+                _step.TargetEnvironment = new DmtEnvironmentInfo
+                {
+                    UniqueName = selected.UniqueName,
+                    FriendlyName = selected.FriendlyName,
+                    Tag = selected.Tag
+                };
+            }
+        }
+
+        private DmtEnvironmentInfo GetSelectedTargetEnvironment()
+        {
+            return (_cboTargetEnvironment?.SelectedItem as TargetEnvironmentItem)?.Environment;
+        }
+
+        private IOrganizationService GetSelectedTargetClient()
+        {
+            var selected = GetSelectedTargetEnvironment();
+            if (selected != null
+                && !string.IsNullOrWhiteSpace(selected.UniqueName)
+                && _targetClientsByEnvironment.TryGetValue(selected.UniqueName, out var client)
+                && client != null)
+            {
+                return client;
+            }
+
+            return _targetClient;
+        }
+
+        private void ApplySelectedTargetToName()
+        {
+            var selected = GetSelectedTargetEnvironment();
+            if (selected == null) return;
+
+            _targetEnvId = selected.UniqueName ?? string.Empty;
+            if (_name != null)
+                _name.Text = ExecutionPlanService.BuildPushSnapshotStepName(_snapshot, selected);
+        }
+
         private void InitializeValues()
         {
             _initializing = true;
@@ -965,6 +1075,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                 var currentMatchKey = BuildCurrentPushMatchKeySelection(_step.Snapshot);
                 var currentLookupKeys = _step.Snapshot?.LookupMatchKeys ?? new List<PushLookupMatchKey>();
 
+                PopulateTargetEnvironmentList();
                 _name.Text = _step.Name ?? string.Empty;
                 _create.Checked = (currentAction & DmtAction.Create) != 0;
                 _update.Checked = (currentAction & DmtAction.Update) != 0;
@@ -1212,6 +1323,18 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
 
         private void Apply()
         {
+            var selectedTarget = GetSelectedTargetEnvironment();
+            if (selectedTarget != null)
+            {
+                _step.TargetEnvironment = new DmtEnvironmentInfo
+                {
+                    UniqueName = selectedTarget.UniqueName,
+                    FriendlyName = selectedTarget.FriendlyName,
+                    Tag = selectedTarget.Tag
+                };
+                _targetEnvId = selectedTarget.UniqueName ?? string.Empty;
+            }
+
             _step.Name = _name.Text.Trim();
 
             var action = DmtAction.None;

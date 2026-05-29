@@ -7,6 +7,7 @@ An [XrmToolBox](https://www.xrmtoolbox.com/) plugin for migrating reference data
 - Export and import Dataverse rows using JSON or Excel workbooks
 - Create portable `.dmtproj` project files that keep table configs, snapshots, execution plans, mappings, ID mappings, and run history together
 - Pull source records into named project snapshots, load JSON/Excel files into snapshots, and push snapshots to target environments
+- Configure project-specific environment tags so push steps and execution plans are easier to scan across DEV/UAT/PROD-style targets
 - Export project snapshots back to JSON or Excel
 - Supports **Create**, **Update**, and **Delete** operations for JSON imports, and create/update workflows for Excel imports
 - Preview imports before execution, including row numbers, create/update decisions, warnings, mapping count, and matching key details
@@ -38,7 +39,7 @@ Use the project actions to create or open a `.dmtproj` file. The project stores 
 
 ### 3. Load and select a table
 
-Use **Environments > Reload Tables** to load Dataverse tables from the source environment. Select a table, then choose which attributes should be included.
+Use the left-side command strip to **Reload Tables** from the source environment. Select a table, then choose which attributes should be included.
 
 ### 4. Create or load a legacy settings file
 
@@ -48,11 +49,11 @@ Legacy `.settings.json` table settings can still be imported with **Import > Imp
 
 ### 5. Configure filters
 
-Enter FetchXML filter and link-entity nodes in the filter panel. You can send the current filter to FetchXML Builder or SQL 4 CDS from the toolbar integrations.
+Enter FetchXML filter and link-entity nodes in the filter panel. You can send the current filter to FetchXML Builder or SQL 4 CDS from the filter panel integrations.
 
 ### 6. Work with snapshots
 
-Use project snapshot actions to pull source data into a named snapshot, load JSON or Excel files into a snapshot, inspect snapshot rows, export snapshots to files, and add snapshots to an execution plan for push operations.
+Use the **Snapshots** strip to pull source data into a named snapshot, import JSON or Excel files into a snapshot, inspect snapshot rows, refresh one or all snapshots, export snapshots to files, and add snapshots to an execution plan for push operations.
 
 ### 7. Export
 
@@ -129,7 +130,7 @@ Each step captures:
 
 ### Creating a plan
 
-Open the **Execution Plan** panel on the right side of the plugin. Use **New** to create a plan in the active project. Add steps through the plan toolbar menus, by linking an import to an existing export step, or by adding a snapshot from the Deploy/snapshot actions. The panel shows status (Ready / Warning / Error) and validation messages for each step.
+Open the **Execution Plan** panel on the right side of the plugin. Use **New** to create a plan in the active project. Add steps through the plan action strip, by linking an import to an existing export step, or by adding a snapshot from the **Snapshots** strip. The panel shows status (Ready / Warning / Error), target environment tags, and validation messages for each step.
 
 ### Linked steps
 
@@ -156,7 +157,7 @@ Excel import supports:
 
 Manual mappings can be defined for lookup fields. Organization mappings can also be used during import or push when configured.
 
-In project workflows, mappings are stored in the active `.dmtproj` per source/target pair and can be reviewed from **Deploy > Configure Mappings...**.
+In project workflows, mappings are stored in the active `.dmtproj` per source/target pair and can be reviewed while configuring or executing push/import workflows.
 
 ## Notes
 
@@ -165,6 +166,13 @@ In project workflows, mappings are stored in the active `.dmtproj` per source/ta
 - Result dialogs show failed rows by default, with a checkbox to show all rows and an option to retry failed rows only.
 
 ## Release Notes
+
+### 2026.5.29.x
+- [NEW] Project-specific environment tags can now be configured and used in push step names, execution plan target cells, and target selectors
+- [NEW] Configure Push Step now lets users change the target environment and updates the step name with the selected environment tag
+- [FIX] The top command bar now contains only global actions, with table actions moved to the left-side strip and snapshot/plan actions kept in their local strips
+- [FIX] Startup instructions and working tips now describe the project, snapshot, environment tag, and execution plan workflow
+- [FIX] Removed the trailing separator from the Project dropdown
 
 ### 2026.5.28.x
 - [NEW] Snapshot refresh can now update one or all snapshots, including Dataverse pulls using saved table/filter/attribute settings and file snapshots from their original JSON or Excel source
