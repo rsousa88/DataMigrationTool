@@ -79,16 +79,16 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private static readonly string[] WorkingTips =
         {
-            "Use the left-side strip for table configuration actions such as Reload Tables, Preview, and Export.",
-            "Use the Snapshots strip to pull from Dataverse, import files, refresh data, export snapshots, and add snapshots to a plan.",
-            "Environment tags are project-specific. Configure them from Environments > Environment Tags before building push steps.",
-            "Push step names include the target environment tag, which makes multi-environment plans easier to scan.",
-            "Each plan step has its own target. Select a step or reconfigure it to change the target environment.",
-            "Refreshing a file snapshot reloads its original JSON or Excel source; if the path is missing, you can locate the file again.",
-            "Refreshing a Dataverse pull snapshot reuses the saved table, attributes, and FetchXML filter from the snapshot.",
-            "Linked imports can reuse the output from an earlier export step, which keeps file paths consistent.",
-            "Use variables such as {date}, {datetime}, {table}, {source}, {target}, and {planName} in plan file paths.",
-            "Project plans are stored in the open .dmtproj file, so plan steps stay with their snapshots and mappings."
+            "Use the left strip for table setup: reload, preview, export, and filters.",
+            "Use the Snapshots strip to pull, import, refresh, export, and add data to a plan.",
+            "Open a snapshot in Rowcraft to edit rows quickly. Changes stay staged until you apply them in DMT.",
+            "The RC column shows pending Rowcraft changes for each snapshot.",
+            "Environment tags make multi-target plan steps easier to scan.",
+            "Each plan step has its own target. Select or reconfigure a step to change it.",
+            "Refreshing a file snapshot reloads its saved JSON or Excel source.",
+            "Refreshing a pull snapshot reuses its saved table, columns, and FetchXML.",
+            "Use variables like {date}, {table}, {source}, and {target} in plan file paths.",
+            "Plans are stored inside the open .dmtproj file."
         };
         private GroupBox _executionPlanGroup;
         private SplitContainer _executionPlanSplitContainer;

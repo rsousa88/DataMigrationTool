@@ -73,18 +73,38 @@ namespace Dataverse.XrmTools.DataMigrationTool
             loadBtn.Click += (s, e) => LoadFileToProject();
             var exportBtn = new ToolStripButton("Export") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, ToolTipText = "Export selected snapshot" };
             exportBtn.Click += (s, e) => ExportInlineSnapshot();
-            var viewBtn = new ToolStripButton("View") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, ToolTipText = "View snapshots full screen" };
+            var viewBtn = new ToolStripButton("⛶") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, ToolTipText = "View snapshots full screen", Alignment = ToolStripItemAlignment.Right };
             viewBtn.Click += (s, e) => ShowSnapshotViewer();
-            var refreshBtn = new ToolStripButton("Refresh") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, ToolTipText = "Refresh selected snapshot from its original source" };
-            refreshBtn.Click += (s, e) => RefreshInlineSnapshot();
-            var refreshAllBtn = new ToolStripButton("Refresh All") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, ToolTipText = "Refresh all snapshots from their original sources" };
-            refreshAllBtn.Click += (s, e) => RefreshAllSnapshots();
             var addToPlanBtn = new ToolStripButton("Add to Plan") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, ToolTipText = "Add selected snapshot to the execution plan" };
             addToPlanBtn.Click += (s, e) => AddInlineSnapshotToPlan();
-            var openRowcraftBtn = new ToolStripButton("Open in Rowcraft") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, ToolTipText = "Open selected snapshot in Rowcraft" };
+            var rowcraftBtn = new ToolStripDropDownButton("Rowcraft (Beta)")
+            {
+                DisplayStyle = ToolStripItemDisplayStyle.ImageAndText,
+                AutoSize = true,
+                Image = Properties.Resources.rowcraft20,
+                ImageTransparentColor = Color.Magenta,
+                ToolTipText = "Edit the selected snapshot in Rowcraft"
+            };
+            var openRowcraftBtn = new ToolStripMenuItem("Open in Rowcraft")
+            {
+                Image = Properties.Resources.rowcraft20,
+                ToolTipText = "Open the selected snapshot in Rowcraft"
+            };
             openRowcraftBtn.Click += (s, e) => OpenInlineSnapshotInRowcraft();
-            var applyRowcraftBtn = new ToolStripButton("Apply Rowcraft") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, ToolTipText = "Apply staged Rowcraft changes to selected snapshot" };
+            var applyRowcraftBtn = new ToolStripMenuItem("Apply Rowcraft Changes")
+            {
+                ToolTipText = "Apply staged Rowcraft changes to the selected snapshot"
+            };
             applyRowcraftBtn.Click += (s, e) => ApplyInlineRowcraftChanges();
+            rowcraftBtn.DropDownItems.Add(openRowcraftBtn);
+            rowcraftBtn.DropDownItems.Add(applyRowcraftBtn);
+            var refreshDropBtn = new ToolStripDropDownButton("Refresh") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, ToolTipText = "Refresh snapshots" };
+            var refreshOneItem = new ToolStripMenuItem("Refresh") { ToolTipText = "Refresh selected snapshot from its original source" };
+            refreshOneItem.Click += (s, e) => RefreshInlineSnapshot();
+            var refreshAllItem = new ToolStripMenuItem("Refresh All") { ToolTipText = "Refresh all snapshots from their original sources" };
+            refreshAllItem.Click += (s, e) => RefreshAllSnapshots();
+            refreshDropBtn.DropDownItems.Add(refreshOneItem);
+            refreshDropBtn.DropDownItems.Add(refreshAllItem);
             _snapMoveUpBtn = new ToolStripButton("↑") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, Enabled = false, ToolTipText = "Move snapshot up" };
             _snapMoveUpBtn.Click += (s, e) => MoveInlineSnapshot(-1);
             _snapMoveDownBtn = new ToolStripButton("↓") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, Enabled = false, ToolTipText = "Move snapshot down" };
@@ -92,15 +112,16 @@ namespace Dataverse.XrmTools.DataMigrationTool
             headerStrip.Items.Add(pullBtn);
             headerStrip.Items.Add(loadBtn);
             headerStrip.Items.Add(exportBtn);
-            headerStrip.Items.Add(viewBtn);
-            headerStrip.Items.Add(refreshBtn);
-            headerStrip.Items.Add(refreshAllBtn);
+            headerStrip.Items.Add(new ToolStripSeparator());
+            headerStrip.Items.Add(rowcraftBtn);
+            headerStrip.Items.Add(new ToolStripSeparator());
             headerStrip.Items.Add(addToPlanBtn);
-            headerStrip.Items.Add(openRowcraftBtn);
-            headerStrip.Items.Add(applyRowcraftBtn);
+            headerStrip.Items.Add(new ToolStripSeparator());
+            headerStrip.Items.Add(refreshDropBtn);
             headerStrip.Items.Add(new ToolStripSeparator());
             headerStrip.Items.Add(_snapMoveUpBtn);
             headerStrip.Items.Add(_snapMoveDownBtn);
+            headerStrip.Items.Add(viewBtn);
             outerLayout.Controls.Add(headerStrip, 0, 0);
 
             var snapSplit = new SplitContainer

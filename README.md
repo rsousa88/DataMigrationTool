@@ -167,10 +167,18 @@ In project workflows, mappings are stored in the active `.dmtproj` per source/ta
 
 ## Release Notes
 
+### 2026.6.1.x
+- [NEW] Rowcraft connector now points to the production domain (rowcraft.io)
+- [NEW] Opening a snapshot in Rowcraft for the first time shows a one-time beta disclaimer confirming no data leaves the device and nothing is stored externally
+- [FIX] Snapshot toolbar reordered: Pull / Import / Export, then Rowcraft (Beta), Add to Plan, Refresh, move arrows, with the expand button pinned to the far right
+- [FIX] Refresh and Refresh All are now grouped under a single Refresh dropdown
+- [FIX] Snapshot viewer is now a right-aligned expand icon (⛶) instead of a text button
+
 ### 2026.5.29.x
 - [NEW] Added Rowcraft connector integration for opening project snapshots in Rowcraft through a local authenticated bridge without uploading `.dmtproj` data to Rowcraft cloud storage
 - [NEW] Rowcraft can stage snapshot row creates, updates, and deletes back to DMT while DMT remains the system of record and applies changes only when the user clicks Apply Rowcraft
 - [NEW] Snapshot lists now show pending Rowcraft change counts and include actions to open, apply, or discard Rowcraft edits
+- [FIX] Rowcraft snapshot actions are now grouped under a Rowcraft toolbar button with icon, and the startup guide/tips are shorter and easier to scan
 - [FIX] Applying Rowcraft changes updates snapshot row counts and marks dependent execution-plan previews stale before push
 - [NEW] Project-specific environment tags can now be configured and used in push step names, execution plan target cells, and target selectors
 - [NEW] Configure Push Step now lets users change the target environment and updates the step name with the selected environment tag
@@ -195,118 +203,6 @@ In project workflows, mappings are stored in the active `.dmtproj` per source/ta
 - [FIX] Reconfigure is now available consistently for selected plan steps and no longer depends on preview state
 - [FIX] Clean installations now include the SQLitePCLRaw batteries assembly required to create and open `.dmtproj` project files
 - [FIX] Legacy mapping UI/code paths and obsolete mapping settings were removed from the active plugin surface
-
-### 2026.5.25.x
-- [NEW] Execution plan steps can now be cloned to another target environment from the plan panel or step context menu
-- [FIX] Duplicating linked import steps now preserves the source export link and captured configuration while resetting validation for the cloned step
-
-### 2026.5.20.x
-- [NEW] Execution plan steps can now be executed manually from the selected step actions
-- [NEW] Execution plan step actions are available from a right-click context menu
-- [NEW] Added Save As to execution plan actions
-- [FIX] Execution plan actions are now grouped into global and step-specific toolbars with state-aware enablement
-- [FIX] Execution plan results now use the standard dialog style and show per-step error details with copy support
-- [FIX] Execution plan import failures now include the source row and record context for each failed record
-- [FIX] Execution plan import previews now honor configured match keys against prior plan files before checking the target environment
-
-### 2026.5.19.x
-- [NEW] Execution plan imports can resolve lookups against records imported by earlier steps in the same target environment
-- [NEW] Execution plan steps can now be previewed individually and reconfigured before execution, including import settings, match keys, mappings, and file columns
-- [FIX] Whole-plan validation now avoids expensive full Excel preview reads and uses lightweight workbook metadata for large files
-- [FIX] Step preview now hydrates prior import files when needed so chained lookup dependencies are considered before execution
-- [FIX] Adding or reloading Excel import steps now hydrates prior plan imports so lookup dependencies are resolved before the step is added
-- [FIX] Excel import setup and step preview now only read prior import files required for lookup matching instead of every previous Excel import
-- [FIX] Selecting an execution plan step now selects the referenced table and loads its captured settings file or plan snapshot
-- [FIX] JSON and Excel execution-plan imports now persist and honor the captured match key during validation and execution
-- [FIX] Loaded execution plans now hydrate table attributes before validation and import preview, preventing null-source validation errors
-- [FIX] Stability refactor moved more import/export and execution-plan logic out of the main plugin control for better maintainability
-- [NEW] Added tests for plan lookup resolution, import match-key snapshots, and file preview columns
-
-### 2026.5.15.x
-- [NEW] Added execution plans with saved `.dmtplan.json` files, linked steps, validation, review, and unattended sequential execution
-- [NEW] Added multi-target environment support so import steps can run against different connected target environments in one plan
-- [NEW] Added an always-visible execution plan panel with per-step environment pickers, validation messages, and execution controls
-- [NEW] Added startup instructions, toolbar instructions access, and custom working dialogs with rotating tips and abort support
-- [NEW] Excel export configuration now uses a guided wizard with lookup, option set, column, and review steps
-- [FIX] Export operations no longer ask for target environments
-- [FIX] File-based imports now require a target before previewing create/update counts
-- [FIX] Importing files for a different table now selects the referenced table automatically
-- [FIX] Startup and plan UI rendering were adjusted to reduce visible UI hangs
-- [FIX] Execution plan panel no longer throws a SplitContainer sizing error on startup
-
-### 2026.5.13.x
-- [FIX] Excel imports now write generated record GUIDs and resolved lookup GUIDs back to newly-created workbook rows
-- [FIX] Excel import preview now warns about supplied record GUIDs and skips duplicate record GUID rows
-- [FIX] Import preview disables Import when settings changes require a preview refresh
-
-### 2026.5.7.x
-- [FIX] Excel imports can now create new rows when the record GUID column is blank or hidden
-- [FIX] Excel lookup columns using custom or alternate key fields no longer require the lookup GUID cell to be populated
-- [FIX] Settings files can now be loaded before selecting a table; the matching table is selected automatically
-- [FIX] Import preview refreshes only when match-key changes require re-reading the workbook
-- [NEW] Large Excel imports now show row-count warnings before the expensive read starts
-- [FIX] JSON imports now use JSON-specific wizard labels and expose match-key configuration
-- [FIX] Import from last exported now opens the import wizard for both JSON and Excel files
-- [NEW] Excel exports now store import settings in workbook metadata
-- [FIX] Older Excel exports are upgraded with import settings metadata when loaded
-- [FIX] Import wizard now warns when Excel-loaded import settings are overridden
-- [NEW] Excel imports now write successful record and lookup GUIDs back to the workbook
-- [FIX] Workbook GUID writeback failures are reported without hiding completed import results
-
-### 2026.5.6.x
-- [NEW] Settings files now save and load table configuration in the new `.dmt.json` format
-- [NEW] Legacy table settings can now be imported into a settings file with table validation
-- [NEW] Import result dialogs now show row numbers, success/failed summaries, failed-row filtering, and retry for failed rows
-- [NEW] Excel and JSON import previews now show source row numbers and row-level warnings
-- [NEW] Long-running preview, export, and import operations now report clearer progress and log detailed errors
-- [FIX] Legacy settings migration now preserves filters and selected table attributes
-- [FIX] Excel and JSON imports now validate the loaded settings file table before reading source rows
-- [FIX] Preview now validates missing FetchXML link-entity aliases and shows a friendly error instead of crashing
-- [FIX] Result and import preview tables now sort row numbers numerically and support cleaner copy/sort behavior
-- [FIX] Import wizard layout was polished and user/team auto-map options were removed in favor of explicit mappings
-- [FIX] Import wizard now uses safer default batch sizes for Dataverse timeout-sensitive tables
-- [FIX] Import progress now shows processed record counts, percentage, and error counts during execution
-- [FIX] Organization mapping option in the import wizard now has clearer wording
-
-### 2026.5.5.x
-- [NEW] Excel lookup key fields can now populate related columns during export
-- [NEW] Nested lookup key fields can be resolved by GUID or selected custom attributes
-- [FIX] Related option set key fields now export as labels and import back to option values
-- [FIX] Blank nullable lookup key fields are now treated as null conditions during import resolution
-- [NEW] Excel export configuration now includes a Columns tab to reorder, hide, and customize hint text
-- [NEW] Excel imports can match records by a selected custom match key for upsert scenarios
-- [NEW] Excel exports now use filter-friendly header notes for hints and highlight related-table columns
-- [FIX] Column manager sorting/reordering and row-level Excel import errors now behave consistently
-- [NEW] Excel and JSON imports now use a preview wizard with import settings, mappings, and record actions
-- [NEW] Import matching can now use GUIDs, alternate keys, or multiple selected custom columns
-- [FIX] Import preview now formats option set match values and supports sorting and copying rows
-- [FIX] Data and settings JSON exports now prompt for separate filenames instead of a folder
-
-### 2026.5.4.x
-- [NEW] Added Excel export and import support for table data
-- [NEW] Excel export configuration supports lookup resolution by GUID, alternate keys, or selected custom attributes
-- [NEW] Option set and multi-select option set values can be exported/imported using labels or raw values
-- [NEW] Added Switch Source / Target action to swap active connections and reload tables
-- [FIX] Results dialog now uses a fixed dialog size to avoid layout resizing issues
-
-### 2026.4.30.x
-- [NEW] SQL 4 CDS button now shows instructions for manually applying query changes back to Data Migration Tool
-- [NEW] Integration with SQL 4 CDS - filter can now be opened and edited in SQL 4 CDS
-- [NEW] Filter now supports link-entity nodes for filtering by related tables
-- [FIX] XML parsing error when sending filters with link-entity nodes to external query builders
-- [FIX] External plugin calls now properly isolated - prevents crashes if target plugin is not open
-- [FIX] Import error (InvalidDataContractException) when record contains Money attributes
-- [FIX] Import type mismatch on Decimal attributes in non-English locales
-
-### 2026.4.29.x
-- [FIX] Loading a settings file now correctly selects the saved table
-- [FIX] Loading a settings file now correctly restores deselected attributes
-- [FIX] Deselected attributes are now stored by logical name (silent migration from legacy display name format)
-- [UPGRADE] Upgraded to .NET Framework 4.8 and XrmToolBox 1.2025.10.74
-
-### 2023.4.20.x
-- [NEW] Updated select directory dialog
-- [NEW] Refactored logging
 
 ## License
 

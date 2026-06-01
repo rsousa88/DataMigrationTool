@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
   <metadata>
     <id>Dataverse.XrmTools.DataMigrationTool</id>
-    <version>2026.5.29.2</version>
+    <version>2026.6.1.1</version>
     <title>Data Migration Tool</title>
     <authors>Rui Sousa</authors>
     <owners>Rui Sousa</owners>
@@ -24,10 +24,18 @@
     </description>
     <summary>Migrate data between Dataverse instances</summary>
 	<releaseNotes>
+		2026.6.1.x
+		- [NEW] Rowcraft connector now points to the production domain (rowcraft.io)
+		- [NEW] Opening a snapshot in Rowcraft for the first time shows a one-time beta disclaimer confirming no data leaves the device and nothing is stored externally
+		- [FIX] Snapshot toolbar reordered: Pull / Import / Export, then Rowcraft (Beta), Add to Plan, Refresh, move arrows, with the expand button pinned to the far right
+		- [FIX] Refresh and Refresh All are now grouped under a single Refresh dropdown
+		- [FIX] Snapshot viewer is now a right-aligned expand icon (⛶) instead of a text button
+
 		2026.5.29.x
 		- [NEW] Added Rowcraft connector integration for opening project snapshots in Rowcraft through a local authenticated bridge without uploading .dmtproj data to Rowcraft cloud storage
 		- [NEW] Rowcraft can stage snapshot row creates, updates, and deletes back to DMT while DMT remains the system of record and applies changes only when the user clicks Apply Rowcraft
 		- [NEW] Snapshot lists now show pending Rowcraft change counts and include actions to open, apply, or discard Rowcraft edits
+		- [FIX] Rowcraft snapshot actions are now grouped under a Rowcraft toolbar button with icon, and the startup guide/tips are shorter and easier to scan
 		- [FIX] Applying Rowcraft changes updates snapshot row counts and marks dependent execution-plan previews stale before push
 		- [NEW] Project-specific environment tags can now be configured and used in push step names, execution plan target cells, and target selectors
 		- [NEW] Configure Push Step now lets users change the target environment and updates the step name with the selected environment tag

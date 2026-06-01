@@ -259,6 +259,7 @@
     <Content Include="Resources\load16_colorful.png" />
     <Content Include="Resources\mapping20_colorful.png" />
     <Content Include="Resources\preview.png" />
+    <Content Include="Resources\rowcraft20.png" />
     <Content Include="Resources\save16_colorful.png" />
   </ItemGroup>
   <ItemGroup>

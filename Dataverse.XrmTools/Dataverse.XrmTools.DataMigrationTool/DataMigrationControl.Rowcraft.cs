@@ -8,6 +8,7 @@ using System.Windows.Forms;
 using XrmToolBox.Extensibility.Args;
 
 // DataMigrationTool
+using Dataverse.XrmTools.DataMigrationTool.Helpers;
 using Dataverse.XrmTools.DataMigrationTool.Logic;
 using Dataverse.XrmTools.DataMigrationTool.Models;
 
@@ -15,14 +16,33 @@ namespace Dataverse.XrmTools.DataMigrationTool
 {
     public partial class DataMigrationControl
     {
-        private const string RowcraftConnectBaseUrl = "https://rowcraft-jet.vercel.app/connectors/connect";
+        private const string RowcraftConnectBaseUrl = "https://rowcraft.io/connectors/connect";
         private RowcraftBridgeService _rowcraftBridge;
 
         private RowcraftBridgeService RowcraftBridge =>
             _rowcraftBridge ?? (_rowcraftBridge = new RowcraftBridgeService(() => _project?.Service));
 
+        private bool ConfirmRowcraftBetaIfNeeded()
+        {
+            if (_settings.RowcraftBetaAccepted) return true;
+
+            var message =
+                "Rowcraft integration is currently in beta.\r\n\r\n" +
+                "Your snapshot data is served to Rowcraft through a local authenticated bridge running on your machine. " +
+                "No data leaves your device and nothing is stored in any external database or cloud storage.\r\n\r\n" +
+                "Do you want to continue?";
+            if (MessageBox.Show(this, message, "Rowcraft Beta", MessageBoxButtons.OKCancel, MessageBoxIcon.Information, MessageBoxDefaultButton.Button1) != DialogResult.OK)
+                return false;
+
+            _settings.RowcraftBetaAccepted = true;
+            SettingsHelper.SetSettings(_settings);
+            return true;
+        }
+
         private void OpenInlineSnapshotInRowcraft()
         {
+            if (!ConfirmRowcraftBetaIfNeeded()) return;
+
             var snap = GetInlineContextSnapshot();
             if (snap == null || _project?.Service == null)
             {

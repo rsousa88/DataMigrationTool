@@ -52,31 +52,30 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                 Text =
 @"DATA MIGRATION TOOL - QUICK GUIDE
 
-Project-based workflow (recommended)
-A project file (.dmtproj) stores environments, table configs, snapshots, execution plans, ID mappings, and run history in one portable file.
+Core workflow
+1. Connect to source.
+2. Create or open a .dmtproj project.
+3. Connect one or more targets.
+4. Pull from Dataverse or import JSON/Excel into snapshots.
+5. Review or edit snapshot data.
+6. Add snapshots to a plan and push to target.
 
-1. Connect to your source environment using the Connect button.
-2. Use Project > New... to create a project file, or Project > Open... to resume one.
-3. Use Environments > Connect Target to connect one or more target environments.
-4. Optionally use Environments > Environment Tags... to set short project labels such as DEV, UAT, or PROD.
-5. Use the left strip to Reload Tables, select a table, choose attributes, configure filters, Preview, and Export.
-6. Use the Snapshots strip to Pull from Dataverse, Import JSON/Excel files, Refresh snapshots, Export snapshots, and Add to Plan.
-7. Add a snapshot to the execution plan to push it to a target. Source-to-target GUID mappings are saved automatically.
-8. Use the execution plan History action to review past run results and errors.
+Where things live
+- Top bar: global project, connection, environment, and help actions.
+- Left strip: table setup, filters, preview, and export.
+- Snapshots strip: pull, import, refresh, export, Rowcraft, and Add to Plan.
+- Plan panel: validate, preview, execute, clone, move, and reconfigure steps.
 
-Execution plan workflow (advanced)
-For multi-step, multi-target migrations across environments, use the Execution Plan panel on the right.
+Rowcraft editing
+- Select a snapshot and choose Rowcraft > Open in Rowcraft.
+- Edit rows in Rowcraft without uploading the .dmtproj file.
+- Return to DMT and choose Rowcraft > Apply Rowcraft Changes.
+- The RC column shows pending Rowcraft edits.
 
-1. Create or load a plan from the plan-level action strip.
-2. Add snapshot push steps from the Snapshots strip or add file/export/import steps from the plan actions.
-3. Review steps, set targets per step, validate, refresh counts when needed, then execute.
-4. Use the step action strip to preview, reconfigure, execute, clone, move, or remove selected steps.
-5. Plans are saved in the open project and reloaded from the same .dmtproj file.
-
-Tips
-- The top command bar is for global actions. Left-side, snapshot, and plan commands live near the data they affect.
-- Snapshots store a copy of the data with its column metadata and original refresh source.
-- ID mappings persist across runs: records created in a target are remembered so later pushes update them instead of creating duplicates."
+Useful notes
+- Snapshots keep data, column metadata, and refresh source together.
+- ID mappings are saved so later pushes update existing target rows.
+- Environment tags keep multi-target plans readable."
             };
 
             _hideOnStartup = new CheckBox
