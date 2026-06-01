@@ -415,7 +415,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             _executionPlanSteps.ItemChecked += ExecutionPlanStepChecked;
             _executionPlanSteps.SelectedIndexChanged += (sender, args) =>
             {
-                SelectExecutionPlanStepContext();
                 RenderExecutionPlanRowTargetEditors();
                 RenderExecutionPlanMessages();
                 RenderExecutionPlanActionState();

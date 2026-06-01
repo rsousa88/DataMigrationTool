@@ -74,42 +74,44 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 return;
             }
 
-            DmtEnvironmentInfo targetEnv;
+            List<DmtEnvironmentInfo> selectedEnvs;
             if (targets.Count == 1)
             {
                 var t = targets[0];
-                targetEnv = new DmtEnvironmentInfo { UniqueName = t.UniqueName, FriendlyName = t.FriendlyName, Tag = t.Tag };
+                selectedEnvs = new List<DmtEnvironmentInfo>
+                {
+                    new DmtEnvironmentInfo { UniqueName = t.UniqueName, FriendlyName = t.FriendlyName, Tag = t.Tag }
+                };
             }
             else
             {
                 var targetNames = targets.Select(t => string.IsNullOrWhiteSpace(t.FriendlyName) ? t.UniqueName : t.FriendlyName).ToList();
-                using (var dlg = new PickItemDialog("Select Target Environment", targetNames))
+                using (var dlg = new PickItemDialog("Select Target Environments", targetNames, multiSelect: true))
                 {
                     if (dlg.ShowDialog(ParentForm) != DialogResult.OK) return;
-                    var chosen = targets.FirstOrDefault(t =>
-                        string.Equals(t.FriendlyName, dlg.SelectedItem, StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(t.UniqueName, dlg.SelectedItem, StringComparison.OrdinalIgnoreCase));
-                    if (chosen == null) return;
-                    targetEnv = new DmtEnvironmentInfo { UniqueName = chosen.UniqueName, FriendlyName = chosen.FriendlyName, Tag = chosen.Tag };
+                    selectedEnvs = dlg.SelectedItems
+                        .Select(name => targets.FirstOrDefault(t =>
+                            string.Equals(t.FriendlyName, name, StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(t.UniqueName, name, StringComparison.OrdinalIgnoreCase)))
+                        .Where(t => t != null)
+                        .Select(t => new DmtEnvironmentInfo { UniqueName = t.UniqueName, FriendlyName = t.FriendlyName, Tag = t.Tag })
+                        .ToList();
                 }
+                if (!selectedEnvs.Any()) return;
             }
 
             if (!EnsureExecutionPlanLoaded()) return;
 
-            // Pre-populate match keys from per-table config defaults
+            // Build template step using the first selected environment
             var (savedTableConfig, _, _, _) = _project?.Service?.GetTableConfig(snapshot.TableLogicalName) ?? (null, null, null, null);
-            var step = new ExecutionPlanStep
+            var templateStep = new ExecutionPlanStep
             {
                 Operation = "PushFromSnapshot",
-                Name = ExecutionPlanService.BuildPushSnapshotStepName(snapshot, targetEnv),
+                Name = ExecutionPlanService.BuildPushSnapshotStepName(snapshot, selectedEnvs[0]),
                 Enabled = true,
                 Table = new DmtTableInfo { LogicalName = snapshot.TableLogicalName },
-                TargetEnvironment = targetEnv,
-                Input = new ExecutionPlanStepInput
-                {
-                    Mode = "Snapshot",
-                    SnapshotName = snapshot.Name
-                },
+                TargetEnvironment = selectedEnvs[0],
+                Input = new ExecutionPlanStepInput { Mode = "Snapshot", SnapshotName = snapshot.Name },
                 Snapshot = new ExecutionPlanStepSnapshot
                 {
                     ImportSettings = new UiSettings { Action = DmtAction.Create | DmtAction.Update },
@@ -130,15 +132,52 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 }
             };
 
-            OpenPushStepConfigDialog(step, snapshot, configuredStep =>
+            // One config dialog for shared push settings; clone per additional environment
+            OpenPushStepConfigDialog(templateStep, snapshot, configuredStep =>
             {
-                _executionPlan.Steps.Add(configuredStep);
+                for (int i = 0; i < selectedEnvs.Count; i++)
+                {
+                    var step = i == 0 ? configuredStep : ClonePushStepForEnvironment(configuredStep, snapshot, selectedEnvs[i]);
+                    _executionPlan.Steps.Add(step);
+                }
                 ExecutionPlanService.ValidatePlan(_executionPlan);
                 _executionPlanValidatedForExecution = false;
                 AutoSaveExecutionPlan(true);
                 RenderExecutionPlanPanel();
-                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Added '{configuredStep.Name}' to execution plan"));
+                var label = selectedEnvs.Count == 1
+                    ? $"Added '{configuredStep.Name}' to execution plan"
+                    : $"Added {selectedEnvs.Count} push steps for '{snapshot.Name}' to execution plan";
+                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs(label));
             }, "Add to Plan");
+        }
+
+        private ExecutionPlanStep ClonePushStepForEnvironment(ExecutionPlanStep source, DmtSnapshot snapshot, DmtEnvironmentInfo env)
+        {
+            var src = source.Snapshot;
+            return new ExecutionPlanStep
+            {
+                Operation = source.Operation,
+                Name = ExecutionPlanService.BuildPushSnapshotStepName(snapshot, env),
+                Enabled = source.Enabled,
+                Table = source.Table,
+                TargetEnvironment = env,
+                Input = new ExecutionPlanStepInput { Mode = source.Input?.Mode, SnapshotName = source.Input?.SnapshotName },
+                Snapshot = src == null ? new ExecutionPlanStepSnapshot() : new ExecutionPlanStepSnapshot
+                {
+                    ImportSettings = src.ImportSettings,
+                    PushMatchKeyMode = src.PushMatchKeyMode,
+                    PushMatchKeyFields = src.PushMatchKeyFields != null ? new List<string>(src.PushMatchKeyFields) : new List<string>(),
+                    PushMatchAlternateKeyName = src.PushMatchAlternateKeyName,
+                    SelectedColumns = src.SelectedColumns != null ? new List<string>(src.SelectedColumns) : null,
+                    LookupMatchKeys = src.LookupMatchKeys?.Select(k => new PushLookupMatchKey
+                    {
+                        LogicalName = k.LogicalName,
+                        Mode = k.Mode,
+                        AlternateKeyName = k.AlternateKeyName,
+                        Fields = k.Fields != null ? new List<string>(k.Fields) : new List<string>()
+                    }).ToList()
+                }
+            };
         }
 
         #endregion

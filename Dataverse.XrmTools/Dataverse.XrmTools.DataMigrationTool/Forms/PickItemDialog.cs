@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Linq;
 using System.Windows.Forms;
 
 namespace Dataverse.XrmTools.DataMigrationTool.Forms
@@ -9,11 +10,17 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
     public class PickItemDialog : Form
     {
         private ListBox _list;
+        private CheckedListBox _checkedList;
+        private readonly bool _multiSelect;
 
-        public string SelectedItem => _list.SelectedItem?.ToString();
+        public string SelectedItem => _list?.SelectedItem?.ToString();
+        public IList<string> SelectedItems => _multiSelect
+            ? _checkedList.CheckedItems.Cast<string>().ToList()
+            : (_list.SelectedItem != null ? new List<string> { _list.SelectedItem.ToString() } : new List<string>());
 
-        public PickItemDialog(string prompt, IList<string> items)
+        public PickItemDialog(string prompt, IList<string> items, bool multiSelect = false)
         {
+            _multiSelect = multiSelect;
             Text = prompt;
             ClientSize = new Size(440, 280);
             FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -33,12 +40,26 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
 
-            _list = new ListBox { Dock = DockStyle.Fill, SelectionMode = SelectionMode.One };
-            foreach (var item in items)
-                _list.Items.Add(item);
-            if (_list.Items.Count > 0) _list.SelectedIndex = 0;
-            _list.DoubleClick += (s, e) => { if (SelectedItem != null) Ok(); };
-            layout.Controls.Add(_list, 0, 0);
+            if (multiSelect)
+            {
+                _checkedList = new CheckedListBox
+                {
+                    Dock = DockStyle.Fill,
+                    CheckOnClick = true
+                };
+                foreach (var item in items)
+                    _checkedList.Items.Add(item);
+                layout.Controls.Add(_checkedList, 0, 0);
+            }
+            else
+            {
+                _list = new ListBox { Dock = DockStyle.Fill, SelectionMode = SelectionMode.One };
+                foreach (var item in items)
+                    _list.Items.Add(item);
+                if (_list.Items.Count > 0) _list.SelectedIndex = 0;
+                _list.DoubleClick += (s, e) => { if (SelectedItem != null) Ok(); };
+                layout.Controls.Add(_list, 0, 0);
+            }
 
             var btnPanel = new FlowLayoutPanel
             {
@@ -59,9 +80,10 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
 
         private void Ok()
         {
-            if (SelectedItem == null)
+            var hasSelection = _multiSelect ? _checkedList.CheckedItems.Count > 0 : SelectedItem != null;
+            if (!hasSelection)
             {
-                MessageBox.Show(this, "Select an item first.", "Selection Required", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(this, "Select at least one item.", "Selection Required", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
             DialogResult = DialogResult.OK;

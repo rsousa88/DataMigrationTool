@@ -168,6 +168,8 @@ In project workflows, mappings are stored in the active `.dmtproj` per source/ta
 ## Release Notes
 
 ### 2026.6.1.x
+- [NEW] Add to Plan now shows a checkbox environment picker allowing multiple target environments to be selected; one push step is added per checked environment with shared push configuration
+- [FIX] Selecting a step in the execution plan no longer drives the left-side table, attribute, and filter selection
 - [NEW] Rowcraft connector now points to the production domain (rowcraft.io)
 - [NEW] Opening a snapshot in Rowcraft for the first time shows a one-time beta disclaimer confirming no data leaves the device and nothing is stored externally
 - [FIX] Snapshot toolbar reordered: Pull / Import / Export, then Rowcraft (Beta), Add to Plan, Refresh, move arrows, with the expand button pinned to the far right
