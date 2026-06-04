@@ -511,6 +511,7 @@ VALUES(@ln, @dn, @pid, @pn, @cfg);";
             cmd.Parameters.AddWithValue("@pn", (object)primaryNameAttr ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@cfg", JsonConvert.SerializeObject(config, _json));
             cmd.ExecuteNonQuery();
+            TouchProject();
         }
 
         public (DataTableConfig config, string displayName, string primaryIdAttr, string primaryNameAttr)
@@ -529,6 +530,84 @@ VALUES(@ln, @dn, @pid, @pn, @cfg);";
             return (config, displayName, primaryIdAttr, primaryNmAttr);
         }
 
+        public (DataTableConfig config, string displayName, string primaryIdAttr, string primaryNameAttr)
+            EnsureTableConfigForSnapshot(DmtSnapshot snapshot)
+        {
+            if (snapshot == null || string.IsNullOrWhiteSpace(snapshot.TableLogicalName))
+                return (null, null, null, null);
+
+            var existing = GetTableConfig(snapshot.TableLogicalName);
+            if (existing.config != null)
+                return existing;
+
+            var columns = snapshot.ColumnConfig ?? new List<DataTableColumnConfig>();
+            var primaryIdAttr = !string.IsNullOrWhiteSpace(snapshot.PrimaryIdAttribute)
+                ? snapshot.PrimaryIdAttribute
+                : InferPrimaryIdAttribute(snapshot.TableLogicalName, columns);
+            var primaryNameAttr = InferPrimaryNameAttribute(columns);
+            var config = new DataTableConfig
+            {
+                SelectedAttributes = columns
+                    .Where(c => !string.IsNullOrWhiteSpace(c.LogicalName)
+                        && !ReservedColumnNames.Contains(c.LogicalName, StringComparer.OrdinalIgnoreCase))
+                    .Select(c => c.LogicalName)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList(),
+                AllColumns = columns
+                    .Where(c => !string.IsNullOrWhiteSpace(c.LogicalName))
+                    .Select(CloneColumnConfig)
+                    .ToList(),
+                LoadMatchKeyMode = snapshot.LoadMatchKeyMode ?? "Guid",
+                LoadMatchKeyFields = snapshot.LoadMatchKeyFields != null
+                    ? new List<string>(snapshot.LoadMatchKeyFields)
+                    : new List<string>()
+            };
+
+            SaveTableConfig(snapshot.TableLogicalName, snapshot.TableLogicalName, primaryIdAttr, primaryNameAttr, config);
+            return (config, snapshot.TableLogicalName, primaryIdAttr, primaryNameAttr);
+        }
+
+        private static string InferPrimaryIdAttribute(string tableLogicalName, List<DataTableColumnConfig> columns)
+        {
+            var conventional = string.IsNullOrWhiteSpace(tableLogicalName) ? null : tableLogicalName + "id";
+            var conventionalMatch = columns.FirstOrDefault(c =>
+                string.Equals(c.LogicalName, conventional, StringComparison.OrdinalIgnoreCase));
+            if (conventionalMatch != null) return conventionalMatch.LogicalName;
+
+            return columns.FirstOrDefault(c =>
+                    string.Equals(c.Type, "Uniqueidentifier", StringComparison.OrdinalIgnoreCase)
+                    && !string.IsNullOrWhiteSpace(c.LogicalName)
+                    && c.LogicalName.EndsWith("id", StringComparison.OrdinalIgnoreCase))
+                ?.LogicalName;
+        }
+
+        private static string InferPrimaryNameAttribute(List<DataTableColumnConfig> columns)
+        {
+            return columns.FirstOrDefault(c =>
+                    string.Equals(c.LogicalName, "name", StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(c.Type, "String", StringComparison.OrdinalIgnoreCase))
+                ?.LogicalName
+                ?? columns.FirstOrDefault(c =>
+                    string.Equals(c.Type, "String", StringComparison.OrdinalIgnoreCase)
+                    && !string.IsNullOrWhiteSpace(c.LogicalName))
+                ?.LogicalName;
+        }
+
+        private static DataTableColumnConfig CloneColumnConfig(DataTableColumnConfig col)
+        {
+            return new DataTableColumnConfig
+            {
+                LogicalName = col.LogicalName,
+                DisplayName = col.DisplayName,
+                Type = col.Type,
+                SqliteType = col.SqliteType,
+                RelatedTable = col.RelatedTable,
+                Resolution = col.Resolution,
+                AlternateKeyFields = col.AlternateKeyFields != null ? new List<string>(col.AlternateKeyFields) : null,
+                IsMultiSelect = col.IsMultiSelect
+            };
+        }
+
         public List<string> GetTableConfigLogicalNames()
         {
             using var cmd = _connection.CreateCommand();
@@ -537,6 +616,14 @@ VALUES(@ln, @dn, @pid, @pn, @cfg);";
             var result = new List<string>();
             while (reader.Read()) result.Add(reader.GetString(0));
             return result;
+        }
+
+        private void TouchProject()
+        {
+            using var cmd = _connection.CreateCommand();
+            cmd.CommandText = "INSERT OR REPLACE INTO _project(key, value) VALUES('updated_on', @value);";
+            cmd.Parameters.AddWithValue("@value", DateTime.UtcNow.ToString("O"));
+            cmd.ExecuteNonQuery();
         }
 
         // ─── Snapshots ─────────────────────────────────────────────────────────

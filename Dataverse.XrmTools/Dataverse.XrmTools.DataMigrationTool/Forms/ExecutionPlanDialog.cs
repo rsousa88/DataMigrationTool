@@ -396,6 +396,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         {
             public List<ExcelImportAlternateKeyOption> AltKeys { get; set; } = new List<ExcelImportAlternateKeyOption>();
             public List<DataTableColumnConfig> SnapshotColumns { get; set; } = new List<DataTableColumnConfig>();
+            public List<DataTableColumnConfig> TargetColumns { get; set; } = new List<DataTableColumnConfig>();
         }
 
         private sealed class LookupRowData
@@ -1277,11 +1278,13 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             else if (string.Equals(modeVal, "Custom Columns", StringComparison.OrdinalIgnoreCase))
             {
                 _relatedTableData.TryGetValue(data.Column.RelatedTable ?? "", out var tableInfo);
-                var cols = tableInfo?.SnapshotColumns ?? new List<DataTableColumnConfig>();
+                var cols = tableInfo?.SnapshotColumns?.Any() == true
+                    ? tableInfo.SnapshotColumns
+                    : tableInfo?.TargetColumns ?? new List<DataTableColumnConfig>();
                 if (!cols.Any())
                 {
                     MessageBox.Show(this,
-                        $"No snapshot available for '{data.Column.RelatedTable}'. Add a snapshot for that table to the project first.",
+                        $"No columns available for '{data.Column.RelatedTable}'. Load that table in the target environment first or add a snapshot for the table to the project.",
                         "Custom Columns", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     row.Cells["Mode"].Value = LookupModeToDisplay(data.MatchKey.Mode);
                     return;

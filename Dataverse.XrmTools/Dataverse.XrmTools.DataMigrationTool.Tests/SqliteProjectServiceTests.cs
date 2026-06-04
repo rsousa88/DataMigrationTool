@@ -190,6 +190,55 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
         // ─── Snapshot name sanitization ────────────────────────────────────────
 
         [Fact]
+        public void EnsureTableConfigForSnapshot_CreatesAndPersistsMissingConfig()
+        {
+            using var tmp = new TemporaryFileScope();
+            var filePath = tmp.GetPath("imported.dmtproj");
+            var snapshot = new DmtSnapshot
+            {
+                Name = "accounts",
+                TableSuffix = "accounts",
+                TableLogicalName = "account",
+                SourceEnvId = "src-env",
+                Source = "JSON",
+                PrimaryIdAttribute = "accountid",
+                LoadMatchKeyMode = "Custom",
+                LoadMatchKeyFields = new List<string> { "accountnumber" },
+                ColumnConfig = new List<DataTableColumnConfig>
+                {
+                    new DataTableColumnConfig { LogicalName = "accountid", Type = "Uniqueidentifier", SqliteType = "TEXT" },
+                    new DataTableColumnConfig { LogicalName = "name", Type = "String", SqliteType = "TEXT" },
+                    new DataTableColumnConfig { LogicalName = "accountnumber", Type = "String", SqliteType = "TEXT" }
+                }
+            };
+
+            using (var svc = new SqliteProjectService())
+            {
+                svc.CreateProject(filePath, "Imported Project");
+                svc.SaveSnapshot(snapshot);
+
+                var (config, displayName, primaryIdAttr, primaryNameAttr) = svc.EnsureTableConfigForSnapshot(snapshot);
+
+                Assert.NotNull(config);
+                Assert.Equal("account", displayName);
+                Assert.Equal("accountid", primaryIdAttr);
+                Assert.Equal("name", primaryNameAttr);
+                Assert.Equal("Custom", config.LoadMatchKeyMode);
+                Assert.Equal(new[] { "accountnumber" }, config.LoadMatchKeyFields);
+            }
+
+            using (var reopened = new SqliteProjectService())
+            {
+                reopened.OpenProject(filePath);
+                var (config, _, primaryIdAttr, _) = reopened.GetTableConfig("account");
+
+                Assert.NotNull(config);
+                Assert.Equal("accountid", primaryIdAttr);
+                Assert.Equal(3, config.AllColumns.Count);
+            }
+        }
+
+        [Fact]
         public void RowcraftEditSession_StagesWithoutChangingSnapshot()
         {
             var snapshot = CreateSnapshotWithRows();

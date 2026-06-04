@@ -108,10 +108,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
         public class PushResult
         {
+            public int TotalRecords { get; set; }
             public int Created { get; set; }
             public int Updated { get; set; }
             public int Deleted { get; set; }
             public int Skipped { get; set; }
+            public int Failed { get; set; }
             public List<string> Errors { get; } = new List<string>();
         }
 
@@ -232,6 +234,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                         && lookupKey.Fields?.Any() == true)
                     {
                         if (!string.IsNullOrWhiteSpace(relatedTable) && relatedSnapshotTables.Contains(relatedTable))
+                            continue;
+
+                        if (!string.IsNullOrWhiteSpace(relatedTable)
+                            && targetClient != null
+                            && Guid.TryParse(srcGuidStr, out var lookupGuid)
+                            && TargetRecordExists(targetClient, relatedTable, lookupGuid))
                             continue;
 
                         warnings.Add($"Lookup '{col.LogicalName}': no project snapshot for '{relatedTable}' to resolve by configured key");
@@ -493,16 +501,17 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             BackgroundWorker worker,
             ExcelImportMatchKeySelection matchKeyOverride = null,
             List<PushLookupMatchKey> lookupMatchKeys = null,
-            List<string> selectedColumns = null)
+            List<string> selectedColumns = null,
+            IOrganizationService sourceClient = null)
         {
             var result = new PushResult();
 
             var snapshot = project.GetSnapshot(snapshotName)
                 ?? throw new InvalidOperationException($"Snapshot '{snapshotName}' not found in project.");
 
-            var (tableConfig, _, primaryIdAttr, _) = project.GetTableConfig(snapshot.TableLogicalName);
+            var (tableConfig, _, primaryIdAttr, _) = project.EnsureTableConfigForSnapshot(snapshot);
             if (string.IsNullOrEmpty(primaryIdAttr))
-                throw new InvalidOperationException($"No table config found for '{snapshot.TableLogicalName}'. Load the table attributes first.");
+                throw new InvalidOperationException($"No primary ID attribute found for '{snapshot.TableLogicalName}'. Load the table attributes first.");
 
             var cols = snapshot.ColumnConfig;
             // Apply step-level column filter
@@ -523,6 +532,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             // Read all rows
             var allRows = project.ReadSnapshotRecords(snapshot.TableSuffix, cols).ToList();
             var total = allRows.Count;
+            result.TotalRecords = total;
             if (total == 0)
             {
                 worker?.ReportProgress(100, "Snapshot is empty — nothing to push.");
@@ -644,10 +654,9 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 var entities = batch.Select(t =>
                 {
                     var entity = RowToEntity(t.row, cols, snapshot.TableLogicalName, primaryIdAttr,
-                        project, sourceEnvId, targetEnvId, targetRepo, lookupMatchKeys);
-                    // If using GUID mode and source has a real GUID, try to preserve it
-                    if (!t.isNew && matchKeyMode == "Guid"
-                        && Guid.TryParse(t.sourceId, out var g))
+                        project, sourceEnvId, targetEnvId, targetRepo, targetClient, sourceClient, lookupMatchKeys);
+                    // If the source snapshot carries a real GUID, ask Dataverse to preserve it on create.
+                    if (Guid.TryParse(t.sourceId, out var g))
                         entity.Id = g;
                     else
                         entity.Id = Guid.Empty; // Let Dataverse assign
@@ -670,6 +679,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     }
                     else
                     {
+                        result.Failed++;
                         result.Errors.Add($"Create failed: {resp.Message}");
                     }
                 }
@@ -684,7 +694,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 var entities = batch.Select(t =>
                 {
                     var entity = RowToEntity(t.row, cols, snapshot.TableLogicalName, primaryIdAttr,
-                        project, sourceEnvId, targetEnvId, targetRepo, lookupMatchKeys);
+                        project, sourceEnvId, targetEnvId, targetRepo, targetClient, sourceClient, lookupMatchKeys);
                     entity.Id = t.targetId;
                     return entity;
                 }).ToList();
@@ -696,7 +706,11 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 foreach (var resp in responses)
                 {
                     if (resp.Success) result.Updated++;
-                    else result.Errors.Add($"Update failed: {resp.Message}");
+                    else
+                    {
+                        result.Failed++;
+                        result.Errors.Add($"Update failed: {resp.Message}");
+                    }
                 }
                 updateIdx += batch.Count;
             }
@@ -717,6 +731,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     }
                     else
                     {
+                        result.Failed++;
                         result.Errors.Add($"Delete failed: {resp.Message}");
                     }
                 }
@@ -733,7 +748,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 Operation = "Push",
                 Status = result.Errors.Any() ? "CompletedWithErrors" : "Completed",
                 TotalRecords = total,
-                FailedRecords = result.Errors.Count,
+                FailedRecords = result.Failed,
                 Summary = $"{result.Created} created, {result.Updated} updated, {result.Deleted} deleted, {result.Skipped} skipped.",
                 ErrorDetails = result.Errors
             };
@@ -765,6 +780,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             string sourceEnvId,
             string targetEnvId,
             CrmRepo targetRepo = null,
+            IOrganizationService targetClient = null,
+            IOrganizationService sourceClient = null,
             List<PushLookupMatchKey> lookupMatchKeys = null)
         {
             var entity = new Entity(tableLogicalName);
@@ -777,7 +794,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 if (!row.TryGetValue(col.LogicalName, out var raw) || raw == null)
                     continue;
 
-                var value = ConvertRowValue(raw, col, tableLogicalName, project, sourceEnvId, targetEnvId, targetRepo, lookupMatchKeys);
+                var value = ConvertRowValue(raw, col, tableLogicalName, project, sourceEnvId, targetEnvId, targetRepo, targetClient, sourceClient, lookupMatchKeys);
                 if (value != null)
                     entity[col.LogicalName] = value;
             }
@@ -792,6 +809,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             string sourceEnvId,
             string targetEnvId,
             CrmRepo targetRepo = null,
+            IOrganizationService targetClient = null,
+            IOrganizationService sourceClient = null,
             List<PushLookupMatchKey> lookupMatchKeys = null)
         {
             var type = col.Type ?? string.Empty;
@@ -808,7 +827,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     var relatedTable = col.RelatedTable ?? tableLogicalName;
                     var targetIdStr = project.ResolveTargetId(relatedTable, sourceEnvId, srcGuid.ToString("D"), targetEnvId);
                     if (!string.IsNullOrEmpty(targetIdStr) && Guid.TryParse(targetIdStr, out var resolvedId))
-                        return new EntityReference(col.RelatedTable, resolvedId);
+                        return new EntityReference(relatedTable, resolvedId);
 
                     // Check per-lookup match key override
                     var lookupKey = lookupMatchKeys?.FirstOrDefault(k =>
@@ -822,31 +841,26 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                         && lookupKey.Fields?.Any() == true
                         && targetRepo != null)
                     {
-                        // Find the related record in the project's snapshot and resolve by field values
-                        var relSnap = project.GetSnapshots().FirstOrDefault(s =>
-                            string.Equals(s.TableLogicalName, relatedTable, StringComparison.OrdinalIgnoreCase));
-                        if (relSnap != null)
+                        var keyValues = BuildRelatedLookupKeyValues(project, sourceClient, relatedTable, srcGuid, lookupKey);
+                        if (keyValues.Any())
                         {
-                            var relRow = project.ReadSnapshotRecordBySourceId(relSnap.TableSuffix, srcGuid.ToString("D"));
-                            if (relRow != null)
-                            {
-                                var keyValues = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
-                                foreach (var kf in lookupKey.Fields)
-                                    if (relRow.TryGetValue(kf, out var kv) && kv != null)
-                                        keyValues[kf] = kv;
-
-                                if (keyValues.Any())
-                                {
-                                    var found = targetRepo.FindByFieldValues(relatedTable, keyValues);
-                                    if (found != null)
-                                        return new EntityReference(relatedTable, found.Id);
-                                }
-                            }
+                            var found = targetRepo.FindByFieldValues(relatedTable, keyValues);
+                            if (found != null)
+                                return new EntityReference(relatedTable, found.Id);
                         }
                     }
 
+                    if ((string.Equals(lookupKey?.Mode, "AlternateKey", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(lookupKey?.Mode, "Custom", StringComparison.OrdinalIgnoreCase))
+                        && lookupKey.Fields?.Any() == true
+                        && targetClient != null
+                        && TargetRecordExists(targetClient, relatedTable, srcGuid))
+                    {
+                        return new EntityReference(relatedTable, srcGuid);
+                    }
+
                     // Fall back to source GUID (may exist in target already)
-                    return new EntityReference(col.RelatedTable, srcGuid);
+                    return new EntityReference(relatedTable, srcGuid);
                 }
 
                 case "Uniqueidentifier":
@@ -908,6 +922,49 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
         private static string ReserveUniqueSuffix(SqliteProjectService project, string name)
         {
             return project.ResolveTableSuffix(name);
+        }
+
+        private static Dictionary<string, object> BuildRelatedLookupKeyValues(
+            SqliteProjectService project,
+            IOrganizationService sourceClient,
+            string relatedTable,
+            Guid sourceId,
+            PushLookupMatchKey lookupKey)
+        {
+            var keyValues = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            if (lookupKey?.Fields?.Any() != true || string.IsNullOrWhiteSpace(relatedTable))
+                return keyValues;
+
+            var relSnap = project.GetSnapshots().FirstOrDefault(s =>
+                string.Equals(s.TableLogicalName, relatedTable, StringComparison.OrdinalIgnoreCase));
+            if (relSnap != null)
+            {
+                var relRow = project.ReadSnapshotRecordBySourceId(relSnap.TableSuffix, sourceId.ToString("D"));
+                if (relRow != null)
+                {
+                    foreach (var field in lookupKey.Fields)
+                        if (relRow.TryGetValue(field, out var value) && value != null)
+                            keyValues[field] = value;
+                    return keyValues;
+                }
+            }
+
+            if (sourceClient == null) return keyValues;
+
+            var fields = lookupKey.Fields
+                .Where(field => !string.IsNullOrWhiteSpace(field))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            if (!fields.Any()) return keyValues;
+
+            var sourceEntity = sourceClient.Retrieve(relatedTable, sourceId, new ColumnSet(fields));
+            if (sourceEntity == null) return keyValues;
+
+            foreach (var field in fields)
+                if (sourceEntity.Attributes.TryGetValue(field, out var value) && value != null)
+                    keyValues[field] = value;
+
+            return keyValues;
         }
 
         private static Dictionary<string, object> EntityToRow(Entity entity, List<DataTableColumnConfig> columns, string primaryIdAttr)

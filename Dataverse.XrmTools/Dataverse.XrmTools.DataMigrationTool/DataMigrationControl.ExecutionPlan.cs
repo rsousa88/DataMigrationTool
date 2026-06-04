@@ -9,6 +9,7 @@ using System.Windows.Forms;
 
 // Microsoft
 using Microsoft.Xrm.Sdk;
+using Microsoft.Xrm.Sdk.Metadata;
 using Microsoft.Xrm.Sdk.Query;
 
 // XrmToolBox
@@ -1767,7 +1768,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             var settings = step.Snapshot?.ImportSettings ?? new UiSettings { Action = Enums.Action.Create | Enums.Action.Update };
             var pushMatchKey = BuildPushMatchKeySelection(step.Snapshot);
 
-            var result = SqliteDataLogic.Push(_project.Service, snapshotName, sourceEnvId, targetEnvId, ActiveTargetClient, settings, worker, pushMatchKey, step.Snapshot?.LookupMatchKeys, step.Snapshot?.SelectedColumns);
+            var result = SqliteDataLogic.Push(_project.Service, snapshotName, sourceEnvId, targetEnvId, ActiveTargetClient, settings, worker, pushMatchKey, step.Snapshot?.LookupMatchKeys, step.Snapshot?.SelectedColumns, _sourceClient);
 
             var summary = $"{step.Name}: {result?.Created ?? 0} created, {result?.Updated ?? 0} updated, {result?.Skipped ?? 0} skipped";
             if (result?.Errors?.Any() == true)
@@ -1777,9 +1778,9 @@ namespace Dataverse.XrmTools.DataMigrationTool
             return new ExecutionPlanStepExecutionResult
             {
                 Summary = summary,
-                TotalRecords = (result?.Created ?? 0) + (result?.Updated ?? 0) + (result?.Skipped ?? 0),
-                FailedRecords = errors.Count,
-                HasFailures = errors.Count > 0,
+                TotalRecords = result?.TotalRecords ?? 0,
+                FailedRecords = result?.Failed ?? errors.Count,
+                HasFailures = (result?.Failed ?? errors.Count) > 0 || errors.Count > 0,
                 ErrorDetails = errors
             };
         }
@@ -1992,6 +1993,13 @@ namespace Dataverse.XrmTools.DataMigrationTool
                                 }
                                 catch { info.AltKeys = new List<ExcelImportAlternateKeyOption>(); }
 
+                                // Target metadata columns allow custom lookup matching without a related project snapshot.
+                                try
+                                {
+                                    info.TargetColumns = BuildLookupTargetColumnConfigs(repo.GetTableMetadata(grp.Key)?.Attributes);
+                                }
+                                catch { info.TargetColumns = new List<DataTableColumnConfig>(); }
+
                                 relatedTableData[grp.Key] = info;
                             }
                         }
@@ -2054,7 +2062,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     {
                         try
                         {
-                            var (tc, dn, pid, pna) = _project.Service.GetTableConfig(snapshot.TableLogicalName);
+                            var (tc, dn, pid, pna) = _project.Service.EnsureTableConfigForSnapshot(snapshot);
                             if (tc != null)
                             {
                                 tc.PushMatchKeyMode = step.Snapshot?.PushMatchKeyMode;
@@ -2094,6 +2102,47 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     result.Add(snap.TableLogicalName);
             }
             return result;
+        }
+
+        private static List<DataTableColumnConfig> BuildLookupTargetColumnConfigs(AttributeMetadata[] attrs)
+        {
+            if (attrs == null) return new List<DataTableColumnConfig>();
+
+            var result = new List<DataTableColumnConfig>();
+            foreach (var att in attrs)
+            {
+                if (att == null || att.IsValidForRead == null || !att.IsValidForRead.Value) continue;
+
+                var typeCode = GetLookupTargetAttributeTypeCode(att);
+                if (SqliteProjectService.IsExcludedAttributeType(typeCode)) continue;
+
+                var cfg = new DataTableColumnConfig
+                {
+                    LogicalName = att.LogicalName,
+                    DisplayName = att.DisplayName?.UserLocalizedLabel?.Label ?? att.LogicalName,
+                    Type = typeCode,
+                    SqliteType = SqliteProjectService.GetSqliteType(typeCode),
+                    IsMultiSelect = att is MultiSelectPicklistAttributeMetadata
+                };
+
+                if (att is LookupAttributeMetadata lookup)
+                {
+                    cfg.RelatedTable = lookup.Targets?.FirstOrDefault();
+                    cfg.Resolution = "Guid";
+                }
+
+                result.Add(cfg);
+            }
+
+            return result;
+        }
+
+        private static string GetLookupTargetAttributeTypeCode(AttributeMetadata att)
+        {
+            var typeName = att.AttributeTypeName?.Value ?? string.Empty;
+            return typeName.EndsWith("Type", StringComparison.Ordinal)
+                ? typeName.Substring(0, typeName.LastIndexOf("Type", StringComparison.Ordinal))
+                : typeName;
         }
 
         private void RefreshExecutionPlanImportPreview(ExecutionPlanStep step, int stepIndex, BackgroundWorker worker, bool fullPreview = false)

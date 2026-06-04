@@ -167,6 +167,13 @@ In project workflows, mappings are stored in the active `.dmtproj` per source/ta
 
 ## Release Notes
 
+### 2026.6.4.x
+- [FIX] Lookup match-key configuration no longer requires a related-table snapshot when the referenced records already exist in the target environment
+- [FIX] Push steps from imported projects now rebuild missing table configuration from snapshot metadata and persist the last-used push settings in the project file
+- [FIX] Custom lookup matching now respects the configured lookup key fields for related records such as teams and business units
+- [FIX] Execution plan push results now report total processed records and failed rows consistently
+- [FIX] Snapshot source GUIDs are preserved on create whenever present, even when the push match key is an alternate key or custom columns
+
 ### 2026.6.1.x
 - [NEW] Add to Plan now shows a checkbox environment picker allowing multiple target environments to be selected; one push step is added per checked environment with shared push configuration
 - [FIX] Selecting a step in the execution plan no longer drives the left-side table, attribute, and filter selection

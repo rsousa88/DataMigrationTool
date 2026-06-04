@@ -103,7 +103,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (!EnsureExecutionPlanLoaded()) return;
 
             // Build template step using the first selected environment
-            var (savedTableConfig, _, _, _) = _project?.Service?.GetTableConfig(snapshot.TableLogicalName) ?? (null, null, null, null);
+            var (savedTableConfig, _, _, _) = _project?.Service?.EnsureTableConfigForSnapshot(snapshot) ?? (null, null, null, null);
             var templateStep = new ExecutionPlanStep
             {
                 Operation = "PushFromSnapshot",
