@@ -168,6 +168,7 @@ In project workflows, mappings are stored in the active `.dmtproj` per source/ta
 ## Release Notes
 
 ### 2026.6.4.x
+- [FIX] Package release now aligns NuGet, assembly, and Release-build metadata so XrmToolBox detects the latest update correctly
 - [FIX] Lookup match-key configuration no longer requires a related-table snapshot when the referenced records already exist in the target environment
 - [FIX] Push steps from imported projects now rebuild missing table configuration from snapshot metadata and persist the last-used push settings in the project file
 - [FIX] Custom lookup matching now respects the configured lookup key fields for related records such as teams and business units
