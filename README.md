@@ -167,7 +167,15 @@ In project workflows, mappings are stored in the active `.dmtproj` per source/ta
 
 ## Release Notes
 
+### 2026.6.6.x
+- [FIX] Rowcraft bridge restarts on each open, eliminating the ~10s hang when reopening Rowcraft from DMT
+- [FIX] All SQLite bridge operations are now serialised across threads, preventing concurrent-access corruption and staging lock contention
+- [FIX] Bridge exposes DELETE /api/v1/session for clean Rowcraft session teardown on tab unmount
+- [NEW] Opening Rowcraft now uses scope=allSnapshots so all project snapshots are accessible in the session
+- [FIX] Rowcraft toolbar button and context menu updated to "Open Project in Rowcraft"
+
 ### 2026.6.4.x
+- [NEW] Rowcraft launches now pass all project snapshots through the connector while opening the selected snapshot first
 - [FIX] Package release now aligns NuGet, assembly, and Release-build metadata so XrmToolBox detects the latest update correctly
 - [FIX] Lookup match-key configuration no longer requires a related-table snapshot when the referenced records already exist in the target environment
 - [FIX] Push steps from imported projects now rebuild missing table configuration from snapshot metadata and persist the last-used push settings in the project file

@@ -83,12 +83,12 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 AutoSize = true,
                 Image = Properties.Resources.rowcraft20,
                 ImageTransparentColor = Color.Magenta,
-                ToolTipText = "Edit the selected snapshot in Rowcraft"
+                ToolTipText = "Open project snapshots in Rowcraft"
             };
-            var openRowcraftBtn = new ToolStripMenuItem("Open in Rowcraft")
+            var openRowcraftBtn = new ToolStripMenuItem("Open Project in Rowcraft")
             {
                 Image = Properties.Resources.rowcraft20,
-                ToolTipText = "Open the selected snapshot in Rowcraft"
+                ToolTipText = "Open Rowcraft with all snapshots, focused on the selected snapshot"
             };
             openRowcraftBtn.Click += (s, e) => OpenInlineSnapshotInRowcraft();
             var applyRowcraftBtn = new ToolStripMenuItem("Apply Rowcraft Changes")
@@ -239,7 +239,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             refresh.Click += (s, e) => RefreshInlineSnapshot();
             menu.Items.Add(refresh);
 
-            var openRowcraft = new ToolStripMenuItem("Open in Rowcraft");
+            var openRowcraft = new ToolStripMenuItem("Open Project in Rowcraft");
             openRowcraft.Click += (s, e) => OpenInlineSnapshotInRowcraft();
             menu.Items.Add(openRowcraft);
 

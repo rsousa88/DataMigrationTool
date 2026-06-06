@@ -55,10 +55,10 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 var token = RowcraftBridge.StartForRowcraft();
                 var bridge = Uri.EscapeDataString(RowcraftBridge.BaseUrl);
                 var encodedToken = Uri.EscapeDataString(token);
-                var dataset = Uri.EscapeDataString(snap.Name);
-                var url = $"{RowcraftConnectBaseUrl}?bridge={bridge}&token={encodedToken}&dataset={dataset}";
+                var initialDataset = Uri.EscapeDataString(snap.Name);
+                var url = $"{RowcraftConnectBaseUrl}?bridge={bridge}&token={encodedToken}&scope=allSnapshots&initialDataset={initialDataset}";
                 Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Rowcraft bridge started for '{snap.Name}'"));
+                SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Rowcraft bridge started for all snapshots; opening '{snap.Name}' first"));
             }
             catch (Exception ex)
             {

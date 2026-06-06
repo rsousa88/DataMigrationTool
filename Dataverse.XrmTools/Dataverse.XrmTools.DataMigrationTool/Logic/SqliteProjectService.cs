@@ -22,6 +22,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
     {
         private SqliteConnection _connection;
         private bool _disposed;
+        private readonly object _dbLock = new object();
 
         private const int CurrentSchemaVersion = 5;
         private static readonly string[] ReservedColumnNames = { "_row_id", "_source_id", "_is_new" };
@@ -407,19 +408,25 @@ CREATE INDEX IF NOT EXISTS idx_rowcraft_edit_log_staged
 
         public string GetProjectValue(string key)
         {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = "SELECT value FROM _project WHERE key = @key;";
-            cmd.Parameters.AddWithValue("@key", key);
-            return cmd.ExecuteScalar() as string;
+            lock (_dbLock)
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = "SELECT value FROM _project WHERE key = @key;";
+                cmd.Parameters.AddWithValue("@key", key);
+                return cmd.ExecuteScalar() as string;
+            }
         }
 
         public void SetProjectValue(string key, string value)
         {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = "INSERT OR REPLACE INTO _project(key, value) VALUES(@key, @value);";
-            cmd.Parameters.AddWithValue("@key", key);
-            cmd.Parameters.AddWithValue("@value", value);
-            cmd.ExecuteNonQuery();
+            lock (_dbLock)
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = "INSERT OR REPLACE INTO _project(key, value) VALUES(@key, @value);";
+                cmd.Parameters.AddWithValue("@key", key);
+                cmd.Parameters.AddWithValue("@value", value);
+                cmd.ExecuteNonQuery();
+            }
         }
 
         public string ProjectName => GetProjectValue("name");
@@ -428,62 +435,71 @@ CREATE INDEX IF NOT EXISTS idx_rowcraft_edit_log_staged
 
         public void SaveEnvironment(DmtProjectEnvironment env)
         {
-            if (env.Role == "source")
+            lock (_dbLock)
             {
-                var existing = GetSourceEnvironment();
-                var changingSource = existing == null
-                    || !string.Equals(existing.Id, env.Id, StringComparison.OrdinalIgnoreCase);
+                if (env.Role == "source")
+                {
+                    var existing = GetSourceEnvironment();
+                    var changingSource = existing == null
+                        || !string.Equals(existing.Id, env.Id, StringComparison.OrdinalIgnoreCase);
 
-                // Source identity is locked once data exists, but labels can still be edited.
-                if (HasAnySnapshot() && changingSource)
-                    throw new InvalidOperationException(
-                        "Cannot change the source environment after snapshots exist. Create a new project.");
+                    // Source identity is locked once data exists, but labels can still be edited.
+                    if (HasAnySnapshot() && changingSource)
+                        throw new InvalidOperationException(
+                            "Cannot change the source environment after snapshots exist. Create a new project.");
 
-                // Delete prior source row (only one source allowed)
-                using var del = _connection.CreateCommand();
-                del.CommandText = "DELETE FROM _environments WHERE role = 'source';";
-                del.ExecuteNonQuery();
-            }
+                    // Delete prior source row (only one source allowed)
+                    using var del = _connection.CreateCommand();
+                    del.CommandText = "DELETE FROM _environments WHERE role = 'source';";
+                    del.ExecuteNonQuery();
+                }
 
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = @"
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = @"
 INSERT OR REPLACE INTO _environments(id, unique_name, friendly_name, tag, url, role)
 VALUES(@id, @unique_name, @friendly_name, @tag, @url, @role);";
-            cmd.Parameters.AddWithValue("@id", env.Id);
-            cmd.Parameters.AddWithValue("@unique_name", env.UniqueName);
-            cmd.Parameters.AddWithValue("@friendly_name", env.FriendlyName);
-            cmd.Parameters.AddWithValue("@tag", (object)env.Tag ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@url", (object)env.Url ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@role", env.Role);
-            cmd.ExecuteNonQuery();
+                cmd.Parameters.AddWithValue("@id", env.Id);
+                cmd.Parameters.AddWithValue("@unique_name", env.UniqueName);
+                cmd.Parameters.AddWithValue("@friendly_name", env.FriendlyName);
+                cmd.Parameters.AddWithValue("@tag", (object)env.Tag ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@url", (object)env.Url ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@role", env.Role);
+                cmd.ExecuteNonQuery();
+            }
         }
 
         public DmtProjectEnvironment GetSourceEnvironment()
         {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = "SELECT id, unique_name, friendly_name, tag, url, role FROM _environments WHERE role = 'source' LIMIT 1;";
-            using var reader = cmd.ExecuteReader();
-            return reader.Read() ? ReadEnvironment(reader) : null;
+            lock (_dbLock)
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = "SELECT id, unique_name, friendly_name, tag, url, role FROM _environments WHERE role = 'source' LIMIT 1;";
+                using var reader = cmd.ExecuteReader();
+                return reader.Read() ? ReadEnvironment(reader) : null;
+            }
         }
 
         public List<DmtProjectEnvironment> GetEnvironments(string role = null)
         {
-            using var cmd = _connection.CreateCommand();
-            if (role != null)
+            lock (_dbLock)
             {
-                cmd.CommandText = "SELECT id, unique_name, friendly_name, tag, url, role FROM _environments WHERE role = @role;";
-                cmd.Parameters.AddWithValue("@role", role);
-            }
-            else
-            {
-                cmd.CommandText = "SELECT id, unique_name, friendly_name, tag, url, role FROM _environments;";
-            }
+                using var cmd = _connection.CreateCommand();
+                if (role != null)
+                {
+                    cmd.CommandText = "SELECT id, unique_name, friendly_name, tag, url, role FROM _environments WHERE role = @role;";
+                    cmd.Parameters.AddWithValue("@role", role);
+                }
+                else
+                {
+                    cmd.CommandText = "SELECT id, unique_name, friendly_name, tag, url, role FROM _environments;";
+                }
 
-            var result = new List<DmtProjectEnvironment>();
-            using var reader = cmd.ExecuteReader();
-            while (reader.Read())
-                result.Add(ReadEnvironment(reader));
-            return result;
+                var result = new List<DmtProjectEnvironment>();
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read())
+                    result.Add(ReadEnvironment(reader));
+                return result;
+            }
         }
 
         private static DmtProjectEnvironment ReadEnvironment(SqliteDataReader r) => new DmtProjectEnvironment
@@ -501,70 +517,79 @@ VALUES(@id, @unique_name, @friendly_name, @tag, @url, @role);";
         public void SaveTableConfig(string logicalName, string displayName,
             string primaryIdAttr, string primaryNameAttr, DataTableConfig config)
         {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = @"
+            lock (_dbLock)
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = @"
 INSERT OR REPLACE INTO _table_configs(logical_name, display_name, primary_id_attr, primary_name_attr, config_json)
 VALUES(@ln, @dn, @pid, @pn, @cfg);";
-            cmd.Parameters.AddWithValue("@ln", logicalName);
-            cmd.Parameters.AddWithValue("@dn", (object)displayName ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@pid", (object)primaryIdAttr ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@pn", (object)primaryNameAttr ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@cfg", JsonConvert.SerializeObject(config, _json));
-            cmd.ExecuteNonQuery();
-            TouchProject();
+                cmd.Parameters.AddWithValue("@ln", logicalName);
+                cmd.Parameters.AddWithValue("@dn", (object)displayName ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@pid", (object)primaryIdAttr ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@pn", (object)primaryNameAttr ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@cfg", JsonConvert.SerializeObject(config, _json));
+                cmd.ExecuteNonQuery();
+                TouchProject();
+            }
         }
 
         public (DataTableConfig config, string displayName, string primaryIdAttr, string primaryNameAttr)
             GetTableConfig(string logicalName)
         {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = "SELECT display_name, primary_id_attr, primary_name_attr, config_json FROM _table_configs WHERE logical_name = @ln;";
-            cmd.Parameters.AddWithValue("@ln", logicalName);
-            using var reader = cmd.ExecuteReader();
-            if (!reader.Read()) return (null, null, null, null);
+            lock (_dbLock)
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = "SELECT display_name, primary_id_attr, primary_name_attr, config_json FROM _table_configs WHERE logical_name = @ln;";
+                cmd.Parameters.AddWithValue("@ln", logicalName);
+                using var reader = cmd.ExecuteReader();
+                if (!reader.Read()) return (null, null, null, null);
 
-            var displayName   = reader.IsDBNull(0) ? null : reader.GetString(0);
-            var primaryIdAttr = reader.IsDBNull(1) ? null : reader.GetString(1);
-            var primaryNmAttr = reader.IsDBNull(2) ? null : reader.GetString(2);
-            var config        = JsonConvert.DeserializeObject<DataTableConfig>(reader.GetString(3), _json);
-            return (config, displayName, primaryIdAttr, primaryNmAttr);
+                var displayName   = reader.IsDBNull(0) ? null : reader.GetString(0);
+                var primaryIdAttr = reader.IsDBNull(1) ? null : reader.GetString(1);
+                var primaryNmAttr = reader.IsDBNull(2) ? null : reader.GetString(2);
+                var config        = JsonConvert.DeserializeObject<DataTableConfig>(reader.GetString(3), _json);
+                return (config, displayName, primaryIdAttr, primaryNmAttr);
+            }
         }
 
         public (DataTableConfig config, string displayName, string primaryIdAttr, string primaryNameAttr)
             EnsureTableConfigForSnapshot(DmtSnapshot snapshot)
         {
-            if (snapshot == null || string.IsNullOrWhiteSpace(snapshot.TableLogicalName))
-                return (null, null, null, null);
-
-            var existing = GetTableConfig(snapshot.TableLogicalName);
-            if (existing.config != null)
-                return existing;
-
-            var columns = snapshot.ColumnConfig ?? new List<DataTableColumnConfig>();
-            var primaryIdAttr = !string.IsNullOrWhiteSpace(snapshot.PrimaryIdAttribute)
-                ? snapshot.PrimaryIdAttribute
-                : InferPrimaryIdAttribute(snapshot.TableLogicalName, columns);
-            var primaryNameAttr = InferPrimaryNameAttribute(columns);
-            var config = new DataTableConfig
+            lock (_dbLock)
             {
-                SelectedAttributes = columns
-                    .Where(c => !string.IsNullOrWhiteSpace(c.LogicalName)
-                        && !ReservedColumnNames.Contains(c.LogicalName, StringComparer.OrdinalIgnoreCase))
-                    .Select(c => c.LogicalName)
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToList(),
-                AllColumns = columns
-                    .Where(c => !string.IsNullOrWhiteSpace(c.LogicalName))
-                    .Select(CloneColumnConfig)
-                    .ToList(),
-                LoadMatchKeyMode = snapshot.LoadMatchKeyMode ?? "Guid",
-                LoadMatchKeyFields = snapshot.LoadMatchKeyFields != null
-                    ? new List<string>(snapshot.LoadMatchKeyFields)
-                    : new List<string>()
-            };
+                if (snapshot == null || string.IsNullOrWhiteSpace(snapshot.TableLogicalName))
+                    return (null, null, null, null);
 
-            SaveTableConfig(snapshot.TableLogicalName, snapshot.TableLogicalName, primaryIdAttr, primaryNameAttr, config);
-            return (config, snapshot.TableLogicalName, primaryIdAttr, primaryNameAttr);
+                var existing = GetTableConfig(snapshot.TableLogicalName);
+                if (existing.config != null)
+                    return existing;
+
+                var columns = snapshot.ColumnConfig ?? new List<DataTableColumnConfig>();
+                var primaryIdAttr = !string.IsNullOrWhiteSpace(snapshot.PrimaryIdAttribute)
+                    ? snapshot.PrimaryIdAttribute
+                    : InferPrimaryIdAttribute(snapshot.TableLogicalName, columns);
+                var primaryNameAttr = InferPrimaryNameAttribute(columns);
+                var config = new DataTableConfig
+                {
+                    SelectedAttributes = columns
+                        .Where(c => !string.IsNullOrWhiteSpace(c.LogicalName)
+                            && !ReservedColumnNames.Contains(c.LogicalName, StringComparer.OrdinalIgnoreCase))
+                        .Select(c => c.LogicalName)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList(),
+                    AllColumns = columns
+                        .Where(c => !string.IsNullOrWhiteSpace(c.LogicalName))
+                        .Select(CloneColumnConfig)
+                        .ToList(),
+                    LoadMatchKeyMode = snapshot.LoadMatchKeyMode ?? "Guid",
+                    LoadMatchKeyFields = snapshot.LoadMatchKeyFields != null
+                        ? new List<string>(snapshot.LoadMatchKeyFields)
+                        : new List<string>()
+                };
+
+                SaveTableConfig(snapshot.TableLogicalName, snapshot.TableLogicalName, primaryIdAttr, primaryNameAttr, config);
+                return (config, snapshot.TableLogicalName, primaryIdAttr, primaryNameAttr);
+            }
         }
 
         private static string InferPrimaryIdAttribute(string tableLogicalName, List<DataTableColumnConfig> columns)
@@ -610,12 +635,15 @@ VALUES(@ln, @dn, @pid, @pn, @cfg);";
 
         public List<string> GetTableConfigLogicalNames()
         {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = "SELECT logical_name FROM _table_configs;";
-            using var reader = cmd.ExecuteReader();
-            var result = new List<string>();
-            while (reader.Read()) result.Add(reader.GetString(0));
-            return result;
+            lock (_dbLock)
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = "SELECT logical_name FROM _table_configs;";
+                using var reader = cmd.ExecuteReader();
+                var result = new List<string>();
+                while (reader.Read()) result.Add(reader.GetString(0));
+                return result;
+            }
         }
 
         private void TouchProject()
@@ -630,7 +658,10 @@ VALUES(@ln, @dn, @pid, @pn, @cfg);";
 
         public void SaveSnapshot(DmtSnapshot snapshot)
         {
-            SaveSnapshot(snapshot, null);
+            lock (_dbLock)
+            {
+                SaveSnapshot(snapshot, null);
+            }
         }
 
         private void SaveSnapshot(DmtSnapshot snapshot, SqliteTransaction tx)
@@ -674,99 +705,123 @@ VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @sfp, @pf, @pid, @
 
         public void ReplaceSnapshotData(DmtSnapshot snapshot, List<DataTableColumnConfig> columns, IEnumerable<Dictionary<string, object>> rows)
         {
-            using var tx = _connection.BeginTransaction();
-            try
+            lock (_dbLock)
             {
-                SaveSnapshot(snapshot, tx);
-                CreateSnapshotTable(snapshot.TableSuffix, columns, tx);
-                WriteSnapshotRecords(snapshot.TableSuffix, rows, columns, tx);
-                tx.Commit();
-            }
-            catch
-            {
-                tx.Rollback();
-                throw;
+                using var tx = _connection.BeginTransaction();
+                try
+                {
+                    SaveSnapshot(snapshot, tx);
+                    CreateSnapshotTable(snapshot.TableSuffix, columns, tx);
+                    WriteSnapshotRecords(snapshot.TableSuffix, rows, columns, tx);
+                    tx.Commit();
+                }
+                catch
+                {
+                    tx.Rollback();
+                    throw;
+                }
             }
         }
 
         public DmtSnapshot GetSnapshot(string name)
         {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = "SELECT id,name,table_suffix,table_logical_name,source_env_id,created_on,updated_on,row_count,source,source_file_path,pull_filter,primary_id_attr,load_match_key_mode,load_match_key_fields,column_config_json,sort_order FROM _snapshots WHERE name=@name;";
-            cmd.Parameters.AddWithValue("@name", name);
-            using var reader = cmd.ExecuteReader();
-            return reader.Read() ? ReadSnapshot(reader) : null;
+            lock (_dbLock)
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = "SELECT id,name,table_suffix,table_logical_name,source_env_id,created_on,updated_on,row_count,source,source_file_path,pull_filter,primary_id_attr,load_match_key_mode,load_match_key_fields,column_config_json,sort_order FROM _snapshots WHERE name=@name;";
+                cmd.Parameters.AddWithValue("@name", name);
+                using var reader = cmd.ExecuteReader();
+                return reader.Read() ? ReadSnapshot(reader) : null;
+            }
         }
 
         public List<DmtSnapshot> GetSnapshots()
         {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = "SELECT id,name,table_suffix,table_logical_name,source_env_id,created_on,updated_on,row_count,source,source_file_path,pull_filter,primary_id_attr,load_match_key_mode,load_match_key_fields,column_config_json,sort_order FROM _snapshots ORDER BY sort_order;";
-            var result = new List<DmtSnapshot>();
-            using var reader = cmd.ExecuteReader();
-            while (reader.Read()) result.Add(ReadSnapshot(reader));
-            return result;
+            lock (_dbLock)
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = "SELECT id,name,table_suffix,table_logical_name,source_env_id,created_on,updated_on,row_count,source,source_file_path,pull_filter,primary_id_attr,load_match_key_mode,load_match_key_fields,column_config_json,sort_order FROM _snapshots ORDER BY sort_order;";
+                var result = new List<DmtSnapshot>();
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read()) result.Add(ReadSnapshot(reader));
+                return result;
+            }
         }
 
         public bool HasSnapshot(string name)
         {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = "SELECT 1 FROM _snapshots WHERE name=@name LIMIT 1;";
-            cmd.Parameters.AddWithValue("@name", name);
-            return cmd.ExecuteScalar() != null;
+            lock (_dbLock)
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = "SELECT 1 FROM _snapshots WHERE name=@name LIMIT 1;";
+                cmd.Parameters.AddWithValue("@name", name);
+                return cmd.ExecuteScalar() != null;
+            }
         }
 
         public bool HasAnySnapshot()
         {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = "SELECT 1 FROM _snapshots LIMIT 1;";
-            return cmd.ExecuteScalar() != null;
+            lock (_dbLock)
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = "SELECT 1 FROM _snapshots LIMIT 1;";
+                return cmd.ExecuteScalar() != null;
+            }
         }
 
         public ISet<string> GetSnapshotSourceIds(string tableSuffix)
         {
-            var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = $"SELECT _source_id FROM [data_{tableSuffix}] WHERE _source_id IS NOT NULL;";
-            using var reader = cmd.ExecuteReader();
-            while (reader.Read())
-                if (!reader.IsDBNull(0)) result.Add(reader.GetString(0));
-            return result;
+            lock (_dbLock)
+            {
+                var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = $"SELECT _source_id FROM [data_{tableSuffix}] WHERE _source_id IS NOT NULL;";
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read())
+                    if (!reader.IsDBNull(0)) result.Add(reader.GetString(0));
+                return result;
+            }
         }
 
         public ISet<string> GetAllSnapshotSourceIdsForTable(string tableLogicalName)
         {
-            var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var snapshots = GetSnapshots()
-                .Where(s => string.Equals(s.TableLogicalName, tableLogicalName, StringComparison.OrdinalIgnoreCase));
-            foreach (var snap in snapshots)
-                foreach (var id in GetSnapshotSourceIds(snap.TableSuffix))
-                    result.Add(id);
-            return result;
+            lock (_dbLock)
+            {
+                var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var snapshots = GetSnapshots()
+                    .Where(s => string.Equals(s.TableLogicalName, tableLogicalName, StringComparison.OrdinalIgnoreCase));
+                foreach (var snap in snapshots)
+                    foreach (var id in GetSnapshotSourceIds(snap.TableSuffix))
+                        result.Add(id);
+                return result;
+            }
         }
 
         public void DeleteSnapshot(string name)
         {
-            var snapshot = GetSnapshot(name)
-                ?? throw new InvalidOperationException($"Snapshot '{name}' does not exist.");
-
-            using var tx = _connection.BeginTransaction();
-            try
+            lock (_dbLock)
             {
-                DropDataTableIfExists(snapshot.TableSuffix, tx);
+                var snapshot = GetSnapshot(name)
+                    ?? throw new InvalidOperationException($"Snapshot '{name}' does not exist.");
 
-                using var cmd = _connection.CreateCommand();
-                cmd.Transaction = tx;
-                cmd.CommandText = "DELETE FROM _snapshots WHERE name=@name;";
-                cmd.Parameters.AddWithValue("@name", name);
-                cmd.ExecuteNonQuery();
+                using var tx = _connection.BeginTransaction();
+                try
+                {
+                    DropDataTableIfExists(snapshot.TableSuffix, tx);
 
-                tx.Commit();
-            }
-            catch
-            {
-                tx.Rollback();
-                throw;
+                    using var cmd = _connection.CreateCommand();
+                    cmd.Transaction = tx;
+                    cmd.CommandText = "DELETE FROM _snapshots WHERE name=@name;";
+                    cmd.Parameters.AddWithValue("@name", name);
+                    cmd.ExecuteNonQuery();
+
+                    tx.Commit();
+                }
+                catch
+                {
+                    tx.Rollback();
+                    throw;
+                }
             }
         }
 
@@ -811,15 +866,18 @@ VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @sfp, @pf, @pid, @
         // If the sanitized base is already used, appends _2, _3, etc.
         public string ResolveTableSuffix(string snapshotName)
         {
-            var sanitized = SanitizeSnapshotName(snapshotName);
-            if (!TableSuffixExists(sanitized)) return sanitized;
-
-            for (var i = 2; i < 1000; i++)
+            lock (_dbLock)
             {
-                var candidate = $"{sanitized}_{i}";
-                if (!TableSuffixExists(candidate)) return candidate;
+                var sanitized = SanitizeSnapshotName(snapshotName);
+                if (!TableSuffixExists(sanitized)) return sanitized;
+
+                for (var i = 2; i < 1000; i++)
+                {
+                    var candidate = $"{sanitized}_{i}";
+                    if (!TableSuffixExists(candidate)) return candidate;
+                }
+                throw new InvalidOperationException($"Cannot find a unique table suffix for '{snapshotName}'.");
             }
-            throw new InvalidOperationException($"Cannot find a unique table suffix for '{snapshotName}'.");
         }
 
         private bool TableSuffixExists(string suffix)
@@ -834,7 +892,10 @@ VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @sfp, @pf, @pid, @
 
         public void CreateSnapshotTable(string tableSuffix, List<DataTableColumnConfig> columns)
         {
-            CreateSnapshotTable(tableSuffix, columns, null);
+            lock (_dbLock)
+            {
+                CreateSnapshotTable(tableSuffix, columns, null);
+            }
         }
 
         private void CreateSnapshotTable(string tableSuffix, List<DataTableColumnConfig> columns, SqliteTransaction tx)
@@ -871,16 +932,19 @@ VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @sfp, @pf, @pid, @
             IEnumerable<Dictionary<string, object>> rows,
             List<DataTableColumnConfig> columns)
         {
-            using var tx = _connection.BeginTransaction();
-            try
+            lock (_dbLock)
             {
-                WriteSnapshotRecords(tableSuffix, rows, columns, tx);
-                tx.Commit();
-            }
-            catch
-            {
-                tx.Rollback();
-                throw;
+                using var tx = _connection.BeginTransaction();
+                try
+                {
+                    WriteSnapshotRecords(tableSuffix, rows, columns, tx);
+                    tx.Commit();
+                }
+                catch
+                {
+                    tx.Rollback();
+                    throw;
+                }
             }
         }
 
@@ -948,141 +1012,161 @@ VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @sfp, @pf, @pid, @
             int offset = 0,
             int limit = -1)  // -1 = no limit (SQLite LIMIT -1 = all rows)
         {
-            var colSelect = string.Join(", ", columns.Select(c => $"[{c.LogicalName}]"));
-            var sql = $"SELECT _row_id, _source_id, _is_new{(colSelect.Length > 0 ? ", " + colSelect : "")} " +
-                      $"FROM [data_{tableSuffix}] LIMIT @limit OFFSET @offset;";
-
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = sql;
-            cmd.Parameters.AddWithValue("@limit", limit < 0 ? -1 : limit);
-            cmd.Parameters.AddWithValue("@offset", offset);
-
-            var result = new List<Dictionary<string, object>>();
-            using var reader = cmd.ExecuteReader();
-            while (reader.Read())
+            lock (_dbLock)
             {
-                var row = new Dictionary<string, object>
-                {
-                    ["_row_id"]    = reader.GetInt64(0),
-                    ["_source_id"] = reader.IsDBNull(1) ? null : reader.GetString(1),
-                    ["_is_new"]    = reader.GetInt64(2) == 1L
-                };
+                var colSelect = string.Join(", ", columns.Select(c => $"[{c.LogicalName}]"));
+                var sql = $"SELECT _row_id, _source_id, _is_new{(colSelect.Length > 0 ? ", " + colSelect : "")} " +
+                          $"FROM [data_{tableSuffix}] LIMIT @limit OFFSET @offset;";
 
-                for (var i = 0; i < columns.Count; i++)
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = sql;
+                cmd.Parameters.AddWithValue("@limit", limit < 0 ? -1 : limit);
+                cmd.Parameters.AddWithValue("@offset", offset);
+
+                var result = new List<Dictionary<string, object>>();
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read())
                 {
-                    var col = columns[i];
-                    var idx = i + 3;
-                    if (reader.IsDBNull(idx))
+                    var row = new Dictionary<string, object>
                     {
-                        row[col.LogicalName] = null;
-                    }
-                    else if (col.SqliteType == "INTEGER")
+                        ["_row_id"]    = reader.GetInt64(0),
+                        ["_source_id"] = reader.IsDBNull(1) ? null : reader.GetString(1),
+                        ["_is_new"]    = reader.GetInt64(2) == 1L
+                    };
+
+                    for (var i = 0; i < columns.Count; i++)
                     {
-                        row[col.LogicalName] = reader.GetInt64(idx);
+                        var col = columns[i];
+                        var idx = i + 3;
+                        if (reader.IsDBNull(idx))
+                        {
+                            row[col.LogicalName] = null;
+                        }
+                        else if (col.SqliteType == "INTEGER")
+                        {
+                            row[col.LogicalName] = reader.GetInt64(idx);
+                        }
+                        else if (col.SqliteType == "REAL")
+                        {
+                            row[col.LogicalName] = reader.GetDouble(idx);
+                        }
+                        else
+                        {
+                            row[col.LogicalName] = reader.GetString(idx);
+                        }
                     }
-                    else if (col.SqliteType == "REAL")
-                    {
-                        row[col.LogicalName] = reader.GetDouble(idx);
-                    }
-                    else
-                    {
-                        row[col.LogicalName] = reader.GetString(idx);
-                    }
+                    result.Add(row);
                 }
-                result.Add(row);
+                return result;
             }
-            return result;
         }
 
         public Dictionary<string, object> ReadSnapshotRecordBySourceId(string tableSuffix, string sourceId)
         {
-            using var check = _connection.CreateCommand();
-            check.CommandText = $"SELECT name FROM sqlite_master WHERE type='table' AND name='data_{tableSuffix}';";
-            if (check.ExecuteScalar() == null) return null;
-
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = $"SELECT * FROM [data_{tableSuffix}] WHERE _source_id=@id LIMIT 1;";
-            cmd.Parameters.AddWithValue("@id", sourceId);
-            using var reader = cmd.ExecuteReader();
-            if (!reader.Read()) return null;
-
-            var row = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
-            for (int i = 0; i < reader.FieldCount; i++)
+            lock (_dbLock)
             {
-                var name = reader.GetName(i);
-                row[name] = reader.IsDBNull(i) ? null : reader.GetValue(i);
+                using var check = _connection.CreateCommand();
+                check.CommandText = $"SELECT name FROM sqlite_master WHERE type='table' AND name='data_{tableSuffix}';";
+                if (check.ExecuteScalar() == null) return null;
+
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = $"SELECT * FROM [data_{tableSuffix}] WHERE _source_id=@id LIMIT 1;";
+                cmd.Parameters.AddWithValue("@id", sourceId);
+                using var reader = cmd.ExecuteReader();
+                if (!reader.Read()) return null;
+
+                var row = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+                for (int i = 0; i < reader.FieldCount; i++)
+                {
+                    var name = reader.GetName(i);
+                    row[name] = reader.IsDBNull(i) ? null : reader.GetValue(i);
+                }
+                return row;
             }
-            return row;
         }
 
         public int CountSnapshotRows(string tableSuffix)
         {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = $"SELECT COUNT(*) FROM [data_{tableSuffix}];";
-            return (int)(long)cmd.ExecuteScalar();
+            lock (_dbLock)
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = $"SELECT COUNT(*) FROM [data_{tableSuffix}];";
+                return (int)(long)cmd.ExecuteScalar();
+            }
         }
 
         public RowcraftEditSession StartRowcraftEditSession(string snapshotName)
         {
-            var snapshot = GetSnapshot(snapshotName)
-                ?? throw new InvalidOperationException($"Snapshot '{snapshotName}' does not exist.");
-
-            var existing = GetPendingRowcraftEditSession(snapshotName);
-            if (existing != null) return existing;
-
-            var now = DateTime.UtcNow;
-            var session = new RowcraftEditSession
+            lock (_dbLock)
             {
-                Id = Guid.NewGuid().ToString("D"),
-                SnapshotName = snapshot.Name,
-                TableLogicalName = snapshot.TableLogicalName,
-                BaseSnapshotUpdatedOn = snapshot.UpdatedOn,
-                Status = "Pending",
-                CreatedOn = now,
-                UpdatedOn = now
-            };
+                var snapshot = GetSnapshot(snapshotName)
+                    ?? throw new InvalidOperationException($"Snapshot '{snapshotName}' does not exist.");
 
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = @"
+                var existing = GetPendingRowcraftEditSession(snapshotName);
+                if (existing != null) return existing;
+
+                var now = DateTime.UtcNow;
+                var session = new RowcraftEditSession
+                {
+                    Id = Guid.NewGuid().ToString("D"),
+                    SnapshotName = snapshot.Name,
+                    TableLogicalName = snapshot.TableLogicalName,
+                    BaseSnapshotUpdatedOn = snapshot.UpdatedOn,
+                    Status = "Pending",
+                    CreatedOn = now,
+                    UpdatedOn = now
+                };
+
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = @"
 INSERT INTO _rowcraft_edit_sessions(id,snapshot_name,table_logical_name,base_snapshot_updated_on,status,created_on,updated_on)
 VALUES(@id,@sn,@t,@base,@st,@co,@uo);";
-            cmd.Parameters.AddWithValue("@id", session.Id);
-            cmd.Parameters.AddWithValue("@sn", session.SnapshotName);
-            cmd.Parameters.AddWithValue("@t", session.TableLogicalName);
-            cmd.Parameters.AddWithValue("@base", session.BaseSnapshotUpdatedOn.HasValue ? (object)session.BaseSnapshotUpdatedOn.Value.ToString("O") : DBNull.Value);
-            cmd.Parameters.AddWithValue("@st", session.Status);
-            cmd.Parameters.AddWithValue("@co", session.CreatedOn.ToString("O"));
-            cmd.Parameters.AddWithValue("@uo", session.UpdatedOn.ToString("O"));
-            cmd.ExecuteNonQuery();
-            return session;
+                cmd.Parameters.AddWithValue("@id", session.Id);
+                cmd.Parameters.AddWithValue("@sn", session.SnapshotName);
+                cmd.Parameters.AddWithValue("@t", session.TableLogicalName);
+                cmd.Parameters.AddWithValue("@base", session.BaseSnapshotUpdatedOn.HasValue ? (object)session.BaseSnapshotUpdatedOn.Value.ToString("O") : DBNull.Value);
+                cmd.Parameters.AddWithValue("@st", session.Status);
+                cmd.Parameters.AddWithValue("@co", session.CreatedOn.ToString("O"));
+                cmd.Parameters.AddWithValue("@uo", session.UpdatedOn.ToString("O"));
+                cmd.ExecuteNonQuery();
+                return session;
+            }
         }
 
         public RowcraftEditSession GetRowcraftEditSession(string sessionId)
         {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = "SELECT id,snapshot_name,table_logical_name,base_snapshot_updated_on,status,created_on,updated_on,applied_on,discarded_on FROM _rowcraft_edit_sessions WHERE id=@id;";
-            cmd.Parameters.AddWithValue("@id", sessionId);
-            using var reader = cmd.ExecuteReader();
-            return reader.Read() ? ReadRowcraftEditSession(reader) : null;
+            lock (_dbLock)
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = "SELECT id,snapshot_name,table_logical_name,base_snapshot_updated_on,status,created_on,updated_on,applied_on,discarded_on FROM _rowcraft_edit_sessions WHERE id=@id;";
+                cmd.Parameters.AddWithValue("@id", sessionId);
+                using var reader = cmd.ExecuteReader();
+                return reader.Read() ? ReadRowcraftEditSession(reader) : null;
+            }
         }
 
         public RowcraftEditSession GetPendingRowcraftEditSession(string snapshotName)
         {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = @"
+            lock (_dbLock)
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = @"
 SELECT id,snapshot_name,table_logical_name,base_snapshot_updated_on,status,created_on,updated_on,applied_on,discarded_on
 FROM _rowcraft_edit_sessions
 WHERE snapshot_name=@sn AND status='Pending'
 ORDER BY updated_on DESC LIMIT 1;";
-            cmd.Parameters.AddWithValue("@sn", snapshotName);
-            using var reader = cmd.ExecuteReader();
-            return reader.Read() ? ReadRowcraftEditSession(reader) : null;
+                cmd.Parameters.AddWithValue("@sn", snapshotName);
+                using var reader = cmd.ExecuteReader();
+                return reader.Read() ? ReadRowcraftEditSession(reader) : null;
+            }
         }
 
         public List<RowcraftChangeSummary> GetPendingRowcraftChangeSummaries()
         {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = @"
+            lock (_dbLock)
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = @"
 SELECT s.id,s.snapshot_name,s.status,
        SUM(CASE WHEN c.operation='Create' THEN 1 ELSE 0 END) AS creates,
        SUM(CASE WHEN c.operation='Update' THEN 1 ELSE 0 END) AS updates,
@@ -1092,17 +1176,20 @@ LEFT JOIN _rowcraft_pending_changes c ON c.session_id=s.id
 WHERE s.status='Pending'
 GROUP BY s.id,s.snapshot_name,s.status
 ORDER BY s.updated_on DESC;";
-            var result = new List<RowcraftChangeSummary>();
-            using var reader = cmd.ExecuteReader();
-            while (reader.Read())
-                result.Add(ReadRowcraftChangeSummary(reader));
-            return result;
+                var result = new List<RowcraftChangeSummary>();
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read())
+                    result.Add(ReadRowcraftChangeSummary(reader));
+                return result;
+            }
         }
 
         public RowcraftChangeSummary GetRowcraftChangeSummary(string sessionId)
         {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = @"
+            lock (_dbLock)
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = @"
 SELECT s.id,s.snapshot_name,s.status,
        SUM(CASE WHEN c.operation='Create' THEN 1 ELSE 0 END) AS creates,
        SUM(CASE WHEN c.operation='Update' THEN 1 ELSE 0 END) AS updates,
@@ -1111,150 +1198,166 @@ FROM _rowcraft_edit_sessions s
 LEFT JOIN _rowcraft_pending_changes c ON c.session_id=s.id
 WHERE s.id=@id
 GROUP BY s.id,s.snapshot_name,s.status;";
-            cmd.Parameters.AddWithValue("@id", sessionId);
-            using var reader = cmd.ExecuteReader();
-            return reader.Read() ? ReadRowcraftChangeSummary(reader) : null;
+                cmd.Parameters.AddWithValue("@id", sessionId);
+                using var reader = cmd.ExecuteReader();
+                return reader.Read() ? ReadRowcraftChangeSummary(reader) : null;
+            }
         }
 
         public RowcraftPendingChange StageRowcraftCreate(string sessionId, Dictionary<string, object> values, string clientRowId = null)
         {
-            var session = RequirePendingRowcraftSession(sessionId);
-            var snapshot = GetSnapshot(session.SnapshotName)
-                ?? throw new InvalidOperationException($"Snapshot '{session.SnapshotName}' does not exist.");
-            var after = ValidateRowcraftValues(snapshot, values);
-            var change = new RowcraftPendingChange
+            lock (_dbLock)
             {
-                SessionId = session.Id,
-                SnapshotName = session.SnapshotName,
-                TableLogicalName = session.TableLogicalName,
-                Operation = "Create",
-                ClientRowId = string.IsNullOrWhiteSpace(clientRowId) ? Guid.NewGuid().ToString("D") : clientRowId,
-                ChangedColumns = new Dictionary<string, object>(after, StringComparer.OrdinalIgnoreCase),
-                After = after
-            };
-            SaveRowcraftPendingChange(change);
-            TouchRowcraftSession(session.Id);
-            return change;
+                var session = RequirePendingRowcraftSession(sessionId);
+                var snapshot = GetSnapshot(session.SnapshotName)
+                    ?? throw new InvalidOperationException($"Snapshot '{session.SnapshotName}' does not exist.");
+                var after = ValidateRowcraftValues(snapshot, values);
+                var change = new RowcraftPendingChange
+                {
+                    SessionId = session.Id,
+                    SnapshotName = session.SnapshotName,
+                    TableLogicalName = session.TableLogicalName,
+                    Operation = "Create",
+                    ClientRowId = string.IsNullOrWhiteSpace(clientRowId) ? Guid.NewGuid().ToString("D") : clientRowId,
+                    ChangedColumns = new Dictionary<string, object>(after, StringComparer.OrdinalIgnoreCase),
+                    After = after
+                };
+                SaveRowcraftPendingChange(change);
+                TouchRowcraftSession(session.Id);
+                return change;
+            }
         }
 
         public RowcraftPendingChange StageRowcraftUpdate(string sessionId, long rowId, Dictionary<string, object> values)
         {
-            var session = RequirePendingRowcraftSession(sessionId);
-            var snapshot = GetSnapshot(session.SnapshotName)
-                ?? throw new InvalidOperationException($"Snapshot '{session.SnapshotName}' does not exist.");
-            var before = ReadSnapshotRecordByRowId(snapshot.TableSuffix, rowId)
-                ?? throw new InvalidOperationException($"Snapshot row '{rowId}' does not exist.");
-            var changed = ValidateRowcraftValues(snapshot, values);
-            var after = new Dictionary<string, object>(before, StringComparer.OrdinalIgnoreCase);
-            foreach (var pair in changed) after[pair.Key] = pair.Value;
-
-            var change = new RowcraftPendingChange
+            lock (_dbLock)
             {
-                SessionId = session.Id,
-                SnapshotName = session.SnapshotName,
-                TableLogicalName = session.TableLogicalName,
-                Operation = "Update",
-                RowId = rowId,
-                ChangedColumns = changed,
-                Before = before,
-                After = after
-            };
-            SaveRowcraftPendingChange(change);
-            TouchRowcraftSession(session.Id);
-            return change;
+                var session = RequirePendingRowcraftSession(sessionId);
+                var snapshot = GetSnapshot(session.SnapshotName)
+                    ?? throw new InvalidOperationException($"Snapshot '{session.SnapshotName}' does not exist.");
+                var before = ReadSnapshotRecordByRowId(snapshot.TableSuffix, rowId)
+                    ?? throw new InvalidOperationException($"Snapshot row '{rowId}' does not exist.");
+                var changed = ValidateRowcraftValues(snapshot, values);
+                var after = new Dictionary<string, object>(before, StringComparer.OrdinalIgnoreCase);
+                foreach (var pair in changed) after[pair.Key] = pair.Value;
+
+                var change = new RowcraftPendingChange
+                {
+                    SessionId = session.Id,
+                    SnapshotName = session.SnapshotName,
+                    TableLogicalName = session.TableLogicalName,
+                    Operation = "Update",
+                    RowId = rowId,
+                    ChangedColumns = changed,
+                    Before = before,
+                    After = after
+                };
+                SaveRowcraftPendingChange(change);
+                TouchRowcraftSession(session.Id);
+                return change;
+            }
         }
 
         public RowcraftPendingChange StageRowcraftDelete(string sessionId, long rowId)
         {
-            var session = RequirePendingRowcraftSession(sessionId);
-            var snapshot = GetSnapshot(session.SnapshotName)
-                ?? throw new InvalidOperationException($"Snapshot '{session.SnapshotName}' does not exist.");
-            var before = ReadSnapshotRecordByRowId(snapshot.TableSuffix, rowId)
-                ?? throw new InvalidOperationException($"Snapshot row '{rowId}' does not exist.");
-            var change = new RowcraftPendingChange
+            lock (_dbLock)
             {
-                SessionId = session.Id,
-                SnapshotName = session.SnapshotName,
-                TableLogicalName = session.TableLogicalName,
-                Operation = "Delete",
-                RowId = rowId,
-                Before = before,
-                ChangedColumns = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
-            };
-            SaveRowcraftPendingChange(change);
-            TouchRowcraftSession(session.Id);
-            return change;
+                var session = RequirePendingRowcraftSession(sessionId);
+                var snapshot = GetSnapshot(session.SnapshotName)
+                    ?? throw new InvalidOperationException($"Snapshot '{session.SnapshotName}' does not exist.");
+                var before = ReadSnapshotRecordByRowId(snapshot.TableSuffix, rowId)
+                    ?? throw new InvalidOperationException($"Snapshot row '{rowId}' does not exist.");
+                var change = new RowcraftPendingChange
+                {
+                    SessionId = session.Id,
+                    SnapshotName = session.SnapshotName,
+                    TableLogicalName = session.TableLogicalName,
+                    Operation = "Delete",
+                    RowId = rowId,
+                    Before = before,
+                    ChangedColumns = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+                };
+                SaveRowcraftPendingChange(change);
+                TouchRowcraftSession(session.Id);
+                return change;
+            }
         }
 
         public void DiscardRowcraftEditSession(string sessionId)
         {
-            var session = RequirePendingRowcraftSession(sessionId);
-            var now = DateTime.UtcNow;
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = "UPDATE _rowcraft_edit_sessions SET status='Discarded', updated_on=@uo, discarded_on=@do WHERE id=@id;";
-            cmd.Parameters.AddWithValue("@uo", now.ToString("O"));
-            cmd.Parameters.AddWithValue("@do", now.ToString("O"));
-            cmd.Parameters.AddWithValue("@id", session.Id);
-            cmd.ExecuteNonQuery();
+            lock (_dbLock)
+            {
+                var session = RequirePendingRowcraftSession(sessionId);
+                var now = DateTime.UtcNow;
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = "UPDATE _rowcraft_edit_sessions SET status='Discarded', updated_on=@uo, discarded_on=@do WHERE id=@id;";
+                cmd.Parameters.AddWithValue("@uo", now.ToString("O"));
+                cmd.Parameters.AddWithValue("@do", now.ToString("O"));
+                cmd.Parameters.AddWithValue("@id", session.Id);
+                cmd.ExecuteNonQuery();
+            }
         }
 
         public RowcraftApplyResult ApplyRowcraftEditSession(string sessionId)
         {
-            var session = RequirePendingRowcraftSession(sessionId);
-            var snapshot = GetSnapshot(session.SnapshotName)
-                ?? throw new InvalidOperationException($"Snapshot '{session.SnapshotName}' does not exist.");
-            var changes = GetRowcraftPendingChanges(session.Id);
-
-            using var tx = _connection.BeginTransaction();
-            try
+            lock (_dbLock)
             {
-                var result = new RowcraftApplyResult { SessionId = session.Id, SnapshotName = session.SnapshotName };
-                foreach (var change in changes)
-                {
-                    if (string.Equals(change.Operation, "Create", StringComparison.OrdinalIgnoreCase))
-                    {
-                        ApplyRowcraftCreate(snapshot, change, tx);
-                        result.Created++;
-                    }
-                    else if (string.Equals(change.Operation, "Update", StringComparison.OrdinalIgnoreCase))
-                    {
-                        ApplyRowcraftUpdate(snapshot, change, tx);
-                        result.Updated++;
-                    }
-                    else if (string.Equals(change.Operation, "Delete", StringComparison.OrdinalIgnoreCase))
-                    {
-                        ApplyRowcraftDelete(snapshot, change, tx);
-                        result.Deleted++;
-                    }
-                }
+                var session = RequirePendingRowcraftSession(sessionId);
+                var snapshot = GetSnapshot(session.SnapshotName)
+                    ?? throw new InvalidOperationException($"Snapshot '{session.SnapshotName}' does not exist.");
+                var changes = GetRowcraftPendingChanges(session.Id);
 
-                result.RowCount = UpdateSnapshotRowCount(snapshot.TableSuffix, tx);
-                var now = DateTime.UtcNow;
-                using (var sess = _connection.CreateCommand())
+                using var tx = _connection.BeginTransaction();
+                try
                 {
-                    sess.Transaction = tx;
-                    sess.CommandText = "UPDATE _rowcraft_edit_sessions SET status='Applied', updated_on=@uo, applied_on=@ao WHERE id=@id;";
-                    sess.Parameters.AddWithValue("@uo", now.ToString("O"));
-                    sess.Parameters.AddWithValue("@ao", now.ToString("O"));
-                    sess.Parameters.AddWithValue("@id", session.Id);
-                    sess.ExecuteNonQuery();
-                }
-                using (var log = _connection.CreateCommand())
-                {
-                    log.Transaction = tx;
-                    log.CommandText = "UPDATE _rowcraft_edit_log SET status='Applied', applied_on=@ao WHERE session_id=@sid AND status='Staged';";
-                    log.Parameters.AddWithValue("@ao", now.ToString("O"));
-                    log.Parameters.AddWithValue("@sid", session.Id);
-                    log.ExecuteNonQuery();
-                }
+                    var result = new RowcraftApplyResult { SessionId = session.Id, SnapshotName = session.SnapshotName };
+                    foreach (var change in changes)
+                    {
+                        if (string.Equals(change.Operation, "Create", StringComparison.OrdinalIgnoreCase))
+                        {
+                            ApplyRowcraftCreate(snapshot, change, tx);
+                            result.Created++;
+                        }
+                        else if (string.Equals(change.Operation, "Update", StringComparison.OrdinalIgnoreCase))
+                        {
+                            ApplyRowcraftUpdate(snapshot, change, tx);
+                            result.Updated++;
+                        }
+                        else if (string.Equals(change.Operation, "Delete", StringComparison.OrdinalIgnoreCase))
+                        {
+                            ApplyRowcraftDelete(snapshot, change, tx);
+                            result.Deleted++;
+                        }
+                    }
 
-                tx.Commit();
-                return result;
-            }
-            catch
-            {
-                tx.Rollback();
-                throw;
+                    result.RowCount = UpdateSnapshotRowCount(snapshot.TableSuffix, tx);
+                    var now = DateTime.UtcNow;
+                    using (var sess = _connection.CreateCommand())
+                    {
+                        sess.Transaction = tx;
+                        sess.CommandText = "UPDATE _rowcraft_edit_sessions SET status='Applied', updated_on=@uo, applied_on=@ao WHERE id=@id;";
+                        sess.Parameters.AddWithValue("@uo", now.ToString("O"));
+                        sess.Parameters.AddWithValue("@ao", now.ToString("O"));
+                        sess.Parameters.AddWithValue("@id", session.Id);
+                        sess.ExecuteNonQuery();
+                    }
+                    using (var log = _connection.CreateCommand())
+                    {
+                        log.Transaction = tx;
+                        log.CommandText = "UPDATE _rowcraft_edit_log SET status='Applied', applied_on=@ao WHERE session_id=@sid AND status='Staged';";
+                        log.Parameters.AddWithValue("@ao", now.ToString("O"));
+                        log.Parameters.AddWithValue("@sid", session.Id);
+                        log.ExecuteNonQuery();
+                    }
+
+                    tx.Commit();
+                    return result;
+                }
+                catch
+                {
+                    tx.Rollback();
+                    throw;
+                }
             }
         }
 
@@ -1547,108 +1650,123 @@ FROM _rowcraft_pending_changes WHERE session_id=@sid ORDER BY staged_on,id;";
         public void SaveOptionSetValues(string tableLogicalName, string attrLogicalName,
             IEnumerable<OptionConfig> options)
         {
-            using var tx = _connection.BeginTransaction();
-            try
+            lock (_dbLock)
             {
-                using var del = _connection.CreateCommand();
-                del.Transaction = tx;
-                del.CommandText = "DELETE FROM _optionset_values WHERE table_logical_name=@t AND attribute_logical_name=@a;";
-                del.Parameters.AddWithValue("@t", tableLogicalName);
-                del.Parameters.AddWithValue("@a", attrLogicalName);
-                del.ExecuteNonQuery();
-
-                using var ins = _connection.CreateCommand();
-                ins.Transaction = tx;
-                ins.CommandText = "INSERT INTO _optionset_values(table_logical_name,attribute_logical_name,value,label) VALUES(@t,@a,@v,@l);";
-                ins.Parameters.Add("@t", SqliteType.Text).Value = tableLogicalName;
-                ins.Parameters.Add("@a", SqliteType.Text).Value = attrLogicalName;
-                ins.Parameters.Add("@v", SqliteType.Integer);
-                ins.Parameters.Add("@l", SqliteType.Text);
-
-                foreach (var opt in options ?? Enumerable.Empty<OptionConfig>())
+                using var tx = _connection.BeginTransaction();
+                try
                 {
-                    ins.Parameters["@v"].Value = (long)opt.Value;
-                    ins.Parameters["@l"].Value = (object)opt.Label ?? DBNull.Value;
-                    ins.ExecuteNonQuery();
-                }
+                    using var del = _connection.CreateCommand();
+                    del.Transaction = tx;
+                    del.CommandText = "DELETE FROM _optionset_values WHERE table_logical_name=@t AND attribute_logical_name=@a;";
+                    del.Parameters.AddWithValue("@t", tableLogicalName);
+                    del.Parameters.AddWithValue("@a", attrLogicalName);
+                    del.ExecuteNonQuery();
 
-                tx.Commit();
-            }
-            catch
-            {
-                tx.Rollback();
-                throw;
+                    using var ins = _connection.CreateCommand();
+                    ins.Transaction = tx;
+                    ins.CommandText = "INSERT INTO _optionset_values(table_logical_name,attribute_logical_name,value,label) VALUES(@t,@a,@v,@l);";
+                    ins.Parameters.Add("@t", SqliteType.Text).Value = tableLogicalName;
+                    ins.Parameters.Add("@a", SqliteType.Text).Value = attrLogicalName;
+                    ins.Parameters.Add("@v", SqliteType.Integer);
+                    ins.Parameters.Add("@l", SqliteType.Text);
+
+                    foreach (var opt in options ?? Enumerable.Empty<OptionConfig>())
+                    {
+                        ins.Parameters["@v"].Value = (long)opt.Value;
+                        ins.Parameters["@l"].Value = (object)opt.Label ?? DBNull.Value;
+                        ins.ExecuteNonQuery();
+                    }
+
+                    tx.Commit();
+                }
+                catch
+                {
+                    tx.Rollback();
+                    throw;
+                }
             }
         }
 
         public Dictionary<int, string> GetOptionSetValues(string tableLogicalName, string attrLogicalName)
         {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = "SELECT value, label FROM _optionset_values WHERE table_logical_name=@t AND attribute_logical_name=@a;";
-            cmd.Parameters.AddWithValue("@t", tableLogicalName);
-            cmd.Parameters.AddWithValue("@a", attrLogicalName);
+            lock (_dbLock)
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = "SELECT value, label FROM _optionset_values WHERE table_logical_name=@t AND attribute_logical_name=@a;";
+                cmd.Parameters.AddWithValue("@t", tableLogicalName);
+                cmd.Parameters.AddWithValue("@a", attrLogicalName);
 
-            var result = new Dictionary<int, string>();
-            using var reader = cmd.ExecuteReader();
-            while (reader.Read())
-                result[(int)reader.GetInt64(0)] = reader.IsDBNull(1) ? null : reader.GetString(1);
-            return result;
+                var result = new Dictionary<int, string>();
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read())
+                    result[(int)reader.GetInt64(0)] = reader.IsDBNull(1) ? null : reader.GetString(1);
+                return result;
+            }
         }
 
         public int? ResolveOptionSetLabel(string tableLogicalName, string attrLogicalName, string label)
         {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = "SELECT value FROM _optionset_values WHERE table_logical_name=@t AND attribute_logical_name=@a AND label=@l LIMIT 1;";
-            cmd.Parameters.AddWithValue("@t", tableLogicalName);
-            cmd.Parameters.AddWithValue("@a", attrLogicalName);
-            cmd.Parameters.AddWithValue("@l", label);
-            var scalar = cmd.ExecuteScalar();
-            return scalar == null ? (int?)null : (int)(long)scalar;
+            lock (_dbLock)
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = "SELECT value FROM _optionset_values WHERE table_logical_name=@t AND attribute_logical_name=@a AND label=@l LIMIT 1;";
+                cmd.Parameters.AddWithValue("@t", tableLogicalName);
+                cmd.Parameters.AddWithValue("@a", attrLogicalName);
+                cmd.Parameters.AddWithValue("@l", label);
+                var scalar = cmd.ExecuteScalar();
+                return scalar == null ? (int?)null : (int)(long)scalar;
+            }
         }
 
         // ─── Plans ─────────────────────────────────────────────────────────────
 
         public void SavePlan(DmtPlan plan)
         {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = @"
+            lock (_dbLock)
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = @"
 INSERT OR REPLACE INTO _plans(id,name,description,created_on,updated_on,defaults_json)
 VALUES(@id,@name,@desc,@co,@uo,@dj);";
-            cmd.Parameters.AddWithValue("@id",   plan.Id);
-            cmd.Parameters.AddWithValue("@name", plan.Name);
-            cmd.Parameters.AddWithValue("@desc", (object)plan.Description ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@co",   plan.CreatedOn.ToString("O"));
-            cmd.Parameters.AddWithValue("@uo",   plan.UpdatedOn.ToString("O"));
-            cmd.Parameters.AddWithValue("@dj",   plan.Defaults != null
-                ? JsonConvert.SerializeObject(plan.Defaults, _json)
-                : (object)DBNull.Value);
-            cmd.ExecuteNonQuery();
+                cmd.Parameters.AddWithValue("@id",   plan.Id);
+                cmd.Parameters.AddWithValue("@name", plan.Name);
+                cmd.Parameters.AddWithValue("@desc", (object)plan.Description ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@co",   plan.CreatedOn.ToString("O"));
+                cmd.Parameters.AddWithValue("@uo",   plan.UpdatedOn.ToString("O"));
+                cmd.Parameters.AddWithValue("@dj",   plan.Defaults != null
+                    ? JsonConvert.SerializeObject(plan.Defaults, _json)
+                    : (object)DBNull.Value);
+                cmd.ExecuteNonQuery();
+            }
         }
 
         public void ReplacePlan(DmtPlan plan, IEnumerable<DmtPlanStep> steps)
         {
-            using var tx = _connection.BeginTransaction();
-            try
+            lock (_dbLock)
             {
-                SavePlan(plan, tx);
-
-                using (var delete = _connection.CreateCommand())
+                using var tx = _connection.BeginTransaction();
+                try
                 {
-                    delete.Transaction = tx;
-                    delete.CommandText = "DELETE FROM _plan_steps WHERE plan_id=@pid;";
-                    delete.Parameters.AddWithValue("@pid", plan.Id);
-                    delete.ExecuteNonQuery();
+                    SavePlan(plan, tx);
+
+                    using (var delete = _connection.CreateCommand())
+                    {
+                        delete.Transaction = tx;
+                        delete.CommandText = "DELETE FROM _plan_steps WHERE plan_id=@pid;";
+                        delete.Parameters.AddWithValue("@pid", plan.Id);
+                        delete.ExecuteNonQuery();
+                    }
+
+                    foreach (var step in steps ?? Enumerable.Empty<DmtPlanStep>())
+                        SavePlanStep(step, tx);
+
+                    tx.Commit();
                 }
-
-                foreach (var step in steps ?? Enumerable.Empty<DmtPlanStep>())
-                    SavePlanStep(step, tx);
-
-                tx.Commit();
-            }
-            catch
-            {
-                tx.Rollback();
-                throw;
+                catch
+                {
+                    tx.Rollback();
+                    throw;
+                }
             }
         }
 
@@ -1672,66 +1790,75 @@ VALUES(@id,@name,@desc,@co,@uo,@dj);";
 
         public List<DmtPlan> GetPlans()
         {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = "SELECT id,name,description,created_on,updated_on,defaults_json FROM _plans ORDER BY name;";
-            var result = new List<DmtPlan>();
-            using var reader = cmd.ExecuteReader();
-            while (reader.Read())
+            lock (_dbLock)
             {
-                var defaultsJson = reader.IsDBNull(5) ? null : reader.GetString(5);
-                result.Add(new DmtPlan
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = "SELECT id,name,description,created_on,updated_on,defaults_json FROM _plans ORDER BY name;";
+                var result = new List<DmtPlan>();
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read())
                 {
-                    Id          = reader.GetString(0),
-                    Name        = reader.GetString(1),
-                    Description = reader.IsDBNull(2) ? null : reader.GetString(2),
-                    CreatedOn   = DateTime.Parse(reader.GetString(3)),
-                    UpdatedOn   = DateTime.Parse(reader.GetString(4)),
-                    Defaults    = defaultsJson != null
-                        ? JsonConvert.DeserializeObject<ExecutionPlanDefaults>(defaultsJson, _json)
-                        : new ExecutionPlanDefaults()
-                });
+                    var defaultsJson = reader.IsDBNull(5) ? null : reader.GetString(5);
+                    result.Add(new DmtPlan
+                    {
+                        Id          = reader.GetString(0),
+                        Name        = reader.GetString(1),
+                        Description = reader.IsDBNull(2) ? null : reader.GetString(2),
+                        CreatedOn   = DateTime.Parse(reader.GetString(3)),
+                        UpdatedOn   = DateTime.Parse(reader.GetString(4)),
+                        Defaults    = defaultsJson != null
+                            ? JsonConvert.DeserializeObject<ExecutionPlanDefaults>(defaultsJson, _json)
+                            : new ExecutionPlanDefaults()
+                    });
+                }
+                return result;
             }
-            return result;
         }
 
         public void DeletePlan(string id)
         {
-            // Steps deleted via ON DELETE CASCADE
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = "DELETE FROM _plans WHERE id=@id;";
-            cmd.Parameters.AddWithValue("@id", id);
-            cmd.ExecuteNonQuery();
+            lock (_dbLock)
+            {
+                // Steps deleted via ON DELETE CASCADE
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = "DELETE FROM _plans WHERE id=@id;";
+                cmd.Parameters.AddWithValue("@id", id);
+                cmd.ExecuteNonQuery();
+            }
         }
 
         // ─── Plan steps ────────────────────────────────────────────────────────
 
         public void SavePlanStep(DmtPlanStep step)
         {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = @"
+            lock (_dbLock)
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = @"
 INSERT OR REPLACE INTO _plan_steps(id,plan_id,sort_order,name,enabled,operation,
     table_logical_name,source_env_id,target_env_id,snapshot_name,file_type,file_path,
     snapshot_json,failure_policy_json,validation_json)
 VALUES(@id,@pid,@so,@name,@en,@op,@tln,@seid,@teid,@sn,@ft,@fp,@sj,@fpj,@vj);";
-            cmd.Parameters.AddWithValue("@id",   step.Id);
-            cmd.Parameters.AddWithValue("@pid",  step.PlanId);
-            cmd.Parameters.AddWithValue("@so",   step.SortOrder);
-            cmd.Parameters.AddWithValue("@name", (object)step.Name ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@en",   step.Enabled ? 1 : 0);
-            cmd.Parameters.AddWithValue("@op",   step.Operation);
-            cmd.Parameters.AddWithValue("@tln",  (object)step.TableLogicalName ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@seid", (object)step.SourceEnvId ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@teid", (object)step.TargetEnvId ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@sn",   (object)step.SnapshotName ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@ft",   (object)step.FileType ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@fp",   (object)step.FilePath ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@sj",   step.Snapshot != null
-                ? JsonConvert.SerializeObject(step.Snapshot, _json) : (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@fpj",  step.FailurePolicy != null
-                ? JsonConvert.SerializeObject(step.FailurePolicy, _json) : (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@vj",   step.Validation != null
-                ? JsonConvert.SerializeObject(step.Validation, _json) : (object)DBNull.Value);
-            cmd.ExecuteNonQuery();
+                cmd.Parameters.AddWithValue("@id",   step.Id);
+                cmd.Parameters.AddWithValue("@pid",  step.PlanId);
+                cmd.Parameters.AddWithValue("@so",   step.SortOrder);
+                cmd.Parameters.AddWithValue("@name", (object)step.Name ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@en",   step.Enabled ? 1 : 0);
+                cmd.Parameters.AddWithValue("@op",   step.Operation);
+                cmd.Parameters.AddWithValue("@tln",  (object)step.TableLogicalName ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@seid", (object)step.SourceEnvId ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@teid", (object)step.TargetEnvId ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@sn",   (object)step.SnapshotName ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@ft",   (object)step.FileType ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@fp",   (object)step.FilePath ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@sj",   step.Snapshot != null
+                    ? JsonConvert.SerializeObject(step.Snapshot, _json) : (object)DBNull.Value);
+                cmd.Parameters.AddWithValue("@fpj",  step.FailurePolicy != null
+                    ? JsonConvert.SerializeObject(step.FailurePolicy, _json) : (object)DBNull.Value);
+                cmd.Parameters.AddWithValue("@vj",   step.Validation != null
+                    ? JsonConvert.SerializeObject(step.Validation, _json) : (object)DBNull.Value);
+                cmd.ExecuteNonQuery();
+            }
         }
 
         private void SavePlanStep(DmtPlanStep step, SqliteTransaction tx)
@@ -1766,71 +1893,80 @@ VALUES(@id,@pid,@so,@name,@en,@op,@tln,@seid,@teid,@sn,@ft,@fp,@sj,@fpj,@vj);";
 
         public List<DmtPlanStep> GetPlanSteps(string planId)
         {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = "SELECT id,plan_id,sort_order,name,enabled,operation,table_logical_name,source_env_id,target_env_id,snapshot_name,file_type,file_path,snapshot_json,failure_policy_json,validation_json FROM _plan_steps WHERE plan_id=@pid ORDER BY sort_order;";
-            cmd.Parameters.AddWithValue("@pid", planId);
-
-            var result = new List<DmtPlanStep>();
-            using var reader = cmd.ExecuteReader();
-            while (reader.Read())
+            lock (_dbLock)
             {
-                var snapshotJson      = reader.IsDBNull(12) ? null : reader.GetString(12);
-                var failurePolicyJson = reader.IsDBNull(13) ? null : reader.GetString(13);
-                var validationJson    = reader.IsDBNull(14) ? null : reader.GetString(14);
-                result.Add(new DmtPlanStep
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = "SELECT id,plan_id,sort_order,name,enabled,operation,table_logical_name,source_env_id,target_env_id,snapshot_name,file_type,file_path,snapshot_json,failure_policy_json,validation_json FROM _plan_steps WHERE plan_id=@pid ORDER BY sort_order;";
+                cmd.Parameters.AddWithValue("@pid", planId);
+
+                var result = new List<DmtPlanStep>();
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read())
                 {
-                    Id               = reader.GetString(0),
-                    PlanId           = reader.GetString(1),
-                    SortOrder        = (int)reader.GetInt64(2),
-                    Name             = reader.IsDBNull(3) ? null : reader.GetString(3),
-                    Enabled          = reader.GetInt64(4) == 1L,
-                    Operation        = reader.GetString(5),
-                    TableLogicalName = reader.IsDBNull(6) ? null : reader.GetString(6),
-                    SourceEnvId      = reader.IsDBNull(7) ? null : reader.GetString(7),
-                    TargetEnvId      = reader.IsDBNull(8) ? null : reader.GetString(8),
-                    SnapshotName     = reader.IsDBNull(9) ? null : reader.GetString(9),
-                    FileType         = reader.IsDBNull(10) ? null : reader.GetString(10),
-                    FilePath         = reader.IsDBNull(11) ? null : reader.GetString(11),
-                    Snapshot         = snapshotJson != null
-                        ? JsonConvert.DeserializeObject<DmtPlanStepSnapshot>(snapshotJson, _json)
-                        : new DmtPlanStepSnapshot(),
-                    FailurePolicy    = failurePolicyJson != null
-                        ? JsonConvert.DeserializeObject<ExecutionPlanFailurePolicy>(failurePolicyJson, _json)
-                        : new ExecutionPlanFailurePolicy(),
-                    Validation       = validationJson != null
-                        ? JsonConvert.DeserializeObject<ExecutionPlanValidation>(validationJson, _json)
-                        : new ExecutionPlanValidation()
-                });
+                    var snapshotJson      = reader.IsDBNull(12) ? null : reader.GetString(12);
+                    var failurePolicyJson = reader.IsDBNull(13) ? null : reader.GetString(13);
+                    var validationJson    = reader.IsDBNull(14) ? null : reader.GetString(14);
+                    result.Add(new DmtPlanStep
+                    {
+                        Id               = reader.GetString(0),
+                        PlanId           = reader.GetString(1),
+                        SortOrder        = (int)reader.GetInt64(2),
+                        Name             = reader.IsDBNull(3) ? null : reader.GetString(3),
+                        Enabled          = reader.GetInt64(4) == 1L,
+                        Operation        = reader.GetString(5),
+                        TableLogicalName = reader.IsDBNull(6) ? null : reader.GetString(6),
+                        SourceEnvId      = reader.IsDBNull(7) ? null : reader.GetString(7),
+                        TargetEnvId      = reader.IsDBNull(8) ? null : reader.GetString(8),
+                        SnapshotName     = reader.IsDBNull(9) ? null : reader.GetString(9),
+                        FileType         = reader.IsDBNull(10) ? null : reader.GetString(10),
+                        FilePath         = reader.IsDBNull(11) ? null : reader.GetString(11),
+                        Snapshot         = snapshotJson != null
+                            ? JsonConvert.DeserializeObject<DmtPlanStepSnapshot>(snapshotJson, _json)
+                            : new DmtPlanStepSnapshot(),
+                        FailurePolicy    = failurePolicyJson != null
+                            ? JsonConvert.DeserializeObject<ExecutionPlanFailurePolicy>(failurePolicyJson, _json)
+                            : new ExecutionPlanFailurePolicy(),
+                        Validation       = validationJson != null
+                            ? JsonConvert.DeserializeObject<ExecutionPlanValidation>(validationJson, _json)
+                            : new ExecutionPlanValidation()
+                    });
+                }
+                return result;
             }
-            return result;
         }
 
         public void DeletePlanStep(string id)
         {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = "DELETE FROM _plan_steps WHERE id=@id;";
-            cmd.Parameters.AddWithValue("@id", id);
-            cmd.ExecuteNonQuery();
+            lock (_dbLock)
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = "DELETE FROM _plan_steps WHERE id=@id;";
+                cmd.Parameters.AddWithValue("@id", id);
+                cmd.ExecuteNonQuery();
+            }
         }
 
         public int MarkPlanPreviewsStaleForSnapshot(string snapshotName)
         {
-            var changed = 0;
-            foreach (var plan in GetPlans())
+            lock (_dbLock)
             {
-                foreach (var step in GetPlanSteps(plan.Id))
+                var changed = 0;
+                foreach (var plan in GetPlans())
                 {
-                    if (!string.Equals(step.SnapshotName, snapshotName, StringComparison.OrdinalIgnoreCase))
-                        continue;
-                    if (step.Validation?.Preview == null || step.Validation.Preview.IsStale)
-                        continue;
+                    foreach (var step in GetPlanSteps(plan.Id))
+                    {
+                        if (!string.Equals(step.SnapshotName, snapshotName, StringComparison.OrdinalIgnoreCase))
+                            continue;
+                        if (step.Validation?.Preview == null || step.Validation.Preview.IsStale)
+                            continue;
 
-                    step.Validation.Preview.IsStale = true;
-                    SavePlanStep(step);
-                    changed++;
+                        step.Validation.Preview.IsStale = true;
+                        SavePlanStep(step);
+                        changed++;
+                    }
                 }
+                return changed;
             }
-            return changed;
         }
 
         // ─── ID mappings ───────────────────────────────────────────────────────
@@ -1838,96 +1974,114 @@ VALUES(@id,@pid,@so,@name,@en,@op,@tln,@seid,@teid,@sn,@ft,@fp,@sj,@fpj,@vj);";
         public void SaveIdMapping(string table, string sourceEnvId, string sourceId,
             string targetEnvId, string targetId)
         {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = @"
+            lock (_dbLock)
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = @"
 INSERT OR REPLACE INTO _id_mappings(table_logical_name,source_env_id,source_id,target_env_id,target_id,mapped_on)
 VALUES(@t,@se,@si,@te,@ti,@mo);";
-            cmd.Parameters.AddWithValue("@t",  table);
-            cmd.Parameters.AddWithValue("@se", sourceEnvId);
-            cmd.Parameters.AddWithValue("@si", sourceId);
-            cmd.Parameters.AddWithValue("@te", targetEnvId);
-            cmd.Parameters.AddWithValue("@ti", targetId);
-            cmd.Parameters.AddWithValue("@mo", DateTime.UtcNow.ToString("O"));
-            cmd.ExecuteNonQuery();
+                cmd.Parameters.AddWithValue("@t",  table);
+                cmd.Parameters.AddWithValue("@se", sourceEnvId);
+                cmd.Parameters.AddWithValue("@si", sourceId);
+                cmd.Parameters.AddWithValue("@te", targetEnvId);
+                cmd.Parameters.AddWithValue("@ti", targetId);
+                cmd.Parameters.AddWithValue("@mo", DateTime.UtcNow.ToString("O"));
+                cmd.ExecuteNonQuery();
+            }
         }
 
         public void RemoveIdMapping(string table, string sourceEnvId, string sourceId, string targetEnvId)
         {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = "DELETE FROM _id_mappings WHERE table_logical_name=@t AND source_env_id=@se AND source_id=@si AND target_env_id=@te;";
-            cmd.Parameters.AddWithValue("@t",  table);
-            cmd.Parameters.AddWithValue("@se", sourceEnvId);
-            cmd.Parameters.AddWithValue("@si", sourceId);
-            cmd.Parameters.AddWithValue("@te", targetEnvId);
-            cmd.ExecuteNonQuery();
+            lock (_dbLock)
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = "DELETE FROM _id_mappings WHERE table_logical_name=@t AND source_env_id=@se AND source_id=@si AND target_env_id=@te;";
+                cmd.Parameters.AddWithValue("@t",  table);
+                cmd.Parameters.AddWithValue("@se", sourceEnvId);
+                cmd.Parameters.AddWithValue("@si", sourceId);
+                cmd.Parameters.AddWithValue("@te", targetEnvId);
+                cmd.ExecuteNonQuery();
+            }
         }
 
         public string ResolveTargetId(string table, string sourceEnvId, string sourceId, string targetEnvId)
         {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = "SELECT target_id FROM _id_mappings WHERE table_logical_name=@t AND source_env_id=@se AND source_id=@si AND target_env_id=@te LIMIT 1;";
-            cmd.Parameters.AddWithValue("@t",  table);
-            cmd.Parameters.AddWithValue("@se", sourceEnvId);
-            cmd.Parameters.AddWithValue("@si", sourceId);
-            cmd.Parameters.AddWithValue("@te", targetEnvId);
-            return cmd.ExecuteScalar() as string;
+            lock (_dbLock)
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = "SELECT target_id FROM _id_mappings WHERE table_logical_name=@t AND source_env_id=@se AND source_id=@si AND target_env_id=@te LIMIT 1;";
+                cmd.Parameters.AddWithValue("@t",  table);
+                cmd.Parameters.AddWithValue("@se", sourceEnvId);
+                cmd.Parameters.AddWithValue("@si", sourceId);
+                cmd.Parameters.AddWithValue("@te", targetEnvId);
+                return cmd.ExecuteScalar() as string;
+            }
         }
 
         public Dictionary<string, string> GetAllIdMappings(string table, string sourceEnvId, string targetEnvId)
         {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = "SELECT source_id, target_id FROM _id_mappings WHERE table_logical_name=@t AND source_env_id=@se AND target_env_id=@te;";
-            cmd.Parameters.AddWithValue("@t",  table);
-            cmd.Parameters.AddWithValue("@se", sourceEnvId);
-            cmd.Parameters.AddWithValue("@te", targetEnvId);
+            lock (_dbLock)
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = "SELECT source_id, target_id FROM _id_mappings WHERE table_logical_name=@t AND source_env_id=@se AND target_env_id=@te;";
+                cmd.Parameters.AddWithValue("@t",  table);
+                cmd.Parameters.AddWithValue("@se", sourceEnvId);
+                cmd.Parameters.AddWithValue("@te", targetEnvId);
 
-            var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            using var reader = cmd.ExecuteReader();
-            while (reader.Read()) result[reader.GetString(0)] = reader.GetString(1);
-            return result;
+                var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read()) result[reader.GetString(0)] = reader.GetString(1);
+                return result;
+            }
         }
 
         // ─── Run logs ──────────────────────────────────────────────────────────
 
         public void SaveRunLog(DmtRunLog log)
         {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = @"
+            lock (_dbLock)
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = @"
 INSERT OR REPLACE INTO _run_logs(id,plan_id,plan_name,started_on,completed_on,status,log_json)
 VALUES(@id,@pid,@pn,@so,@co,@st,@lj);";
-            cmd.Parameters.AddWithValue("@id",  log.Id);
-            cmd.Parameters.AddWithValue("@pid", (object)log.PlanId ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@pn",  (object)log.PlanName ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@so",  log.StartedOn.ToString("O"));
-            cmd.Parameters.AddWithValue("@co",  log.CompletedOn.HasValue
-                ? (object)log.CompletedOn.Value.ToString("O") : DBNull.Value);
-            cmd.Parameters.AddWithValue("@st",  log.Status);
-            cmd.Parameters.AddWithValue("@lj",  log.Log != null
-                ? JsonConvert.SerializeObject(log.Log, _json) : "{}");
-            cmd.ExecuteNonQuery();
+                cmd.Parameters.AddWithValue("@id",  log.Id);
+                cmd.Parameters.AddWithValue("@pid", (object)log.PlanId ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@pn",  (object)log.PlanName ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@so",  log.StartedOn.ToString("O"));
+                cmd.Parameters.AddWithValue("@co",  log.CompletedOn.HasValue
+                    ? (object)log.CompletedOn.Value.ToString("O") : DBNull.Value);
+                cmd.Parameters.AddWithValue("@st",  log.Status);
+                cmd.Parameters.AddWithValue("@lj",  log.Log != null
+                    ? JsonConvert.SerializeObject(log.Log, _json) : "{}");
+                cmd.ExecuteNonQuery();
+            }
         }
 
         public List<DmtRunLog> GetRunLogs()
         {
-            using var cmd = _connection.CreateCommand();
-            cmd.CommandText = "SELECT id,plan_id,plan_name,started_on,completed_on,status,log_json FROM _run_logs ORDER BY started_on DESC;";
-            var result = new List<DmtRunLog>();
-            using var reader = cmd.ExecuteReader();
-            while (reader.Read())
+            lock (_dbLock)
             {
-                var completedStr = reader.IsDBNull(4) ? (string)null : reader.GetString(4);
-                result.Add(new DmtRunLog
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = "SELECT id,plan_id,plan_name,started_on,completed_on,status,log_json FROM _run_logs ORDER BY started_on DESC;";
+                var result = new List<DmtRunLog>();
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read())
                 {
-                    Id          = reader.GetString(0),
-                    PlanId      = reader.IsDBNull(1) ? null : reader.GetString(1),
-                    PlanName    = reader.IsDBNull(2) ? null : reader.GetString(2),
-                    StartedOn   = DateTime.Parse(reader.GetString(3)),
-                    CompletedOn = completedStr != null ? DateTime.Parse(completedStr) : (DateTime?)null,
-                    Status      = reader.GetString(5),
-                    Log         = JsonConvert.DeserializeObject<ExecutionPlanRunLog>(reader.GetString(6), _json)
-                });
+                    var completedStr = reader.IsDBNull(4) ? (string)null : reader.GetString(4);
+                    result.Add(new DmtRunLog
+                    {
+                        Id          = reader.GetString(0),
+                        PlanId      = reader.IsDBNull(1) ? null : reader.GetString(1),
+                        PlanName    = reader.IsDBNull(2) ? null : reader.GetString(2),
+                        StartedOn   = DateTime.Parse(reader.GetString(3)),
+                        CompletedOn = completedStr != null ? DateTime.Parse(completedStr) : (DateTime?)null,
+                        Status      = reader.GetString(5),
+                        Log         = JsonConvert.DeserializeObject<ExecutionPlanRunLog>(reader.GetString(6), _json)
+                    });
+                }
+                return result;
             }
-            return result;
         }
 
         // ─── SQLite type mapping ───────────────────────────────────────────────

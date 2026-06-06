@@ -44,12 +44,13 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             if (_projectProvider() == null)
                 throw new InvalidOperationException("Open a DMT project before starting the Rowcraft bridge.");
 
-            if (!IsRunning)
-                StartListener();
+            // Always restart so stale in-flight requests from a previous Rowcraft tab
+            // are dropped before the new session begins.
+            Stop();
+            StartListener();
 
             _pendingToken = GenerateSecret(32);
             _pendingTokenExpiresOn = DateTime.UtcNow.AddMinutes(2);
-            _sessionId = null;
             return _pendingToken;
         }
 
@@ -133,6 +134,20 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     && string.Equals(context.Request.HttpMethod, "POST", StringComparison.OrdinalIgnoreCase))
                 {
                     ExchangeSession(context);
+                    return;
+                }
+
+                if (parts.SequenceEqual(new[] { "api", "v1", "session" })
+                    && string.Equals(context.Request.HttpMethod, "DELETE", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!IsAuthorized(context))
+                    {
+                        WriteJson(context, 401, new { error = "Unauthorised" });
+                        return;
+                    }
+                    _sessionId = null;
+                    context.Response.StatusCode = 204;
+                    context.Response.Close();
                     return;
                 }
 
