@@ -162,6 +162,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
             var cols = GetPushPreviewColumns(snapshot.ColumnConfig, matchKeyOverride, lookupMatchKeys);
             var lookupCols = cols.Where(c => c.Type == "Lookup" || c.Type == "Owner" || c.Type == "Customer").ToList();
+            var uniqueidCols = cols.Where(c => c.Type == "Uniqueidentifier").ToList();
 
             bool doCreate = settings == null || (settings.Action & DmtAction.Create) != 0;
             bool doUpdate = settings == null || (settings.Action & DmtAction.Update) != 0;
@@ -220,7 +221,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 {
                     if (!row.TryGetValue(col.LogicalName, out var lv) || lv == null) continue;
                     var srcGuidStr = lv.ToString();
-                    if (!Guid.TryParse(srcGuidStr, out _)) continue;
 
                     // Honour "Skip" mode — no validation needed for this field
                     var lookupKey = lookupMatchKeys?.FirstOrDefault(k =>
@@ -228,7 +228,19 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     if (string.Equals(lookupKey?.Mode, "Skip", StringComparison.OrdinalIgnoreCase))
                         continue;
 
-                    var relatedTable = col.RelatedTable;
+                    if (!Guid.TryParse(srcGuidStr, out _))
+                    {
+                        // Non-GUID value is valid when a single-field alternate key is configured —
+                        // ConvertRowValue will use it directly as the key field value at push time.
+                        if ((string.Equals(lookupKey?.Mode, "AlternateKey", StringComparison.OrdinalIgnoreCase)
+                                || string.Equals(lookupKey?.Mode, "Custom", StringComparison.OrdinalIgnoreCase))
+                            && lookupKey?.Fields?.Count == 1)
+                            continue;
+                        errors.Add($"Lookup '{col.LogicalName}': value '{srcGuidStr}' is not a valid GUID — field will be NULL on push");
+                        continue;
+                    }
+
+                    var relatedTable = lookupKey?.TargetRelatedTable ?? col.RelatedTable;
                     if ((string.Equals(lookupKey?.Mode, "AlternateKey", StringComparison.OrdinalIgnoreCase)
                             || string.Equals(lookupKey?.Mode, "Custom", StringComparison.OrdinalIgnoreCase))
                         && lookupKey.Fields?.Any() == true)
@@ -276,8 +288,17 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     }
                 }
 
+                // Check Uniqueidentifier columns — non-GUID values produce null during push
+                foreach (var col in uniqueidCols)
+                {
+                    if (!row.TryGetValue(col.LogicalName, out var uv) || uv == null) continue;
+                    var uStr = uv.ToString();
+                    if (!Guid.TryParse(uStr, out _))
+                        errors.Add($"Field '{col.LogicalName}': value '{uStr}' is not a valid GUID — field will be NULL on push");
+                }
+
                 string operation;
-                if (isNew)
+                if (isNew && string.IsNullOrEmpty(sourceId))
                 {
                     operation = doCreate ? "Create" : "Skip";
                 }
@@ -371,7 +392,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             var columns = snapshotColumns ?? new List<DataTableColumnConfig>();
             var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var col in columns.Where(c => c.Type == "Lookup" || c.Type == "Owner" || c.Type == "Customer"))
+            foreach (var col in columns.Where(c => c.Type == "Lookup" || c.Type == "Owner" || c.Type == "Customer" || c.Type == "Uniqueidentifier"))
                 if (!string.IsNullOrWhiteSpace(col.LogicalName))
                     names.Add(col.LogicalName);
 
@@ -502,7 +523,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             ExcelImportMatchKeySelection matchKeyOverride = null,
             List<PushLookupMatchKey> lookupMatchKeys = null,
             List<string> selectedColumns = null,
-            IOrganizationService sourceClient = null)
+            IOrganizationService sourceClient = null,
+            List<ColumnAttributeMapping> columnMappings = null)
         {
             var result = new PushResult();
 
@@ -514,8 +536,22 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 throw new InvalidOperationException($"No primary ID attribute found for '{snapshot.TableLogicalName}'. Load the table attributes first.");
 
             var cols = snapshot.ColumnConfig;
-            // Apply step-level column filter
-            if (selectedColumns != null && selectedColumns.Any())
+            // columnMappings overrides selectedColumns when present
+            if (columnMappings != null && columnMappings.Any())
+            {
+                cols = cols.Where(c =>
+                    string.Equals(c.LogicalName, primaryIdAttr, StringComparison.OrdinalIgnoreCase)
+                    || columnMappings.Any(m =>
+                        string.Equals(m.SnapshotColumn, c.LogicalName, StringComparison.OrdinalIgnoreCase) && m.Include))
+                    .ToList();
+                // Merge lookup keys from columnMappings if not explicitly overridden
+                if (lookupMatchKeys == null)
+                    lookupMatchKeys = columnMappings
+                        .Where(m => m.LookupKey != null)
+                        .Select(m => m.LookupKey)
+                        .ToList();
+            }
+            else if (selectedColumns != null && selectedColumns.Any())
                 cols = cols.Where(c =>
                     selectedColumns.Contains(c.LogicalName, StringComparer.OrdinalIgnoreCase)
                     || string.Equals(c.LogicalName, primaryIdAttr, StringComparison.OrdinalIgnoreCase))
@@ -577,7 +613,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     continue;
                 }
 
-                if (isNew)
+                if (isNew && string.IsNullOrEmpty(sourceId))
                 {
                     if (doCreate)
                         toCreate.Add((row, sourceId, true));
@@ -654,7 +690,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 var entities = batch.Select(t =>
                 {
                     var entity = RowToEntity(t.row, cols, snapshot.TableLogicalName, primaryIdAttr,
-                        project, sourceEnvId, targetEnvId, targetRepo, targetClient, sourceClient, lookupMatchKeys);
+                        project, sourceEnvId, targetEnvId, targetRepo, targetClient, sourceClient, lookupMatchKeys, columnMappings);
                     // If the source snapshot carries a real GUID, ask Dataverse to preserve it on create.
                     if (Guid.TryParse(t.sourceId, out var g))
                         entity.Id = g;
@@ -680,7 +716,9 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     else
                     {
                         result.Failed++;
-                        result.Errors.Add($"Create failed: {resp.Message}");
+                        var srcId = batch[j].sourceId;
+                        var label = string.IsNullOrEmpty(srcId) ? "Create failed" : $"Create failed [{srcId}]";
+                        result.Errors.Add($"{label}: {resp.Message}");
                     }
                 }
                 createIdx += batch.Count;
@@ -694,7 +732,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 var entities = batch.Select(t =>
                 {
                     var entity = RowToEntity(t.row, cols, snapshot.TableLogicalName, primaryIdAttr,
-                        project, sourceEnvId, targetEnvId, targetRepo, targetClient, sourceClient, lookupMatchKeys);
+                        project, sourceEnvId, targetEnvId, targetRepo, targetClient, sourceClient, lookupMatchKeys, columnMappings);
                     entity.Id = t.targetId;
                     return entity;
                 }).ToList();
@@ -703,13 +741,16 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     $"Updating records {i + 1}–{Math.Min(i + batchSize, toUpdate.Count)} of {toUpdate.Count}...");
 
                 var responses = targetRepo.UpdateRecords(entities).ToList();
-                foreach (var resp in responses)
+                for (var j = 0; j < responses.Count; j++)
                 {
+                    var resp = responses[j];
                     if (resp.Success) result.Updated++;
                     else
                     {
                         result.Failed++;
-                        result.Errors.Add($"Update failed: {resp.Message}");
+                        var srcId = batch[j].sourceId;
+                        var label = string.IsNullOrEmpty(srcId) ? "Update failed" : $"Update failed [{srcId}]";
+                        result.Errors.Add($"{label}: {resp.Message}");
                     }
                 }
                 updateIdx += batch.Count;
@@ -732,7 +773,9 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     else
                     {
                         result.Failed++;
-                        result.Errors.Add($"Delete failed: {resp.Message}");
+                        var srcId = toDelete[j].sourceId;
+                        var label = string.IsNullOrEmpty(srcId) ? "Delete failed" : $"Delete failed [{srcId}]";
+                        result.Errors.Add($"{label}: {resp.Message}");
                     }
                 }
             }
@@ -771,6 +814,158 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             return result;
         }
 
+        public static (List<string> Errors, List<string> Warnings, int ResolvedMappings) ValidatePushMappings(
+            SqliteProjectService project,
+            DmtSnapshot snapshot,
+            List<ColumnAttributeMapping> columnMappings,
+            string sourceEnvId,
+            string targetEnvId,
+            IOrganizationService targetClient)
+        {
+            var errors = new List<string>();
+            var warnings = new List<string>();
+            var resolved = 0;
+
+            if (columnMappings == null || !columnMappings.Any() || targetClient == null || snapshot == null)
+                return (errors, warnings, resolved);
+
+            var targetRepo = new CrmRepo(targetClient);
+            Microsoft.Xrm.Sdk.Metadata.EntityMetadata targetMeta = null;
+            try { targetMeta = targetRepo.GetTableMetadata(snapshot.TableLogicalName); }
+            catch (Exception ex)
+            {
+                errors.Add($"Could not load target metadata for '{snapshot.TableLogicalName}': {ex.Message}");
+                return (errors, warnings, resolved);
+            }
+
+            var targetAttrs = targetMeta?.Attributes
+                ?.Select(a => a.LogicalName)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase)
+                ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            // Check: required target attributes that exist in the snapshot but are excluded from mappings
+            var snapshotAttrNames = new HashSet<string>(
+                snapshot.ColumnConfig?.Select(c => c.LogicalName) ?? Enumerable.Empty<string>(),
+                StringComparer.OrdinalIgnoreCase);
+            var includedTargetAttrs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var m in columnMappings.Where(m => m.Include))
+                includedTargetAttrs.Add(!string.IsNullOrWhiteSpace(m.DataverseAttribute) ? m.DataverseAttribute : m.SnapshotColumn);
+
+            var requiredTargetAttrs = targetMeta?.Attributes
+                ?.Where(a => a.RequiredLevel?.Value == AttributeRequiredLevel.ApplicationRequired
+                             && a.IsValidForCreate == true)
+                .Select(a => a.LogicalName)
+                ?? Enumerable.Empty<string>();
+
+            foreach (var reqAttr in requiredTargetAttrs)
+            {
+                if (!snapshotAttrNames.Contains(reqAttr)) continue;
+                if (!includedTargetAttrs.Contains(reqAttr))
+                    warnings.Add($"Required attribute '{reqAttr}' is in the snapshot but excluded from column mappings — it will be missing on push");
+            }
+
+            // Collect lookup columns that need pre-resolution
+            var lookupColsToResolve = new List<(DataTableColumnConfig Col, PushLookupMatchKey LookupKey)>();
+
+            foreach (var mapping in columnMappings.Where(m => m.Include))
+            {
+                var targetAttr = !string.IsNullOrWhiteSpace(mapping.DataverseAttribute)
+                    ? mapping.DataverseAttribute : mapping.SnapshotColumn;
+
+                if (!targetAttrs.Contains(targetAttr))
+                    errors.Add($"Column '{mapping.SnapshotColumn}' maps to '{targetAttr}' which does not exist on '{snapshot.TableLogicalName}' in the target environment.");
+
+                if (mapping.LookupKey != null
+                    && (string.Equals(mapping.LookupKey.Mode, "AlternateKey", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(mapping.LookupKey.Mode, "Custom", StringComparison.OrdinalIgnoreCase))
+                    && mapping.LookupKey.Fields?.Any() == true)
+                {
+                    var col = snapshot.ColumnConfig?.FirstOrDefault(c =>
+                        string.Equals(c.LogicalName, mapping.SnapshotColumn, StringComparison.OrdinalIgnoreCase));
+                    if (col != null)
+                        lookupColsToResolve.Add((col, mapping.LookupKey));
+                }
+            }
+
+            if (!lookupColsToResolve.Any())
+                return (errors, warnings, resolved);
+
+            // Read snapshot rows once (only lookup columns) to find unique GUIDs
+            List<Dictionary<string, object>> rows;
+            try { rows = project.ReadSnapshotRecords(snapshot.TableSuffix, lookupColsToResolve.Select(x => x.Col).ToList()).ToList(); }
+            catch { return (errors, warnings, resolved); }
+
+            foreach (var (col, lookupKey) in lookupColsToResolve)
+            {
+                var relatedTable = lookupKey?.TargetRelatedTable ?? col.RelatedTable ?? snapshot.TableLogicalName;
+                var rawValues = rows
+                    .Select(r => r.TryGetValue(col.LogicalName, out var v) ? v : null)
+                    .Where(v => v != null)
+                    .ToList();
+
+                // When the stored value is NOT a GUID and a single-field alt key is configured,
+                // use the raw value directly as the key field value to resolve the target entity.
+                if (lookupKey?.Fields?.Count == 1)
+                {
+                    var directKeyValues = rawValues
+                        .Where(v => !Guid.TryParse(v.ToString(), out _))
+                        .Select(v => v.ToString())
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+
+                    foreach (var rawVal in directKeyValues)
+                    {
+                        try
+                        {
+                            var keyValues = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+                            {
+                                [lookupKey.Fields[0]] = rawVal
+                            };
+                            var found = targetRepo.FindByFieldValues(relatedTable, keyValues);
+                            if (found != null)
+                                resolved++;
+                            else
+                                warnings.Add($"Could not resolve '{col.LogicalName}' key value '{rawVal}' in '{relatedTable}' using field '{lookupKey.Fields[0]}'.");
+                        }
+                        catch { /* skip individual resolution failures */ }
+                    }
+                }
+
+                var guids = rawValues
+                    .Select(v => v.ToString())
+                    .Where(g => !string.IsNullOrEmpty(g) && Guid.TryParse(g, out _))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                foreach (var guidStr in guids)
+                {
+                    if (!Guid.TryParse(guidStr, out var srcGuid)) continue;
+                    var existing = project.ResolveTargetId(relatedTable, sourceEnvId, guidStr, targetEnvId);
+                    if (!string.IsNullOrEmpty(existing)) continue;
+
+                    var keyValues = BuildRelatedLookupKeyValues(project, null, relatedTable, srcGuid, lookupKey);
+                    if (!keyValues.Any()) continue;
+
+                    try
+                    {
+                        var found = targetRepo.FindByFieldValues(relatedTable, keyValues);
+                        if (found != null)
+                        {
+                            project.SaveIdMapping(relatedTable, sourceEnvId, guidStr, targetEnvId, found.Id.ToString("D"));
+                            resolved++;
+                        }
+                        else
+                        {
+                            warnings.Add($"Could not resolve '{col.LogicalName}' source ID {guidStr} in '{relatedTable}' using configured match key.");
+                        }
+                    }
+                    catch { /* skip individual resolution failures */ }
+                }
+            }
+
+            return (errors, warnings, resolved);
+        }
+
         private static Entity RowToEntity(
             Dictionary<string, object> row,
             List<DataTableColumnConfig> cols,
@@ -782,7 +977,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             CrmRepo targetRepo = null,
             IOrganizationService targetClient = null,
             IOrganizationService sourceClient = null,
-            List<PushLookupMatchKey> lookupMatchKeys = null)
+            List<PushLookupMatchKey> lookupMatchKeys = null,
+            List<ColumnAttributeMapping> columnMappings = null)
         {
             var entity = new Entity(tableLogicalName);
 
@@ -794,9 +990,23 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 if (!row.TryGetValue(col.LogicalName, out var raw) || raw == null)
                     continue;
 
-                var value = ConvertRowValue(raw, col, tableLogicalName, project, sourceEnvId, targetEnvId, targetRepo, targetClient, sourceClient, lookupMatchKeys);
+                // Resolve per-lookup match key: columnMappings take precedence over lookupMatchKeys list
+                var colLookupKey = columnMappings?.FirstOrDefault(m =>
+                    string.Equals(m.SnapshotColumn, col.LogicalName, StringComparison.OrdinalIgnoreCase))?.LookupKey
+                    ?? lookupMatchKeys?.FirstOrDefault(k =>
+                        string.Equals(k.LogicalName, col.LogicalName, StringComparison.OrdinalIgnoreCase));
+
+                var value = ConvertRowValue(raw, col, tableLogicalName, project, sourceEnvId, targetEnvId, targetRepo, targetClient, sourceClient,
+                    colLookupKey != null ? new List<PushLookupMatchKey> { colLookupKey } : lookupMatchKeys);
+
                 if (value != null)
-                    entity[col.LogicalName] = value;
+                {
+                    // Apply attribute remapping: use DataverseAttribute if different from SnapshotColumn
+                    var mapping = columnMappings?.FirstOrDefault(m =>
+                        string.Equals(m.SnapshotColumn, col.LogicalName, StringComparison.OrdinalIgnoreCase));
+                    var attrName = !string.IsNullOrWhiteSpace(mapping?.DataverseAttribute) ? mapping.DataverseAttribute : col.LogicalName;
+                    entity[attrName] = value;
+                }
             }
             return entity;
         }
@@ -821,17 +1031,35 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 case "Owner":
                 case "Customer":
                 {
-                    if (!Guid.TryParse(raw.ToString(), out var srcGuid)) return null;
+                    // Resolve the lookup key config first — needed for both GUID and non-GUID paths
+                    var lookupKey = lookupMatchKeys?.FirstOrDefault(k =>
+                        string.Equals(k.LogicalName, col.LogicalName, StringComparison.OrdinalIgnoreCase));
+                    var relatedTable = lookupKey?.TargetRelatedTable ?? col.RelatedTable ?? tableLogicalName;
+
+                    if (!Guid.TryParse(raw.ToString(), out var srcGuid))
+                    {
+                        // Value is not a GUID — if a single-field alternate key is configured, treat the
+                        // raw value as that key field's value and resolve the target entity directly.
+                        if ((string.Equals(lookupKey?.Mode, "AlternateKey", StringComparison.OrdinalIgnoreCase)
+                                || string.Equals(lookupKey?.Mode, "Custom", StringComparison.OrdinalIgnoreCase))
+                            && lookupKey.Fields?.Count == 1
+                            && targetRepo != null)
+                        {
+                            var keyValues = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+                            {
+                                [lookupKey.Fields[0]] = raw
+                            };
+                            var found = targetRepo.FindByFieldValues(relatedTable, keyValues);
+                            if (found != null)
+                                return new EntityReference(relatedTable, found.Id);
+                        }
+                        return null;
+                    }
 
                     // Resolve via _id_mappings
-                    var relatedTable = col.RelatedTable ?? tableLogicalName;
                     var targetIdStr = project.ResolveTargetId(relatedTable, sourceEnvId, srcGuid.ToString("D"), targetEnvId);
                     if (!string.IsNullOrEmpty(targetIdStr) && Guid.TryParse(targetIdStr, out var resolvedId))
                         return new EntityReference(relatedTable, resolvedId);
-
-                    // Check per-lookup match key override
-                    var lookupKey = lookupMatchKeys?.FirstOrDefault(k =>
-                        string.Equals(k.LogicalName, col.LogicalName, StringComparison.OrdinalIgnoreCase));
 
                     if (string.Equals(lookupKey?.Mode, "Skip", StringComparison.OrdinalIgnoreCase))
                         return null;

@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
   <metadata>
     <id>Dataverse.XrmTools.DataMigrationTool</id>
-    <version>2026.6.6.1</version>
+    <version>2026.6.9.1</version>
     <title>Data Migration Tool</title>
     <authors>Rui Sousa</authors>
     <owners>Rui Sousa</owners>
@@ -24,6 +24,14 @@
     </description>
     <summary>Migrate data between Dataverse instances</summary>
 	<releaseNotes>
+		2026.6.9.x
+		- [FIX] Lookup fields storing alternate key values (non-GUIDs) now resolve correctly during push via direct alternate key field lookup
+		- [FIX] Push and preview no longer classify already-pushed records as Create when the snapshot row has isNew set; ID mappings are checked first
+		- [FIX] Validate now always refreshes preview counts; the separate Refresh Counts button has been removed
+		- [NEW] Execution plan steps table shows a Counts column (Create/Update/Skip) populated after Validate
+		- [FIX] Push error messages now include the source record GUID for easier identification
+		- [FIX] Results dialog no longer deduplicates error entries
+
 		2026.6.6.x
 		- [FIX] Rowcraft bridge restarts on each open, eliminating the ~10s hang when reopening Rowcraft from DMT
 		- [FIX] All SQLite bridge operations are now serialised across threads, preventing concurrent-access corruption and staging lock contention

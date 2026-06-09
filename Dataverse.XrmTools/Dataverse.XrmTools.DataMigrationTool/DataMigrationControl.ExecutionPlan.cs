@@ -393,7 +393,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             _executionPlanSaveButton = AddExecutionPlanToolStripButton(globalActions, "Save", (s, e) => SaveExecutionPlan());
             _executionPlanSaveAsButton = AddExecutionPlanToolStripButton(globalActions, "Save As", (s, e) => SaveExecutionPlanAs());
             _executionPlanValidateButton = AddExecutionPlanToolStripButton(globalActions, "Validate", (s, e) => ValidateExecutionPlan());
-            _executionPlanRefreshCountsButton = AddExecutionPlanToolStripButton(globalActions, "Refresh Counts", (s, e) => RefreshExecutionPlanCounts());
             _executionPlanExecuteButton = AddExecutionPlanToolStripButton(globalActions, "Execute Plan", (s, e) => ExecuteExecutionPlan());
             AddExecutionPlanToolStripButton(globalActions, "History", (s, e) => ShowRunHistory());
 
@@ -410,6 +409,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             _executionPlanSteps.Columns.Add("Status", 76);
             _executionPlanSteps.Columns.Add("Environment", 110);
             _executionPlanSteps.Columns.Add("Step", 190);
+            _executionPlanSteps.Columns.Add("Counts", 160);
             _executionPlanSteps.Columns.Add("Input/Output", 180);
             _executionPlanStepContextMenu = BuildExecutionPlanStepContextMenu();
             _executionPlanSteps.ContextMenuStrip = _executionPlanStepContextMenu;
@@ -528,14 +528,15 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void ResizeExecutionPlanColumns()
         {
-            if (_executionPlanSteps == null || _executionPlanSteps.Columns.Count < 5) return;
+            if (_executionPlanSteps == null || _executionPlanSteps.Columns.Count < 6) return;
 
             var width = Math.Max(360, _executionPlanSteps.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 4);
             _executionPlanSteps.Columns[0].Width = 38;
             _executionPlanSteps.Columns[1].Width = 80;
-            _executionPlanSteps.Columns[2].Width = Math.Max(180, (int)(width * 0.25));
+            _executionPlanSteps.Columns[2].Width = Math.Max(140, (int)(width * 0.20));
             _executionPlanSteps.Columns[3].Width = Math.Max(120, (int)(width * 0.20));
-            _executionPlanSteps.Columns[4].Width = Math.Max(90, width - _executionPlanSteps.Columns[0].Width - _executionPlanSteps.Columns[1].Width - _executionPlanSteps.Columns[2].Width - _executionPlanSteps.Columns[3].Width);
+            _executionPlanSteps.Columns[4].Width = 160;
+            _executionPlanSteps.Columns[5].Width = Math.Max(90, width - _executionPlanSteps.Columns[0].Width - _executionPlanSteps.Columns[1].Width - _executionPlanSteps.Columns[2].Width - _executionPlanSteps.Columns[3].Width - _executionPlanSteps.Columns[4].Width);
         }
 
         private ToolStrip CreateExecutionPlanToolStrip()
@@ -743,6 +744,10 @@ namespace Dataverse.XrmTools.DataMigrationTool
             _executionPlanRowTargetRenderQueued = false;
             ClearExecutionPlanRowTargetEditors();
             var targets = GetLoadedTargetEnvironments();
+            var srcEnvForInline = GetProjectSourceEnvironmentInfo();
+            if (srcEnvForInline != null && !string.IsNullOrWhiteSpace(srcEnvForInline.UniqueName) && _sourceClient != null
+                && !targets.Any(e => string.Equals(e.UniqueName, srcEnvForInline.UniqueName, StringComparison.OrdinalIgnoreCase)))
+                targets.Insert(0, srcEnvForInline);
 
             _suppressExecutionPlanInlineTargetChanged = true;
             foreach (ListViewItem item in _executionPlanSteps.Items)
@@ -888,6 +893,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         item.SubItems.Add(step.Validation?.Status ?? "Unknown");
                         item.SubItems.Add(GetStepEnvironmentDisplay(step));
                         item.SubItems.Add(step.Name ?? GetOperationDisplayName(step.Operation));
+                        item.SubItems.Add(GetExecutionPlanStepCountsText(step));
                         item.SubItems.Add(GetExecutionPlanStepInputOutputText(step));
                         if (string.Equals(step.Validation?.Status, "Error", StringComparison.OrdinalIgnoreCase))
                             item.ForeColor = Color.DarkRed;
@@ -934,7 +940,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (_executionPlanSaveButton != null) _executionPlanSaveButton.Enabled = hasPlan;
             if (_executionPlanSaveAsButton != null) _executionPlanSaveAsButton.Enabled = _executionPlan != null;
             if (_executionPlanValidateButton != null) _executionPlanValidateButton.Enabled = hasPlan;
-            if (_executionPlanRefreshCountsButton != null) _executionPlanRefreshCountsButton.Enabled = hasPlan;
             if (_executionPlanExecuteButton != null) _executionPlanExecuteButton.Enabled = CanExecuteValidatedExecutionPlan();
 
             var canConfigure = !_working && _executionPlan != null && hasSelectedStep;
@@ -981,9 +986,9 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 return _project?.Service != null
                     && !string.IsNullOrWhiteSpace(step.Input?.SnapshotName)
                     && _project.Service.HasSnapshot(step.Input.SnapshotName)
-                    && ExecutionPlanService.TryValidateTargetConnection(step, _targetClients.Keys, _targetClient != null, out _);
+                    && ExecutionPlanService.TryValidateTargetConnection(step, GetAllValidTargetUniqueNames(), _targetClient != null, out _);
 
-            if (!ExecutionPlanService.TryValidateTargetConnection(step, _targetClients.Keys, _targetClient != null, out _))
+            if (!ExecutionPlanService.TryValidateTargetConnection(step, GetAllValidTargetUniqueNames(), _targetClient != null, out _))
                 return false;
             if ((step.Operation ?? string.Empty).StartsWith("Import", StringComparison.OrdinalIgnoreCase))
             {
@@ -1004,7 +1009,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (ExecutionPlanService.IsPushSnapshotStep(step))
                 return false;
 
-            if (!ExecutionPlanService.TryValidateTargetConnection(step, _targetClients.Keys, _targetClient != null, out _))
+            if (!ExecutionPlanService.TryValidateTargetConnection(step, GetAllValidTargetUniqueNames(), _targetClient != null, out _))
                 return false;
             if ((step.Operation ?? string.Empty).StartsWith("Import", StringComparison.OrdinalIgnoreCase))
             {
@@ -1030,6 +1035,17 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private string GetExecutionPlanStepInputOutputText(ExecutionPlanStep step)
         {
             return ExecutionPlanService.GetStepInputOutputText(_executionPlan, step);
+        }
+
+        private string GetExecutionPlanStepCountsText(ExecutionPlanStep step)
+        {
+            var preview = step?.Validation?.Preview;
+            if (preview == null) return string.Empty;
+            var parts = new List<string>();
+            if (preview.Creates > 0) parts.Add($"Create: {preview.Creates}");
+            if (preview.Updates > 0) parts.Add($"Update: {preview.Updates}");
+            if (preview.Skips > 0) parts.Add($"Skip: {preview.Skips}");
+            return string.Join(" | ", parts);
         }
 
         private bool IsExportStep(ExecutionPlanStep step)
@@ -1352,12 +1368,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
         private void ValidateExecutionPlan()
         {
-            ValidateExecutionPlan(includePreviewCounts: false, title: "Validating execution plan...", completionTitle: "Validation complete.");
-        }
-
-        private void RefreshExecutionPlanCounts()
-        {
-            ValidateExecutionPlan(includePreviewCounts: true, title: "Refreshing plan counts...", completionTitle: "Preview/count refresh complete.");
+            ValidateExecutionPlan(includePreviewCounts: true, title: "Validating execution plan...", completionTitle: "Validation complete.");
         }
 
         private void ValidateExecutionPlan(bool includePreviewCounts, string title, string completionTitle)
@@ -1768,7 +1779,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             var settings = step.Snapshot?.ImportSettings ?? new UiSettings { Action = Enums.Action.Create | Enums.Action.Update };
             var pushMatchKey = BuildPushMatchKeySelection(step.Snapshot);
 
-            var result = SqliteDataLogic.Push(_project.Service, snapshotName, sourceEnvId, targetEnvId, ActiveTargetClient, settings, worker, pushMatchKey, step.Snapshot?.LookupMatchKeys, step.Snapshot?.SelectedColumns, _sourceClient);
+            var result = SqliteDataLogic.Push(_project.Service, snapshotName, sourceEnvId, targetEnvId, ResolveStepTargetClient(step), settings, worker, pushMatchKey, step.Snapshot?.LookupMatchKeys, step.Snapshot?.SelectedColumns, _sourceClient, step.Snapshot?.ColumnMappings);
 
             var summary = $"{step.Name}: {result?.Created ?? 0} created, {result?.Updated ?? 0} updated, {result?.Skipped ?? 0} skipped";
             if (result?.Errors?.Any() == true)
@@ -1859,20 +1870,46 @@ namespace Dataverse.XrmTools.DataMigrationTool
             var firstEnabledStep = plan.Steps.FirstOrDefault(s => s.Enabled);
             if (firstEnabledStep == null) return;
 
-            if (EnvironmentChanged(plan.SourceEnvironment, _sourceClient?.ConnectedOrgUniqueName))
-                AddExecutionPlanValidationMessage(firstEnabledStep, "Warning", "Current source environment differs from the environment captured in the plan.");
+            // Warn only when the plan's source env differs from every known current source identifier
+            // AND the FriendlyNames also differ (guards against ID-format mismatches on the same env).
+            if (!EnvironmentMatches(plan.SourceEnvironment, GetCurrentSourceEnvironmentIdentifiers())
+                && !SourceFriendlyNamesMatch(plan.SourceEnvironment))
+            {
+                var captured = plan.SourceEnvironment?.FriendlyName ?? plan.SourceEnvironment?.UniqueName ?? "unknown";
+                var current = _project?.SourceEnvironment?.FriendlyName ?? _sourceClient?.ConnectedOrgFriendlyName ?? _sourceClient?.ConnectedOrgUniqueName ?? "unknown";
+                AddExecutionPlanValidationMessage(firstEnabledStep, "Warning",
+                    $"Source environment has changed: plan was captured for '{captured}' but currently connected to '{current}'.");
+            }
 
             foreach (var step in plan.Steps.Where(s => s.Enabled && s.TargetEnvironment != null && !string.IsNullOrWhiteSpace(s.TargetEnvironment.UniqueName)))
             {
-                if (!_targetClients.ContainsKey(step.TargetEnvironment.UniqueName))
+                if (!_targetClients.ContainsKey(step.TargetEnvironment.UniqueName) && !IsSourceEnvironment(step.TargetEnvironment.UniqueName))
                     AddExecutionPlanValidationMessage(step, "Error", $"Target environment is not connected: {step.TargetEnvironment.FriendlyName ?? step.TargetEnvironment.UniqueName}");
             }
         }
 
-        private bool EnvironmentChanged(DmtEnvironmentInfo captured, string currentUniqueName)
+        private IEnumerable<string> GetCurrentSourceEnvironmentIdentifiers()
         {
-            if (captured == null || string.IsNullOrWhiteSpace(captured.UniqueName) || string.IsNullOrWhiteSpace(currentUniqueName)) return false;
-            return !captured.UniqueName.Equals(currentUniqueName, StringComparison.OrdinalIgnoreCase);
+            yield return GetClientEnvironmentId(_sourceClient);
+            yield return _sourceClient?.ConnectedOrgUniqueName;
+            yield return _sourceClient?.ConnectedOrgId.ToString();
+            yield return _project?.SourceEnvironment?.Id;
+            yield return _project?.SourceEnvironment?.UniqueName;
+        }
+
+        private bool EnvironmentMatches(DmtEnvironmentInfo captured, IEnumerable<string> currentIdentifiers)
+        {
+            if (captured == null || string.IsNullOrWhiteSpace(captured.UniqueName)) return true;
+            return (currentIdentifiers ?? Enumerable.Empty<string>())
+                .Where(identifier => !string.IsNullOrWhiteSpace(identifier))
+                .Any(identifier => string.Equals(captured.UniqueName, identifier, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private bool SourceFriendlyNamesMatch(DmtEnvironmentInfo captured)
+        {
+            if (string.IsNullOrWhiteSpace(captured?.FriendlyName)) return false;
+            var currentFriendly = _sourceClient?.ConnectedOrgFriendlyName ?? _project?.SourceEnvironment?.FriendlyName;
+            return string.Equals(captured.FriendlyName, currentFriendly, StringComparison.OrdinalIgnoreCase);
         }
 
         private void AddDuplicateOutputPathValidationMessages(ExecutionPlan plan)
@@ -1928,6 +1965,24 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
             if (step.Snapshot?.ImportSettings == null)
                 AddExecutionPlanValidationMessage(step, "Warning", "Push step has not been configured. Using defaults: Create + Update with GUID match key. Run 'Configure' to set import actions and match key.");
+
+            if (step.Snapshot?.ColumnMappings?.Any() == true && ActiveTargetClient != null)
+            {
+                var snapshot = _project.Service.GetSnapshot(step.Input.SnapshotName);
+                if (snapshot != null)
+                {
+                    var sourceEnvId = _project.SourceEnvironment?.Id ?? string.Empty;
+                    var targetEnvId = step.TargetEnvironment?.UniqueName ?? string.Empty;
+                    var (mappingErrors, mappingWarnings, resolvedCount) = SqliteDataLogic.ValidatePushMappings(
+                        _project.Service, snapshot, step.Snapshot.ColumnMappings, sourceEnvId, targetEnvId, ActiveTargetClient);
+                    foreach (var err in mappingErrors)
+                        AddExecutionPlanValidationMessage(step, "Error", err);
+                    foreach (var warn in mappingWarnings)
+                        AddExecutionPlanValidationMessage(step, "Warning", warn);
+                    if (resolvedCount > 0)
+                        AddExecutionPlanValidationMessage(step, "Info", $"Pre-resolved {resolvedCount} lookup GUID(s) into target ID mappings.");
+                }
+            }
         }
 
         private void OpenPushStepConfigDialog(ExecutionPlanStep step, DmtSnapshot snapshot,
@@ -1945,6 +2000,9 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     var configStep = args.step as ExecutionPlanStep;
                     var altKeys = new List<ExcelImportAlternateKeyOption>();
                     IOrganizationService capturedTargetClient = null;
+                    var targetTableAttributes = new List<string>();
+                    List<Dictionary<string, object>> sampleRows = null;
+                    var lookupTargets = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
 
                     var relatedTableData = new Dictionary<string, PushStepConfigDialog.LookupRelatedTableInfo>(StringComparer.OrdinalIgnoreCase);
 
@@ -1958,13 +2016,42 @@ namespace Dataverse.XrmTools.DataMigrationTool
                             var availableFields = snap.ColumnConfig?.Select(c => c.LogicalName) ?? Enumerable.Empty<string>();
                             altKeys = ImportPreviewService.GetAvailableImportAlternateKeys(keys, availableFields);
 
-                            // Load related table info for each lookup column
+                            // Load main table metadata for target attributes and lookup column targets
+                            try
+                            {
+                                var mainMeta = repo.GetTableMetadata(snap.TableLogicalName);
+                                if (mainMeta?.Attributes != null)
+                                {
+                                    targetTableAttributes = mainMeta.Attributes
+                                        .Select(a => a.LogicalName)
+                                        .Where(n => !string.IsNullOrEmpty(n))
+                                        .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+                                        .ToList();
+
+                                    foreach (var lkp in mainMeta.Attributes.OfType<LookupAttributeMetadata>())
+                                        if (lkp.Targets?.Length > 0)
+                                            lookupTargets[lkp.LogicalName] = new List<string>(lkp.Targets);
+                                }
+                            }
+                            catch { }
+
+                            // Build set of all related tables to load info for (primary + all targets from metadata)
                             var lookupCols = snap.ColumnConfig?
                                 .Where(c => c.Type == "Lookup" || c.Type == "Owner" || c.Type == "Customer")
-                                .GroupBy(c => c.RelatedTable, StringComparer.OrdinalIgnoreCase)
-                                .Where(g => !string.IsNullOrWhiteSpace(g.Key)) ?? Enumerable.Empty<IGrouping<string, DataTableColumnConfig>>();
+                                .ToList() ?? new List<DataTableColumnConfig>();
 
-                            foreach (var grp in lookupCols)
+                            var allRelatedTables = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                            foreach (var col in lookupCols)
+                            {
+                                if (!string.IsNullOrWhiteSpace(col.RelatedTable))
+                                    allRelatedTables.Add(col.RelatedTable);
+                                if (lookupTargets.TryGetValue(col.LogicalName, out var colTargets))
+                                    foreach (var t in colTargets)
+                                        if (!string.IsNullOrWhiteSpace(t))
+                                            allRelatedTables.Add(t);
+                            }
+
+                            foreach (var relTable in allRelatedTables)
                             {
                                 var info = new PushStepConfigDialog.LookupRelatedTableInfo();
 
@@ -1974,7 +2061,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                                     try
                                     {
                                         var relSnap = _project.Service.GetSnapshots().FirstOrDefault(s =>
-                                            string.Equals(s.TableLogicalName, grp.Key, StringComparison.OrdinalIgnoreCase));
+                                            string.Equals(s.TableLogicalName, relTable, StringComparison.OrdinalIgnoreCase));
                                         info.SnapshotColumns = relSnap?.ColumnConfig?
                                             .Where(c => !c.LogicalName.StartsWith("_"))
                                             .ToList() ?? new List<DataTableColumnConfig>();
@@ -1985,10 +2072,10 @@ namespace Dataverse.XrmTools.DataMigrationTool
                                 // Alternate keys — filter by snapshot columns if available, otherwise show all
                                 try
                                 {
-                                    var relKeys = repo.GetAlternateKeys(grp.Key);
+                                    var relKeys = repo.GetAlternateKeys(relTable);
                                     var fieldFilter = info.SnapshotColumns?.Any() == true
                                         ? info.SnapshotColumns.Select(c => c.LogicalName)
-                                        : (IEnumerable<string>)null; // null = no filter
+                                        : (IEnumerable<string>)null;
                                     info.AltKeys = ImportPreviewService.GetAvailableImportAlternateKeys(relKeys, fieldFilter);
                                 }
                                 catch { info.AltKeys = new List<ExcelImportAlternateKeyOption>(); }
@@ -1996,15 +2083,26 @@ namespace Dataverse.XrmTools.DataMigrationTool
                                 // Target metadata columns allow custom lookup matching without a related project snapshot.
                                 try
                                 {
-                                    info.TargetColumns = BuildLookupTargetColumnConfigs(repo.GetTableMetadata(grp.Key)?.Attributes);
+                                    info.TargetColumns = BuildLookupTargetColumnConfigs(repo.GetTableMetadata(relTable)?.Attributes);
                                 }
                                 catch { info.TargetColumns = new List<DataTableColumnConfig>(); }
 
-                                relatedTableData[grp.Key] = info;
+                                relatedTableData[relTable] = info;
                             }
                         }
                         catch { }
                         finally { ClearExecutionTargetOverride(); }
+                    }
+
+                    // Load up to 100 snapshot rows for the sample row navigator
+                    if (snap != null && _project?.Service != null)
+                    {
+                        try
+                        {
+                            var loaded = _project.Service.ReadSnapshotRecords(snap.TableSuffix, snap.ColumnConfig, 0, 100).ToList();
+                            if (loaded.Any()) sampleRows = loaded;
+                        }
+                        catch { }
                     }
 
                     // Compute all plan table names for lookup validation
@@ -2029,7 +2127,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         catch { }
                     }
 
-                    evt.Result = new { altKeys, preview, sourceEnvId, targetEnvId, allPlanTableNames, capturedTargetClient, relatedTableData };
+                    evt.Result = new { altKeys, preview, sourceEnvId, targetEnvId, allPlanTableNames, capturedTargetClient, relatedTableData, targetTableAttributes, sampleRows, lookupTargets };
                 },
                 PostWorkCallBack = evt =>
                 {
@@ -2043,6 +2141,10 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     var targetClient = result?.capturedTargetClient as IOrganizationService;
                     var relData = result?.relatedTableData as Dictionary<string, PushStepConfigDialog.LookupRelatedTableInfo>
                         ?? new Dictionary<string, PushStepConfigDialog.LookupRelatedTableInfo>(StringComparer.OrdinalIgnoreCase);
+                    var targetAttrs = result?.targetTableAttributes as List<string> ?? new List<string>();
+                    var sampleRowData = result?.sampleRows as List<Dictionary<string, object>>;
+                    var lookupTargetsData = result?.lookupTargets as Dictionary<string, List<string>>
+                        ?? new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
 
                     var availableTargets = GetLoadedTargetEnvironments();
                     var targetClientsByEnvironment = _targetClients
@@ -2050,9 +2152,19 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         .GroupBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase)
                         .ToDictionary(group => group.Key, group => (IOrganizationService)group.First().Value, StringComparer.OrdinalIgnoreCase);
 
+                    // Include source environment as a selectable push target
+                    var srcEnvForDialog = GetProjectSourceEnvironmentInfo();
+                    if (srcEnvForDialog != null && !string.IsNullOrWhiteSpace(srcEnvForDialog.UniqueName) && _sourceClient != null
+                        && !availableTargets.Any(e => string.Equals(e.UniqueName, srcEnvForDialog.UniqueName, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        availableTargets.Insert(0, srcEnvForDialog);
+                    }
+                    if (srcEnvForDialog != null && !string.IsNullOrWhiteSpace(srcEnvForDialog.UniqueName) && _sourceClient != null)
+                        targetClientsByEnvironment[srcEnvForDialog.UniqueName] = _sourceClient;
+
                     using (var dlg = new PushStepConfigDialog(step, snapshot, altKeys, preview, acceptButtonText,
                         _project?.Service, srcId, tgtId, planTableNames, targetClient, availableTargets,
-                        targetClientsByEnvironment, relData))
+                        targetClientsByEnvironment, relData, targetAttrs, sampleRowData, lookupTargetsData))
                     {
                         if (dlg.ShowDialog(ParentForm) != DialogResult.OK) return;
                     }
@@ -2079,6 +2191,9 @@ namespace Dataverse.XrmTools.DataMigrationTool
                                         Fields = k.Fields != null ? new List<string>(k.Fields) : new List<string>()
                                     }).ToList()
                                     : new List<PushLookupMatchKey>();
+                                tc.PushColumnMappings = step.Snapshot?.ColumnMappings?.Any() == true
+                                    ? step.Snapshot.ColumnMappings
+                                    : null;
                                 _project.Service.SaveTableConfig(snapshot.TableLogicalName, dn, pid, pna, tc);
                             }
                         }
@@ -2088,6 +2203,27 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     onConfigured(step);
                 }
             });
+        }
+
+        private IEnumerable<string> GetAllValidTargetUniqueNames()
+        {
+            var names = new HashSet<string>(_targetClients.Keys, StringComparer.OrdinalIgnoreCase);
+            var envId = GetClientEnvironmentId(_sourceClient);
+            if (!string.IsNullOrWhiteSpace(envId)) names.Add(envId);
+            if (!string.IsNullOrWhiteSpace(_sourceClient?.ConnectedOrgUniqueName)) names.Add(_sourceClient.ConnectedOrgUniqueName);
+            if (!string.IsNullOrWhiteSpace(_project?.SourceEnvironment?.Id)) names.Add(_project.SourceEnvironment.Id);
+            return names;
+        }
+
+        private IOrganizationService ResolveStepTargetClient(ExecutionPlanStep step)
+        {
+            var uniqueName = step?.TargetEnvironment?.UniqueName;
+            if (!string.IsNullOrWhiteSpace(uniqueName))
+            {
+                if (_targetClients.TryGetValue(uniqueName, out var client) && client != null) return client;
+                if (IsSourceEnvironment(uniqueName)) return _sourceClient;
+            }
+            return ActiveTargetClient;
         }
 
         private ISet<string> ComputeAllPlanTableNames()

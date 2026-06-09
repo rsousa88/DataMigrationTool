@@ -19,6 +19,13 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         private int _totalRows;
         private const int PageSize = 500;
 
+        // colLogicalName -> (relatedTableSuffix, nameColumn) — built per selected snapshot
+        private Dictionary<string, (string TableSuffix, string NameColumn)> _lookupInfo =
+            new Dictionary<string, (string, string)>(StringComparer.OrdinalIgnoreCase);
+        // colLogicalName -> (sourceId -> displayName) — rebuilt per page
+        private Dictionary<string, Dictionary<string, string>> _lookupCache =
+            new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+
         private ListView _snapList;
         private DataGridView _grid;
         private System.Windows.Forms.Label _lblPage;
@@ -168,13 +175,46 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         private void BuildGridColumns(DmtSnapshot snap)
         {
             _grid.Columns.Clear();
+            _lookupInfo.Clear();
+            _lookupCache.Clear();
+
             AddGridColumn("_source_id", "Source ID", 230);
             AddGridColumn("_is_new", "New?", 42);
+
+            var allSnapshots = _project.GetSnapshots();
             foreach (var col in snap.ColumnConfig)
             {
                 var header = string.IsNullOrEmpty(col.DisplayName) ? col.LogicalName : col.DisplayName;
-                AddGridColumn(col.LogicalName, header, 110);
+                var width = !string.IsNullOrEmpty(col.RelatedTable) ? 160 : 110;
+                AddGridColumn(col.LogicalName, header, width);
+
+                if (!string.IsNullOrEmpty(col.RelatedTable))
+                {
+                    var relatedSnap = allSnapshots
+                        .Where(s => string.Equals(s.TableLogicalName, col.RelatedTable, StringComparison.OrdinalIgnoreCase))
+                        .OrderByDescending(s => s.UpdatedOn)
+                        .FirstOrDefault();
+                    if (relatedSnap != null)
+                    {
+                        var nameCol = PickNameColumn(relatedSnap);
+                        if (nameCol != null)
+                            _lookupInfo[col.LogicalName] = (relatedSnap.TableSuffix, nameCol);
+                    }
+                }
             }
+        }
+
+        private static string PickNameColumn(DmtSnapshot snap)
+        {
+            var preferred = new[] { "name", "fullname", "title", "subject" };
+            foreach (var pref in preferred)
+            {
+                if (snap.ColumnConfig.Any(c => string.Equals(c.LogicalName, pref, StringComparison.OrdinalIgnoreCase)))
+                    return pref;
+            }
+            return snap.ColumnConfig.FirstOrDefault(c =>
+                string.Equals(c.Type, "String", StringComparison.OrdinalIgnoreCase) &&
+                !c.LogicalName.EndsWith("id", StringComparison.OrdinalIgnoreCase))?.LogicalName;
         }
 
         private void AddGridColumn(string name, string header, int width)
@@ -206,6 +246,19 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             try { rows = _project.ReadSnapshotRecords(snap.TableSuffix, snap.ColumnConfig, offset, PageSize).ToList(); }
             catch (Exception ex) { MessageBox.Show(this, $"Failed to read snapshot: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error); return; }
 
+            // Build lookup name cache for this page
+            _lookupCache.Clear();
+            foreach (var entry in _lookupInfo)
+            {
+                var guids = rows
+                    .Select(r => r.TryGetValue(entry.Key, out var v) ? v?.ToString() : null)
+                    .Where(g => !string.IsNullOrEmpty(g) && IsGuid(g))
+                    .Distinct()
+                    .ToList();
+                if (guids.Count > 0)
+                    _lookupCache[entry.Key] = _project.ReadSnapshotDisplayNames(entry.Value.TableSuffix, entry.Value.NameColumn, guids);
+            }
+
             _grid.SuspendLayout();
             _grid.Rows.Clear();
             foreach (var row in rows)
@@ -216,7 +269,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                 foreach (var col in snap.ColumnConfig)
                 {
                     row.TryGetValue(col.LogicalName, out var val);
-                    cells.Add(FormatValue(val, col, optCache));
+                    cells.Add(FormatValue(val, col, optCache, _lookupCache));
                 }
                 _grid.Rows.Add(cells.ToArray());
             }
@@ -229,7 +282,11 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             _btnNext.Enabled = (page + 1) * PageSize < _totalRows;
         }
 
-        private static string FormatValue(object val, DataTableColumnConfig col, Dictionary<string, Dictionary<int, string>> optCache)
+        private static string FormatValue(
+            object val,
+            DataTableColumnConfig col,
+            Dictionary<string, Dictionary<int, string>> optCache,
+            Dictionary<string, Dictionary<string, string>> lookupCache)
         {
             if (val == null) return "";
 
@@ -249,8 +306,21 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                         : p));
             }
 
+            if (!string.IsNullOrEmpty(col.RelatedTable) && val is string guidStr && IsGuid(guidStr))
+            {
+                if (lookupCache != null
+                    && lookupCache.TryGetValue(col.LogicalName, out var names)
+                    && names.TryGetValue(guidStr, out var name)
+                    && !string.IsNullOrEmpty(name))
+                    return name;
+                return guidStr;
+            }
+
             return val.ToString();
         }
+
+        private static bool IsGuid(string value) =>
+            !string.IsNullOrEmpty(value) && Guid.TryParse(value, out _);
 
         private static bool IsOptionSetType(string type) =>
             type == "Picklist" || type == "State" || type == "Status" || type == "Boolean" || type == "OptionSet";

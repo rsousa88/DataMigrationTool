@@ -59,6 +59,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
         public List<string> PushMatchKeyFields { get; set; } = new List<string>();
         public string PushMatchAlternateKeyName { get; set; }
         public List<PushLookupMatchKey> PushLookupMatchKeys { get; set; } = new List<PushLookupMatchKey>();
+        // Default column mappings for new steps — loaded from the last configured step for this snapshot
+        public List<ColumnAttributeMapping> PushColumnMappings { get; set; }
 
         public ExcelExportConfig ExcelConfig { get; set; }
     }
@@ -165,6 +167,10 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
         public UiSettings ImportSettings { get; set; }
         public UiSettings ExportSettings { get; set; }
         public List<PushLookupMatchKey> LookupMatchKeys { get; set; }
+        // null = all snapshot columns included; otherwise only push these
+        public List<string> SelectedColumns { get; set; }
+        // Full per-column config (include flag, attribute remap, lookup key)
+        public List<ColumnAttributeMapping> ColumnMappings { get; set; }
     }
 
     // Row in _id_mappings

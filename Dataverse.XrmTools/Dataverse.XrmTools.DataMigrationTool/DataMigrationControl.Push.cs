@@ -68,9 +68,14 @@ namespace Dataverse.XrmTools.DataMigrationTool
             if (snapshot == null) return;
 
             var targets = GetLoadedTargetEnvironments();
-            if (targets == null || !targets.Any())
+            // Include the source environment as a valid push target (supports source-to-source scenarios)
+            var srcEnv = GetProjectSourceEnvironmentInfo();
+            if (srcEnv != null && _sourceClient != null
+                && !targets.Any(e => string.Equals(e.UniqueName, srcEnv.UniqueName, StringComparison.OrdinalIgnoreCase)))
+                targets.Insert(0, srcEnv);
+            if (!targets.Any())
             {
-                MessageBox.Show(this, "Connect to a target environment first (use 'Additional Connection' in XrmToolBox).", "No Target", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(this, "Connect to a source environment first.", "No Connection", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
@@ -128,6 +133,9 @@ namespace Dataverse.XrmTools.DataMigrationTool
                             AlternateKeyName = k.AlternateKeyName,
                             Fields = k.Fields != null ? new List<string>(k.Fields) : new List<string>()
                         }).ToList()
+                        : null,
+                    ColumnMappings = savedTableConfig?.PushColumnMappings?.Any() == true
+                        ? savedTableConfig.PushColumnMappings
                         : null
                 }
             };

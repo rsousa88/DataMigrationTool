@@ -159,7 +159,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
 
             var errors = (step.ErrorDetails ?? new System.Collections.Generic.List<string>())
                 .Where(error => !string.IsNullOrWhiteSpace(error))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
             if (errors.Any())
             {

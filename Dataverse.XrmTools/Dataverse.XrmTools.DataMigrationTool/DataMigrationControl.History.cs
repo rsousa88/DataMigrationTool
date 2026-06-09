@@ -60,9 +60,15 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 {
                     Dock = DockStyle.Fill,
                     Orientation = Orientation.Vertical,
-                    SplitterDistance = 340,
                     Panel1MinSize = 200,
                     Panel2MinSize = 150
+                };
+                split.SplitterMoved += (sm, se) => { };  // ensure splitter is interactive
+                dlg.Load += (ld, le) =>
+                {
+                    if (split.Width > split.Panel1MinSize + split.Panel2MinSize + split.SplitterWidth)
+                        try { split.SplitterDistance = Math.Min(340, split.Width - split.Panel2MinSize - split.SplitterWidth); }
+                        catch { }
                 };
 
                 // Left: log list

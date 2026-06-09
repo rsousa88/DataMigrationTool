@@ -143,7 +143,9 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     PushMatchAlternateKeyName = snapshot.PushMatchAlternateKeyName,
                     ImportSettings = Clone(snapshot.ImportSettings),
                     ExportSettings = Clone(snapshot.ExportSettings),
-                    LookupMatchKeys = Clone(snapshot.LookupMatchKeys)
+                    LookupMatchKeys = Clone(snapshot.LookupMatchKeys),
+                    SelectedColumns = snapshot.SelectedColumns?.ToList(),
+                    ColumnMappings = Clone(snapshot.ColumnMappings)
                 },
                 FailurePolicy = Clone(step.FailurePolicy) ?? new ExecutionPlanFailurePolicy(),
                 Validation = Clone(step.Validation) ?? new ExecutionPlanValidation()
@@ -176,7 +178,9 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     PushMatchAlternateKeyName = snapshot.PushMatchAlternateKeyName,
                     ImportSettings = Clone(snapshot.ImportSettings),
                     ExportSettings = Clone(snapshot.ExportSettings),
-                    LookupMatchKeys = Clone(snapshot.LookupMatchKeys)
+                    LookupMatchKeys = Clone(snapshot.LookupMatchKeys),
+                    SelectedColumns = snapshot.SelectedColumns?.ToList(),
+                    ColumnMappings = Clone(snapshot.ColumnMappings)
                 },
                 FailurePolicy = Clone(step.FailurePolicy) ?? new ExecutionPlanFailurePolicy(),
                 Validation = Clone(step.Validation) ?? new ExecutionPlanValidation()

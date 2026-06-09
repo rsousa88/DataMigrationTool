@@ -405,6 +405,14 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             public PushLookupMatchKey MatchKey { get; set; }
         }
 
+        private sealed class ColumnMappingRowData
+        {
+            public DataTableColumnConfig Column { get; set; }
+            public PushLookupMatchKey LookupKey { get; set; }
+            public bool IsLookup => Column != null
+                && (Column.Type == "Lookup" || Column.Type == "Owner" || Column.Type == "Customer");
+        }
+
         private sealed class MatchModeItem
         {
             public string Mode { get; }
@@ -456,9 +464,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         private ComboBox _cboMatchMode;
         private ComboBox _cboAltKey;
         private Label _lblAltKey, _lblCustomFields;
-        private ListView _mainColList;
+        private DataGridView _colMappingGrid;
         private Button _btnCustomFields;
-        private DataGridView _lookupGrid;
         private CheckBox _stopOnFatalError;
         private NumericUpDown _batchSize, _maxFailedRecords, _maxFailedPercent;
         private Label _lblPreviewCreate, _lblPreviewUpdate, _lblPreviewWarn, _lblPreviewError;
@@ -466,15 +473,24 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         private Button _btnDetails;
         private Button _btnAccept;
         private GroupBox _settingsGroup;
-        private SplitContainer _leftSplit;
 
+        private readonly List<string> _targetTableAttributes;
+        private readonly List<Dictionary<string, object>> _sampleRows;
+        private readonly Dictionary<string, List<string>> _lookupTargets;
+        private List<int> _sampleSubsetIndices = new List<int>();
+        private int _sampleSubsetPos = 0;
+        private Label _lblSampleNav;
+        private Button _btnSamplePrev;
+        private Button _btnSampleNext;
+        private EventHandler _taLeaveHandler;
+        private ComboBox _taCurrentCbo;
         private List<string> _customFields = new List<string>();
-        private readonly HashSet<string> _deselectedColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        private bool _suppressColumnListCheck;
         private bool _refreshingPreview;
         private bool _pendingPreviewRefresh;
+        private bool _deferredPreviewRefresh;
         private bool _initializing;
         private SqliteDataLogic.PushPreview _currentPreview;
+        private Timer _previewRefreshTimer;
 
         public PushStepConfigDialog(ExecutionPlanStep step, DmtSnapshot snapshot,
             IList<ExcelImportAlternateKeyOption> alternateKeys,
@@ -487,7 +503,10 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             IOrganizationService targetClient = null,
             IEnumerable<DmtEnvironmentInfo> availableTargets = null,
             IDictionary<string, IOrganizationService> targetClientsByEnvironment = null,
-            Dictionary<string, LookupRelatedTableInfo> relatedTableData = null)
+            Dictionary<string, LookupRelatedTableInfo> relatedTableData = null,
+            List<string> targetTableAttributes = null,
+            List<Dictionary<string, object>> sampleRows = null,
+            Dictionary<string, List<string>> lookupTargets = null)
         {
             _step = step;
             _snapshot = snapshot;
@@ -508,19 +527,29 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                 ? new Dictionary<string, IOrganizationService>(targetClientsByEnvironment, StringComparer.OrdinalIgnoreCase)
                 : new Dictionary<string, IOrganizationService>(StringComparer.OrdinalIgnoreCase);
             _relatedTableData = relatedTableData ?? new Dictionary<string, LookupRelatedTableInfo>(StringComparer.OrdinalIgnoreCase);
+            _targetTableAttributes = targetTableAttributes ?? new List<string>();
+            _sampleRows = sampleRows;
+            _lookupTargets = lookupTargets ?? new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
 
             Text = "Configure Push Step";
-            FormBorderStyle = FormBorderStyle.FixedDialog;
+            FormBorderStyle = FormBorderStyle.Sizable;
             StartPosition = FormStartPosition.CenterParent;
             ShowIcon = false;
             ShowInTaskbar = false;
             MaximizeBox = false;
             MinimizeBox = false;
-            ClientSize = new Size(1100, 680);
+            var workArea = Screen.PrimaryScreen.WorkingArea;
+            ClientSize = new Size(Math.Max(1100, (int)(workArea.Width * 0.82)), Math.Max(720, (int)(workArea.Height * 0.82)));
             BackColor = SystemColors.Window;
 
             BuildLayout(acceptButtonText);
             InitializeValues();
+
+            FormClosed += (s, e) =>
+            {
+                _previewRefreshTimer?.Stop();
+                _previewRefreshTimer?.Dispose();
+            };
         }
 
         private void BuildLayout(string acceptButtonText)
@@ -559,46 +588,9 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
             outer.Controls.Add(body, 0, 1);
 
-            // Left: vertical SplitContainer — top=main record columns, bottom=lookup match keys
-            _leftSplit = new SplitContainer
-            {
-                Dock = DockStyle.Fill,
-                Orientation = Orientation.Horizontal,
-                SplitterWidth = 5,
-                Panel1MinSize = 80,
-                Panel2MinSize = 60
-            };
-            var leftSplit = _leftSplit;
-            bool leftSplitterSet = false;
-            leftSplit.Resize += (s, e) =>
-            {
-                if (leftSplitterSet || leftSplit.Height <= 0) return;
-                leftSplitterSet = true;
-                try { leftSplit.SplitterDistance = (int)(leftSplit.Height * 0.52); } catch { }
-            };
-
-            // Top-left: columns (checked = include in push payload)
-            var mainColGroup = new GroupBox { Text = "Columns", Dock = DockStyle.Fill, Padding = new Padding(4) };
-            _mainColList = new ListView
-            {
-                Dock = DockStyle.Fill,
-                View = View.Details,
-                CheckBoxes = true,
-                FullRowSelect = true,
-                GridLines = true,
-                MultiSelect = false,
-                HeaderStyle = ColumnHeaderStyle.Nonclickable,
-                Font = new Font("Consolas", 8.25f)
-            };
-            _mainColList.Columns.Add("Column", -2);
-            _mainColList.Columns.Add("Type", 72);
-            _mainColList.ItemCheck += ColList_ItemCheck;
-            mainColGroup.Controls.Add(_mainColList);
-            leftSplit.Panel1.Controls.Add(mainColGroup);
-
-            // Bottom-left: lookup match keys DataGridView
-            var lookupGroup = new GroupBox { Text = "Lookup Columns — Match Key", Dock = DockStyle.Fill, Padding = new Padding(4) };
-            _lookupGrid = new DataGridView
+            // Left: unified column mapping grid (include/exclude, attribute remap, lookup match key)
+            var leftGroup = new GroupBox { Text = "Column Mappings", Dock = DockStyle.Fill, Padding = new Padding(4) };
+            _colMappingGrid = new DataGridView
             {
                 Dock = DockStyle.Fill,
                 ReadOnly = false,
@@ -609,33 +601,131 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                 SelectionMode = DataGridViewSelectionMode.FullRowSelect,
                 Font = new Font("Consolas", 8.25f),
                 ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing,
-                ColumnHeadersHeight = 24
+                ColumnHeadersHeight = 24,
+                EditMode = DataGridViewEditMode.EditOnEnter
             };
-            var modeCol = new DataGridViewComboBoxColumn
+            var includeCol = new DataGridViewCheckBoxColumn
+                { Name = "Include", HeaderText = "✓", SortMode = DataGridViewColumnSortMode.NotSortable, Width = 26 };
+            includeCol.AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
+            _colMappingGrid.Columns.Add(includeCol);
+            _colMappingGrid.Columns.Add(new DataGridViewTextBoxColumn
+                { Name = "SnapshotColumn", HeaderText = "Snapshot Column", ReadOnly = true, FillWeight = 20, SortMode = DataGridViewColumnSortMode.NotSortable });
+            _colMappingGrid.Columns.Add(new DataGridViewComboBoxColumn
+                { Name = "TargetAttribute", HeaderText = "Target Attribute", FillWeight = 18, SortMode = DataGridViewColumnSortMode.NotSortable });
+            _colMappingGrid.Columns.Add(new DataGridViewTextBoxColumn
+                { Name = "Type", HeaderText = "Type", ReadOnly = true, FillWeight = 8, SortMode = DataGridViewColumnSortMode.NotSortable });
+            var lookupModeCol = new DataGridViewComboBoxColumn
+                { Name = "LookupMode", HeaderText = "Lookup Match", FillWeight = 14, SortMode = DataGridViewColumnSortMode.NotSortable };
+            lookupModeCol.Items.AddRange("Use Source GUID", "Alternate Key", "Custom Columns", "Skip Field");
+            _colMappingGrid.Columns.Add(lookupModeCol);
+            _colMappingGrid.Columns.Add(new DataGridViewTextBoxColumn
+                { Name = "RelatedTable", HeaderText = "Related Table", FillWeight = 12, SortMode = DataGridViewColumnSortMode.NotSortable });
+            _colMappingGrid.Columns.Add(new DataGridViewTextBoxColumn
+                { Name = "Config", HeaderText = "Key / Fields", ReadOnly = true, FillWeight = 16, SortMode = DataGridViewColumnSortMode.NotSortable });
+            _colMappingGrid.Columns.Add(new DataGridViewTextBoxColumn
+                { Name = "Sample", HeaderText = "Sample", ReadOnly = true, FillWeight = 12, SortMode = DataGridViewColumnSortMode.NotSortable });
+            _colMappingGrid.EditingControlShowing += (s, e) =>
             {
-                Name = "Mode",
-                HeaderText = "Mode",
-                FillWeight = 28
+                var colName = _colMappingGrid.CurrentCell?.OwningColumn?.Name;
+                if (colName == "LookupMode" && e.Control is ComboBox cboLM)
+                {
+                    cboLM.DropDownStyle = ComboBoxStyle.DropDownList;
+                }
+                else if (colName == "TargetAttribute" && e.Control is ComboBox cboTA)
+                {
+                    cboTA.DropDownStyle = ComboBoxStyle.DropDown;
+                    cboTA.AutoCompleteMode = AutoCompleteMode.SuggestAppend;
+                    cboTA.AutoCompleteSource = AutoCompleteSource.ListItems;
+                    if (_taCurrentCbo != null && _taLeaveHandler != null)
+                        _taCurrentCbo.Leave -= _taLeaveHandler;
+                    _taCurrentCbo = cboTA;
+                    _taLeaveHandler = (ls, le) =>
+                    {
+                        var text = _taCurrentCbo.Text?.Trim();
+                        if (!string.IsNullOrEmpty(text) && !_taCurrentCbo.Items.Contains(text))
+                            _taCurrentCbo.Items.Add(text);
+                    };
+                    cboTA.Leave += _taLeaveHandler;
+                }
+                else if (colName == "RelatedTable" && e.Control is ComboBox cboRT)
+                {
+                    cboRT.DropDownStyle = ComboBoxStyle.DropDownList;
+                }
             };
-            modeCol.Items.AddRange("Use Source GUID", "Alternate Key", "Custom Columns", "Skip Field");
-            _lookupGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Column", HeaderText = "Lookup Column", ReadOnly = true, FillWeight = 30 });
-            _lookupGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "RelatedTable", HeaderText = "Related Table", ReadOnly = true, FillWeight = 22 });
-            _lookupGrid.Columns.Add(modeCol);
-            _lookupGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Config", HeaderText = "Key / Fields", ReadOnly = true, FillWeight = 20 });
-            _lookupGrid.EditingControlShowing += (s, e) =>
+            _colMappingGrid.CurrentCellDirtyStateChanged += (s, e) =>
             {
-                if (_lookupGrid.CurrentCell?.OwningColumn?.Name == "Mode" && e.Control is ComboBox cbo)
-                    cbo.DropDownStyle = ComboBoxStyle.DropDownList;
+                if (!_colMappingGrid.IsCurrentCellDirty) return;
+                var colNm = _colMappingGrid.CurrentCell?.OwningColumn?.Name;
+                if (colNm == "Include" || colNm == "LookupMode" || colNm == "RelatedTable")
+                    _colMappingGrid.CommitEdit(DataGridViewDataErrorContexts.Commit);
             };
-            _lookupGrid.CurrentCellDirtyStateChanged += (s, e) =>
+            _colMappingGrid.CellValueChanged += (s, e) =>
             {
-                if (_lookupGrid.IsCurrentCellDirty && _lookupGrid.CurrentCell?.OwningColumn?.Name == "Mode")
-                    _lookupGrid.CommitEdit(DataGridViewDataErrorContexts.Commit);
+                if (e.ColumnIndex >= 0 && _colMappingGrid.Columns[e.ColumnIndex].Name == "Include")
+                    SchedulePreviewRefresh();
             };
-            _lookupGrid.DataError += (s, e) => e.ThrowException = false;
-            lookupGroup.Controls.Add(_lookupGrid);
-            leftSplit.Panel2.Controls.Add(lookupGroup);
-            body.Controls.Add(leftSplit, 0, 0);
+            _colMappingGrid.DataError += (s, e) => e.ThrowException = false;
+            _colMappingGrid.CellClick += (s, e) =>
+            {
+                if (e.RowIndex < 0 || e.ColumnIndex < 0) return;
+                var colName = _colMappingGrid.Columns[e.ColumnIndex].Name;
+                if (colName == "LookupMode" && _colMappingGrid.Rows[e.RowIndex].Cells["LookupMode"] is DataGridViewComboBoxCell)
+                {
+                    _colMappingGrid.BeginEdit(true);
+                    BeginInvoke(new Action(() =>
+                    {
+                        if (_colMappingGrid.EditingControl is ComboBox cbo) cbo.DroppedDown = true;
+                    }));
+                }
+                else if (colName == "TargetAttribute" && _colMappingGrid.Rows[e.RowIndex].Cells["TargetAttribute"] is DataGridViewComboBoxCell)
+                {
+                    _colMappingGrid.BeginEdit(true);
+                    BeginInvoke(new Action(() =>
+                    {
+                        if (_colMappingGrid.EditingControl is ComboBox cbo) cbo.DroppedDown = true;
+                    }));
+                }
+                else if (colName == "RelatedTable" && _colMappingGrid.Rows[e.RowIndex].Cells["RelatedTable"] is DataGridViewComboBoxCell)
+                {
+                    _colMappingGrid.BeginEdit(true);
+                    BeginInvoke(new Action(() =>
+                    {
+                        if (_colMappingGrid.EditingControl is ComboBox cbo) cbo.DroppedDown = true;
+                    }));
+                }
+            };
+            // Sample row navigator bar
+            var navPanel = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                Padding = new Padding(0, 3, 0, 0)
+            };
+            navPanel.Controls.Add(new Label { Text = "Sample row:", AutoSize = true, Padding = new Padding(0, 2, 4, 0) });
+            _btnSamplePrev = new Button { Text = "◀", Width = 24, Height = 22, FlatStyle = FlatStyle.Flat, Padding = Padding.Empty, Margin = new Padding(0, 0, 2, 0) };
+            _lblSampleNav = new Label { AutoSize = true, Text = "—", TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(4, 2, 4, 0) };
+            _btnSampleNext = new Button { Text = "▶", Width = 24, Height = 22, FlatStyle = FlatStyle.Flat, Padding = Padding.Empty, Margin = Padding.Empty };
+            _btnSamplePrev.Click += (s, e) => NavigateSampleRow(-1);
+            _btnSampleNext.Click += (s, e) => NavigateSampleRow(+1);
+            navPanel.Controls.Add(_btnSamplePrev);
+            navPanel.Controls.Add(_lblSampleNav);
+            navPanel.Controls.Add(_btnSampleNext);
+
+            var leftContent = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                RowCount = 2,
+                ColumnCount = 1,
+                Margin = Padding.Empty,
+                Padding = Padding.Empty
+            };
+            leftContent.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+            leftContent.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            leftContent.Controls.Add(navPanel, 0, 0);
+            leftContent.Controls.Add(_colMappingGrid, 0, 1);
+            leftGroup.Controls.Add(leftContent);
+            body.Controls.Add(leftGroup, 0, 0);
 
             // Right: settings + preview
             var rightLayout = new TableLayoutPanel
@@ -864,6 +954,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         private void RefreshPreview()
         {
             if (_initializing || _project == null || _snapshot == null) return;
+            _deferredPreviewRefresh = false;
             if (_refreshingPreview)
             {
                 _pendingPreviewRefresh = true;
@@ -874,7 +965,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
 
             // Block settings and Accept; keep Cancel and View Details accessible
             if (_settingsGroup != null) _settingsGroup.Enabled = false;
-            if (_leftSplit != null) _leftSplit.Enabled = false;
+            if (_colMappingGrid != null) _colMappingGrid.Enabled = false;
             if (_btnAccept != null) _btnAccept.Enabled = false;
             if (_lblRefreshing != null) _lblRefreshing.Visible = true;
             if (_lblPreviewCreate != null) _lblPreviewCreate.Text = "...";
@@ -903,7 +994,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             {
                 _refreshingPreview = false;
                 if (_settingsGroup != null) _settingsGroup.Enabled = true;
-                if (_leftSplit != null) _leftSplit.Enabled = true;
+                if (_colMappingGrid != null) _colMappingGrid.Enabled = true;
                 if (_btnAccept != null) _btnAccept.Enabled = true;
                 if (_lblRefreshing != null) _lblRefreshing.Visible = false;
 
@@ -926,8 +1017,109 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                 var refreshed = task.Result;
                 _currentPreview = refreshed;
                 UpdatePreviewLabels(refreshed);
+                UpdateSampleSubset();
                 if (_btnDetails != null) _btnDetails.Enabled = refreshed != null;
             })));
+        }
+
+        private void SchedulePreviewRefresh()
+        {
+            if (_initializing || _project == null || _snapshot == null) return;
+            _deferredPreviewRefresh = true;
+            if (_previewRefreshTimer == null)
+            {
+                _previewRefreshTimer = new Timer { Interval = 900 };
+                _previewRefreshTimer.Tick += (s, e) =>
+                {
+                    _previewRefreshTimer.Stop();
+                    RefreshPreview();
+                };
+            }
+
+            _previewRefreshTimer.Stop();
+            _previewRefreshTimer.Start();
+        }
+
+        private void UpdateSampleSubset()
+        {
+            if (_sampleRows == null || !_sampleRows.Any())
+            {
+                _sampleSubsetIndices = new List<int>();
+                UpdateSampleNavLabel();
+                UpdateSampleDisplay();
+                return;
+            }
+
+            var preview = _currentPreview;
+            if (preview?.Items?.Any() == true)
+            {
+                var ops = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                if (_create?.Checked == true) ops.Add("Create");
+                if (_update?.Checked == true) ops.Add("Update");
+
+                var subset = preview.Items
+                    .Where(item => ops.Contains(item.Operation ?? "") && item.RowNumber >= 1 && item.RowNumber <= _sampleRows.Count)
+                    .Select(item => item.RowNumber - 1)
+                    .Distinct()
+                    .OrderBy(i => i)
+                    .ToList();
+
+                _sampleSubsetIndices = subset.Any() ? subset : Enumerable.Range(0, _sampleRows.Count).ToList();
+            }
+            else
+            {
+                _sampleSubsetIndices = Enumerable.Range(0, _sampleRows.Count).ToList();
+            }
+
+            _sampleSubsetPos = Math.Min(_sampleSubsetPos, Math.Max(0, _sampleSubsetIndices.Count - 1));
+            UpdateSampleNavLabel();
+            UpdateSampleDisplay();
+        }
+
+        private void NavigateSampleRow(int delta)
+        {
+            if (!_sampleSubsetIndices.Any()) return;
+            _sampleSubsetPos = Math.Max(0, Math.Min(_sampleSubsetIndices.Count - 1, _sampleSubsetPos + delta));
+            UpdateSampleNavLabel();
+            UpdateSampleDisplay();
+        }
+
+        private void UpdateSampleNavLabel()
+        {
+            if (_lblSampleNav == null) return;
+            if (!_sampleSubsetIndices.Any())
+            {
+                _lblSampleNav.Text = "—";
+                if (_btnSamplePrev != null) _btnSamplePrev.Enabled = false;
+                if (_btnSampleNext != null) _btnSampleNext.Enabled = false;
+            }
+            else
+            {
+                _lblSampleNav.Text = $"{_sampleSubsetPos + 1} / {_sampleSubsetIndices.Count}";
+                if (_btnSamplePrev != null) _btnSamplePrev.Enabled = _sampleSubsetPos > 0;
+                if (_btnSampleNext != null) _btnSampleNext.Enabled = _sampleSubsetPos < _sampleSubsetIndices.Count - 1;
+            }
+        }
+
+        private void UpdateSampleDisplay()
+        {
+            if (_colMappingGrid == null) return;
+            Dictionary<string, object> currentRow = null;
+            if (_sampleSubsetIndices.Any() && _sampleRows != null)
+            {
+                var rowIdx = _sampleSubsetIndices[_sampleSubsetPos];
+                if (rowIdx >= 0 && rowIdx < _sampleRows.Count)
+                    currentRow = _sampleRows[rowIdx];
+            }
+
+            foreach (DataGridViewRow gridRow in _colMappingGrid.Rows)
+            {
+                var data = gridRow.Tag as ColumnMappingRowData;
+                if (data == null) continue;
+                object sampleVal = null;
+                currentRow?.TryGetValue(data.Column.LogicalName, out sampleVal);
+                gridRow.Cells["Sample"].Value = FormatSampleValue(sampleVal);
+            }
         }
 
         private ExcelImportMatchKeySelection BuildCurrentMatchKeySelectionFromUI()
@@ -952,14 +1144,21 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         private List<PushLookupMatchKey> BuildCurrentLookupMatchKeysFromUI()
         {
             var keys = new List<PushLookupMatchKey>();
-            if (_lookupGrid == null) return null;
-            foreach (DataGridViewRow row in _lookupGrid.Rows)
+            if (_colMappingGrid == null) return null;
+            foreach (DataGridViewRow row in _colMappingGrid.Rows)
             {
-                var data = row.Tag as LookupRowData;
-                if (data == null) continue;
-                keys.Add(data.MatchKey);
+                var data = row.Tag as ColumnMappingRowData;
+                if (data?.IsLookup != true || data.LookupKey == null) continue;
+                keys.Add(data.LookupKey);
             }
             return keys.Any() ? keys : null;
+        }
+
+        private static string FormatSampleValue(object val)
+        {
+            if (val == null) return "";
+            var str = val.ToString();
+            return str.Length > 35 ? str.Substring(0, 35) + "…" : str;
         }
 
         private static string LookupModeToDisplay(string mode)
@@ -1089,43 +1288,133 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                 var columns = _snapshot?.ColumnConfig;
                 if (columns != null)
                 {
-                    // Compute deselected columns from SelectedColumns (null = all included)
+                    var existingMappings = _step.Snapshot?.ColumnMappings;
                     var savedSelected = _step.Snapshot?.SelectedColumns;
-                    if (savedSelected != null && savedSelected.Any())
-                    {
-                        foreach (var col in columns.Where(c => !c.LogicalName.StartsWith("_", StringComparison.OrdinalIgnoreCase)))
-                            if (!savedSelected.Contains(col.LogicalName, StringComparer.OrdinalIgnoreCase))
-                                _deselectedColumns.Add(col.LogicalName);
-                    }
 
-                    _suppressColumnListCheck = true;
                     foreach (var col in columns.Where(c => !c.LogicalName.StartsWith("_", StringComparison.OrdinalIgnoreCase)))
                     {
-                        var colName = string.IsNullOrEmpty(col.DisplayName) ? col.LogicalName : $"{col.DisplayName} ({col.LogicalName})";
-                        var item = new ListViewItem(colName) { Tag = col };
-                        item.SubItems.Add(col.Type ?? "");
-                        _mainColList.Items.Add(item);
-                    }
-                    _suppressColumnListCheck = false;
+                        bool include;
+                        string targetAttr;
+                        PushLookupMatchKey lookupKey = null;
+                        var isLookup = col.Type == "Lookup" || col.Type == "Owner" || col.Type == "Customer";
 
-                    // Populate lookup grid
-                    foreach (var col in columns.Where(c => c.Type == "Lookup" || c.Type == "Owner" || c.Type == "Customer"))
-                    {
-                        var existingKey = currentLookupKeys.FirstOrDefault(k =>
-                            string.Equals(k.LogicalName, col.LogicalName, StringComparison.OrdinalIgnoreCase));
-                        var matchKey = existingKey ?? new PushLookupMatchKey { LogicalName = col.LogicalName, Mode = "Guid", Fields = new List<string>() };
-                        var modeDisplay = LookupModeToDisplay(matchKey.Mode);
-                        var configDisplay = BuildLookupConfigDisplay(matchKey);
-                        var colDisplay = string.IsNullOrEmpty(col.DisplayName) ? col.LogicalName : $"{col.DisplayName} ({col.LogicalName})";
-                        var rowIdx = _lookupGrid.Rows.Add(colDisplay, col.RelatedTable ?? "", modeDisplay, configDisplay);
-                        _lookupGrid.Rows[rowIdx].Tag = new LookupRowData { Column = col, MatchKey = matchKey };
+                        if (existingMappings != null)
+                        {
+                            var m = existingMappings.FirstOrDefault(x =>
+                                string.Equals(x.SnapshotColumn, col.LogicalName, StringComparison.OrdinalIgnoreCase));
+                            include = m?.Include ?? true;
+                            targetAttr = !string.IsNullOrWhiteSpace(m?.DataverseAttribute) ? m.DataverseAttribute : col.LogicalName;
+                            if (isLookup)
+                                lookupKey = m?.LookupKey
+                                    ?? currentLookupKeys.FirstOrDefault(k => string.Equals(k.LogicalName, col.LogicalName, StringComparison.OrdinalIgnoreCase))
+                                    ?? new PushLookupMatchKey { LogicalName = col.LogicalName, Mode = "Guid", Fields = new List<string>() };
+                        }
+                        else
+                        {
+                            include = savedSelected == null || savedSelected.Contains(col.LogicalName, StringComparer.OrdinalIgnoreCase);
+                            targetAttr = col.LogicalName;
+                            if (isLookup)
+                                lookupKey = currentLookupKeys.FirstOrDefault(k => string.Equals(k.LogicalName, col.LogicalName, StringComparison.OrdinalIgnoreCase))
+                                    ?? new PushLookupMatchKey { LogicalName = col.LogicalName, Mode = "Guid", Fields = new List<string>() };
+                        }
+
+                        var colDisplay = string.IsNullOrEmpty(col.DisplayName) ? col.LogicalName : $"{col.LogicalName} ({col.DisplayName})";
+                        var modeDisplay = isLookup ? LookupModeToDisplay(lookupKey?.Mode ?? "Guid") : "-";
+                        var configDisplay = isLookup ? BuildLookupConfigDisplay(lookupKey) : "";
+
+                        // Build row with per-cell types so non-lookup rows get plain text in Lookup Match.
+                        // ReadOnly cannot be set before a cell is attached to a grid, so set it after Add().
+                        var newRow = new DataGridViewRow();
+                        newRow.Cells.Add(new DataGridViewCheckBoxCell());  // Include
+                        newRow.Cells.Add(new DataGridViewTextBoxCell());   // SnapshotColumn
+
+                        if (_targetTableAttributes.Any())
+                        {
+                            var taCbo = new DataGridViewComboBoxCell();
+                            foreach (var attr in _targetTableAttributes)
+                                taCbo.Items.Add(attr);
+                            if (!string.IsNullOrEmpty(targetAttr) &&
+                                !_targetTableAttributes.Contains(targetAttr, StringComparer.OrdinalIgnoreCase))
+                                taCbo.Items.Add(targetAttr);
+                            newRow.Cells.Add(taCbo);                       // TargetAttribute (combobox)
+                        }
+                        else
+                        {
+                            newRow.Cells.Add(new DataGridViewTextBoxCell()); // TargetAttribute (plain text)
+                        }
+
+                        newRow.Cells.Add(new DataGridViewTextBoxCell());   // Type
+
+                        if (isLookup)
+                        {
+                            var lmCbo = new DataGridViewComboBoxCell();
+                            lmCbo.Items.AddRange(new object[] { "Use Source GUID", "Alternate Key", "Custom Columns", "Skip Field" });
+                            newRow.Cells.Add(lmCbo);                       // LookupMode (combobox for lookups)
+                        }
+                        else
+                        {
+                            newRow.Cells.Add(new DataGridViewTextBoxCell()); // LookupMode (plain "-")
+                        }
+
+                        // RelatedTable: combobox for polymorphic lookups (multiple possible targets), plain text otherwise
+                        List<string> rtTargets = null;
+                        var isPolymorphic = isLookup && _lookupTargets.TryGetValue(col.LogicalName, out rtTargets) && rtTargets?.Count > 1;
+                        if (isPolymorphic)
+                        {
+                            var rtCbo = new DataGridViewComboBoxCell();
+                            foreach (var t in rtTargets) rtCbo.Items.Add(t);
+                            newRow.Cells.Add(rtCbo);                       // RelatedTable (combobox)
+                        }
+                        else
+                        {
+                            newRow.Cells.Add(new DataGridViewTextBoxCell()); // RelatedTable (plain)
+                        }
+
+                        newRow.Cells.Add(new DataGridViewTextBoxCell());   // Config
+                        newRow.Cells.Add(new DataGridViewTextBoxCell());   // Sample
+
+                        var rowIdx = _colMappingGrid.Rows.Add(newRow);
+
+                        // Set values and ReadOnly AFTER the row is part of the grid
+                        var desiredRelTable = isLookup ? (lookupKey?.TargetRelatedTable ?? col.RelatedTable ?? "") : "";
+                        // For combobox cells, ensure the value is one of the allowed items
+                        var rtCell = _colMappingGrid.Rows[rowIdx].Cells["RelatedTable"];
+                        string relatedTableDisplay;
+                        if (rtCell is DataGridViewComboBoxCell rtCboCell)
+                            relatedTableDisplay = rtCboCell.Items.Contains(desiredRelTable) ? desiredRelTable
+                                : (rtCboCell.Items.Count > 0 ? rtCboCell.Items[0].ToString() : "");
+                        else
+                            relatedTableDisplay = desiredRelTable;
+
+                        _colMappingGrid.Rows[rowIdx].Cells["Include"].Value = include;
+                        _colMappingGrid.Rows[rowIdx].Cells["SnapshotColumn"].Value = colDisplay;
+                        _colMappingGrid.Rows[rowIdx].Cells["SnapshotColumn"].ReadOnly = true;
+                        _colMappingGrid.Rows[rowIdx].Cells["TargetAttribute"].Value = targetAttr;
+                        _colMappingGrid.Rows[rowIdx].Cells["Type"].Value = col.Type ?? "";
+                        _colMappingGrid.Rows[rowIdx].Cells["Type"].ReadOnly = true;
+                        _colMappingGrid.Rows[rowIdx].Cells["LookupMode"].Value = modeDisplay;
+                        _colMappingGrid.Rows[rowIdx].Cells["RelatedTable"].Value = relatedTableDisplay;
+                        _colMappingGrid.Rows[rowIdx].Cells["Config"].Value = configDisplay;
+                        _colMappingGrid.Rows[rowIdx].Cells["Sample"].Value = "";
+                        _colMappingGrid.Rows[rowIdx].Cells["Sample"].ReadOnly = true;
+                        if (!isLookup)
+                        {
+                            _colMappingGrid.Rows[rowIdx].Cells["LookupMode"].ReadOnly = true;
+                            _colMappingGrid.Rows[rowIdx].Cells["RelatedTable"].ReadOnly = true;
+                            _colMappingGrid.Rows[rowIdx].Cells["Config"].ReadOnly = true;
+                        }
+                        else if (!isPolymorphic)
+                        {
+                            // Single-target lookup: RelatedTable is informational only
+                            _colMappingGrid.Rows[rowIdx].Cells["RelatedTable"].ReadOnly = true;
+                        }
+                        _colMappingGrid.Rows[rowIdx].Tag = new ColumnMappingRowData { Column = col, LookupKey = lookupKey };
                     }
                 }
 
-                if (_lookupGrid.Rows.Count == 0)
-                    _lookupGrid.Rows.Add("(no lookup columns in snapshot)", "", "Use Source GUID", "");
+                UpdateSampleSubset();
 
-                _lookupGrid.CellEndEdit += LookupGrid_CellEndEdit;
+                _colMappingGrid.CellEndEdit += ColMappingGrid_CellEndEdit;
 
                 var mode = currentMatchKey?.Mode ?? "Guid";
                 _customFields = string.Equals(mode, "Custom", StringComparison.OrdinalIgnoreCase) && currentMatchKey?.Fields != null
@@ -1168,32 +1457,20 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             _btnCustomFields.Visible = isCustom;
             UpdateCustomFieldsButtonText();
 
-            _suppressColumnListCheck = true;
-            foreach (ListViewItem item in _mainColList.Items)
+            if (_colMappingGrid == null) return;
+            foreach (DataGridViewRow row in _colMappingGrid.Rows)
             {
-                var col = item.Tag as DataTableColumnConfig;
-                if (col == null) continue;
-
-                item.Checked = !_deselectedColumns.Contains(col.LogicalName);
-                if (isAlt && _cboAltKey.SelectedItem is AltKeyItem altKey)
-                {
-                    item.ForeColor = altKey.Option.Fields.Contains(col.LogicalName, StringComparer.OrdinalIgnoreCase)
-                        ? Color.DodgerBlue
-                        : SystemColors.WindowText;
-                }
-                else if (isCustom && _customFields.Contains(col.LogicalName, StringComparer.OrdinalIgnoreCase))
-                {
-                    item.ForeColor = Color.DodgerBlue;
-                }
+                var data = row.Tag as ColumnMappingRowData;
+                if (data == null) continue;
+                var cell = row.Cells["SnapshotColumn"];
+                if (isAlt && _cboAltKey.SelectedItem is AltKeyItem altKey
+                    && altKey.Option.Fields.Contains(data.Column.LogicalName, StringComparer.OrdinalIgnoreCase))
+                    cell.Style.ForeColor = Color.DodgerBlue;
+                else if (isCustom && _customFields.Contains(data.Column.LogicalName, StringComparer.OrdinalIgnoreCase))
+                    cell.Style.ForeColor = Color.DodgerBlue;
                 else
-                {
-                    item.ForeColor = _deselectedColumns.Contains(col.LogicalName)
-                        ? Color.Gray
-                        : SystemColors.WindowText;
-                }
+                    cell.Style.ForeColor = SystemColors.WindowText;
             }
-            _suppressColumnListCheck = false;
-            _mainColList.Enabled = true;
         }
 
         private void UpdateCustomFieldsButtonText()
@@ -1222,29 +1499,22 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             }
         }
 
-        private void ColList_ItemCheck(object sender, ItemCheckEventArgs e)
+        private void ColMappingGrid_CellEndEdit(object sender, DataGridViewCellEventArgs e)
         {
-            if (_suppressColumnListCheck) return;
-            var item = _mainColList.Items[e.Index];
-            var col = item.Tag as DataTableColumnConfig;
-            if (col == null) return;
+            if (e.ColumnIndex < 0) return;
+            var colName = _colMappingGrid.Columns[e.ColumnIndex].Name;
+            if (colName != "LookupMode" && colName != "RelatedTable") return;
+            var row = _colMappingGrid.Rows[e.RowIndex];
+            var data = row.Tag as ColumnMappingRowData;
+            if (data?.IsLookup != true) return;
 
-            if (e.NewValue == CheckState.Checked)
-                _deselectedColumns.Remove(col.LogicalName);
-            else
-                _deselectedColumns.Add(col.LogicalName);
+            if (colName == "RelatedTable")
+            {
+                HandleRelatedTableChanged(row, data);
+                return;
+            }
 
-            RefreshPreview();
-        }
-
-        private void LookupGrid_CellEndEdit(object sender, DataGridViewCellEventArgs e)
-        {
-            if (e.ColumnIndex < 0 || _lookupGrid.Columns[e.ColumnIndex].Name != "Mode") return;
-            var row = _lookupGrid.Rows[e.RowIndex];
-            var data = row.Tag as LookupRowData;
-            if (data == null) return;
-
-            var modeVal = row.Cells["Mode"].Value?.ToString() ?? "Use Source GUID";
+            var modeVal = row.Cells["LookupMode"].Value?.ToString() ?? "Use Source GUID";
 
             if (string.Equals(modeVal, "Alternate Key", StringComparison.OrdinalIgnoreCase))
             {
@@ -1256,21 +1526,21 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                         $"No alternate keys found for '{data.Column.RelatedTable}' in the target environment" +
                         (tableInfo?.SnapshotColumns?.Any() == true ? "" : " (no snapshot available for this table either)") + ".",
                         "Alternate Key", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    row.Cells["Mode"].Value = LookupModeToDisplay(data.MatchKey.Mode);
+                    row.Cells["LookupMode"].Value = LookupModeToDisplay(data.LookupKey.Mode);
                     return;
                 }
-                using (var dlg = new LookupAltKeyPickerDialog($"Alternate Key for '{data.Column.RelatedTable}'", altKeys, data.MatchKey.AlternateKeyName))
+                using (var dlg = new LookupAltKeyPickerDialog($"Alternate Key for '{data.Column.RelatedTable}'", altKeys, data.LookupKey.AlternateKeyName))
                 {
                     if (dlg.ShowDialog(this) == DialogResult.OK)
                     {
-                        data.MatchKey.Mode = "AlternateKey";
-                        data.MatchKey.AlternateKeyName = dlg.SelectedKeyName;
-                        data.MatchKey.Fields = dlg.SelectedFields;
-                        row.Cells["Config"].Value = BuildLookupConfigDisplay(data.MatchKey);
+                        data.LookupKey.Mode = "AlternateKey";
+                        data.LookupKey.AlternateKeyName = dlg.SelectedKeyName;
+                        data.LookupKey.Fields = dlg.SelectedFields;
+                        row.Cells["Config"].Value = BuildLookupConfigDisplay(data.LookupKey);
                     }
                     else
                     {
-                        row.Cells["Mode"].Value = LookupModeToDisplay(data.MatchKey.Mode);
+                        row.Cells["LookupMode"].Value = LookupModeToDisplay(data.LookupKey.Mode);
                         return;
                     }
                 }
@@ -1286,38 +1556,108 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                     MessageBox.Show(this,
                         $"No columns available for '{data.Column.RelatedTable}'. Load that table in the target environment first or add a snapshot for the table to the project.",
                         "Custom Columns", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    row.Cells["Mode"].Value = LookupModeToDisplay(data.MatchKey.Mode);
+                    row.Cells["LookupMode"].Value = LookupModeToDisplay(data.LookupKey.Mode);
                     return;
                 }
                 using (var dlg = new LookupCustomFieldsPickerDialog($"Custom match columns for '{data.Column.RelatedTable}'", cols,
-                    string.Equals(data.MatchKey.Mode, "Custom", StringComparison.OrdinalIgnoreCase) ? data.MatchKey.Fields : null))
+                    string.Equals(data.LookupKey.Mode, "Custom", StringComparison.OrdinalIgnoreCase) ? data.LookupKey.Fields : null))
                 {
                     if (dlg.ShowDialog(this) == DialogResult.OK && dlg.SelectedFields.Any())
                     {
-                        data.MatchKey.Mode = "Custom";
-                        data.MatchKey.AlternateKeyName = null;
-                        data.MatchKey.Fields = dlg.SelectedFields;
-                        row.Cells["Config"].Value = BuildLookupConfigDisplay(data.MatchKey);
+                        data.LookupKey.Mode = "Custom";
+                        data.LookupKey.AlternateKeyName = null;
+                        data.LookupKey.Fields = dlg.SelectedFields;
+                        row.Cells["Config"].Value = BuildLookupConfigDisplay(data.LookupKey);
                     }
                     else
                     {
-                        row.Cells["Mode"].Value = LookupModeToDisplay(data.MatchKey.Mode);
+                        row.Cells["LookupMode"].Value = LookupModeToDisplay(data.LookupKey.Mode);
                         return;
                     }
                 }
             }
             else if (string.Equals(modeVal, "Skip Field", StringComparison.OrdinalIgnoreCase))
             {
-                data.MatchKey.Mode = "Skip";
-                data.MatchKey.AlternateKeyName = null;
-                data.MatchKey.Fields = new List<string>();
+                data.LookupKey.Mode = "Skip";
+                data.LookupKey.AlternateKeyName = null;
+                data.LookupKey.Fields = new List<string>();
                 row.Cells["Config"].Value = "";
             }
             else // Use Source GUID
             {
-                data.MatchKey.Mode = "Guid";
-                data.MatchKey.AlternateKeyName = null;
-                data.MatchKey.Fields = new List<string>();
+                data.LookupKey.Mode = "Guid";
+                data.LookupKey.AlternateKeyName = null;
+                data.LookupKey.Fields = new List<string>();
+                row.Cells["Config"].Value = "";
+            }
+
+            RefreshPreview();
+        }
+
+        private void HandleRelatedTableChanged(DataGridViewRow row, ColumnMappingRowData data)
+        {
+            if (data.LookupKey == null) return;
+
+            var newTable = row.Cells["RelatedTable"].Value?.ToString()?.Trim() ?? "";
+            var previousTable = data.LookupKey.TargetRelatedTable ?? data.Column.RelatedTable ?? "";
+            if (string.Equals(newTable, previousTable, StringComparison.OrdinalIgnoreCase)) return;
+
+            var previousMode = data.LookupKey.Mode?.ToLowerInvariant() ?? "guid";
+
+            data.LookupKey.TargetRelatedTable = string.IsNullOrEmpty(newTable)
+                || string.Equals(newTable, data.Column.RelatedTable, StringComparison.OrdinalIgnoreCase)
+                ? null : newTable;
+            data.LookupKey.AlternateKeyName = null;
+            data.LookupKey.Fields = new List<string>();
+
+            if (previousMode == "alternatekey" || previousMode == "custom")
+            {
+                data.LookupKey.Mode = "Guid";
+                row.Cells["LookupMode"].Value = "Use Source GUID";
+                row.Cells["Config"].Value = "";
+
+                _relatedTableData.TryGetValue(newTable, out var tableInfo);
+
+                if (previousMode == "alternatekey")
+                {
+                    var altKeys = tableInfo?.AltKeys ?? new List<ExcelImportAlternateKeyOption>();
+                    if (altKeys.Any())
+                    {
+                        using (var dlg = new LookupAltKeyPickerDialog($"Alternate Key for '{newTable}'", altKeys, null))
+                        {
+                            if (dlg.ShowDialog(this) == DialogResult.OK)
+                            {
+                                data.LookupKey.Mode = "AlternateKey";
+                                data.LookupKey.AlternateKeyName = dlg.SelectedKeyName;
+                                data.LookupKey.Fields = dlg.SelectedFields;
+                                row.Cells["LookupMode"].Value = LookupModeToDisplay("AlternateKey");
+                                row.Cells["Config"].Value = BuildLookupConfigDisplay(data.LookupKey);
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    var cols = tableInfo?.SnapshotColumns?.Any() == true
+                        ? tableInfo.SnapshotColumns
+                        : tableInfo?.TargetColumns ?? new List<DataTableColumnConfig>();
+                    if (cols.Any())
+                    {
+                        using (var dlg = new LookupCustomFieldsPickerDialog($"Custom match columns for '{newTable}'", cols, null))
+                        {
+                            if (dlg.ShowDialog(this) == DialogResult.OK && dlg.SelectedFields.Any())
+                            {
+                                data.LookupKey.Mode = "Custom";
+                                data.LookupKey.Fields = dlg.SelectedFields;
+                                row.Cells["LookupMode"].Value = LookupModeToDisplay("Custom");
+                                row.Cells["Config"].Value = BuildLookupConfigDisplay(data.LookupKey);
+                            }
+                        }
+                    }
+                }
+            }
+            else
+            {
                 row.Cells["Config"].Value = "";
             }
 
@@ -1326,6 +1666,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
 
         private void Apply()
         {
+            _colMappingGrid?.EndEdit();
             var selectedTarget = GetSelectedTargetEnvironment();
             if (selectedTarget != null)
             {
@@ -1374,29 +1715,52 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                 ApplyPushMatchKeySelection(new ExcelImportMatchKeySelection { Mode = "Guid" });
             }
 
-            // Save column selection (null = all included)
-            if (_deselectedColumns.Any())
+            // Build ColumnMappings from grid; also derive SelectedColumns + LookupMatchKeys for backward compatibility
+            var columnMappings = new List<ColumnAttributeMapping>();
+            var lookupKeys = new List<PushLookupMatchKey>();
+            foreach (DataGridViewRow row in _colMappingGrid.Rows)
+            {
+                var data = row.Tag as ColumnMappingRowData;
+                if (data == null) continue;
+                var included = row.Cells["Include"].Value is bool b && b;
+                var targetAttr = row.Cells["TargetAttribute"].Value?.ToString()?.Trim() ?? "";
+                if (string.Equals(targetAttr, data.Column.LogicalName, StringComparison.OrdinalIgnoreCase))
+                    targetAttr = null;
+
+                if (data.IsLookup && data.LookupKey != null)
+                {
+                    var relatedTableVal = row.Cells["RelatedTable"].Value?.ToString()?.Trim() ?? "";
+                    data.LookupKey.TargetRelatedTable = string.IsNullOrEmpty(relatedTableVal)
+                        || string.Equals(relatedTableVal, data.Column.RelatedTable, StringComparison.OrdinalIgnoreCase)
+                        ? null : relatedTableVal;
+                }
+
+                columnMappings.Add(new ColumnAttributeMapping
+                {
+                    SnapshotColumn = data.Column.LogicalName,
+                    DataverseAttribute = string.IsNullOrEmpty(targetAttr) ? null : targetAttr,
+                    Include = included,
+                    LookupKey = data.LookupKey
+                });
+                if (data.IsLookup && data.LookupKey != null)
+                    lookupKeys.Add(data.LookupKey);
+            }
+            _step.Snapshot.ColumnMappings = columnMappings.Any() ? columnMappings : null;
+
+            var deselected = columnMappings.Where(m => !m.Include).Select(m => m.SnapshotColumn).ToList();
+            if (deselected.Any())
             {
                 var allCols = _snapshot?.ColumnConfig?
                     .Where(c => !c.LogicalName.StartsWith("_", StringComparison.OrdinalIgnoreCase))
                     .Select(c => c.LogicalName)
                     .ToList() ?? new List<string>();
                 _step.Snapshot.SelectedColumns = allCols
-                    .Where(c => !_deselectedColumns.Contains(c))
+                    .Where(c => !deselected.Contains(c, StringComparer.OrdinalIgnoreCase))
                     .ToList();
             }
             else
             {
                 _step.Snapshot.SelectedColumns = null;
-            }
-
-            // Collect per-lookup match key settings from the grid (via LookupRowData)
-            var lookupKeys = new List<PushLookupMatchKey>();
-            foreach (DataGridViewRow row in _lookupGrid.Rows)
-            {
-                var data = row.Tag as LookupRowData;
-                if (data == null) continue;
-                lookupKeys.Add(data.MatchKey);
             }
             _step.Snapshot.LookupMatchKeys = lookupKeys.Any() ? lookupKeys : null;
 
@@ -1418,7 +1782,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                     Errors = _currentPreview.ErrorCount,
                     Source = "Configuration preview",
                     IsEstimated = _currentPreview.HasMoreRows,
-                    IsStale = false
+                    IsStale = _deferredPreviewRefresh || (_previewRefreshTimer?.Enabled == true)
                 };
             }
         }

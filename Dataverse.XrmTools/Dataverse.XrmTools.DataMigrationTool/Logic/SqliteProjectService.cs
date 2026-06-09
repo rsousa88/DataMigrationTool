@@ -1085,6 +1085,35 @@ VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @sfp, @pf, @pid, @
             }
         }
 
+        public Dictionary<string, string> ReadSnapshotDisplayNames(string tableSuffix, string nameColumn, IEnumerable<string> sourceIds)
+        {
+            lock (_dbLock)
+            {
+                var ids = sourceIds?.Where(id => !string.IsNullOrEmpty(id)).Distinct().ToList() ?? new List<string>();
+                var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                if (ids.Count == 0) return result;
+
+                using var check = _connection.CreateCommand();
+                check.CommandText = $"SELECT name FROM sqlite_master WHERE type='table' AND name='data_{tableSuffix}';";
+                if (check.ExecuteScalar() == null) return result;
+
+                var paramNames = ids.Select((_, i) => $"@id{i}").ToList();
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = $"SELECT _source_id, [{nameColumn}] FROM [data_{tableSuffix}] WHERE _source_id IN ({string.Join(",", paramNames)});";
+                for (int i = 0; i < ids.Count; i++)
+                    cmd.Parameters.AddWithValue($"@id{i}", ids[i]);
+
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read())
+                {
+                    var sourceId = reader.IsDBNull(0) ? null : reader.GetString(0);
+                    var name = reader.IsDBNull(1) ? null : reader.GetValue(1)?.ToString();
+                    if (sourceId != null) result[sourceId] = name ?? "";
+                }
+                return result;
+            }
+        }
+
         public int CountSnapshotRows(string tableSuffix)
         {
             lock (_dbLock)

@@ -99,7 +99,6 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private ToolStripButton _executionPlanSaveButton;
         private ToolStripButton _executionPlanSaveAsButton;
         private ToolStripButton _executionPlanValidateButton;
-        private ToolStripButton _executionPlanRefreshCountsButton;
         private ToolStripButton _executionPlanExecuteButton;
         private ToolStripButton _executionPlanPreviewStepButton;
         private ToolStripButton _executionPlanConfigureStepButton;
@@ -563,6 +562,16 @@ namespace Dataverse.XrmTools.DataMigrationTool
             return client?.EnvironmentId ?? client?.ConnectedOrgId.ToString() ?? client?.ConnectedOrgUniqueName;
         }
 
+        private bool IsSourceEnvironment(string uniqueName)
+        {
+            if (string.IsNullOrWhiteSpace(uniqueName) || _sourceClient == null) return false;
+            var envId = GetClientEnvironmentId(_sourceClient);
+            return string.Equals(uniqueName, envId, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(uniqueName, _sourceClient.ConnectedOrgUniqueName, StringComparison.OrdinalIgnoreCase)
+                || (!string.IsNullOrWhiteSpace(_project?.SourceEnvironment?.Id)
+                    && string.Equals(uniqueName, _project.SourceEnvironment.Id, StringComparison.OrdinalIgnoreCase));
+        }
+
         private void UpdateExecutionPlanTargetEnvironments()
         {
             if (_executionPlan == null) return;
@@ -591,17 +600,23 @@ namespace Dataverse.XrmTools.DataMigrationTool
             _executionTargetClientOverride = null;
             _executionTargetInstanceOverride = null;
 
-            if (!ExecutionPlanService.TryValidateTargetConnection(step, _targetClients.Keys, _targetClient != null, out error))
-                return false;
-
             var uniqueName = step?.TargetEnvironment?.UniqueName;
-            if (string.IsNullOrWhiteSpace(uniqueName))
+
+            // Source environment is always a valid push target — use _sourceClient directly
+            if (!string.IsNullOrWhiteSpace(uniqueName) && IsSourceEnvironment(uniqueName))
             {
+                if (_sourceClient == null) { error = "Source environment is not connected."; return false; }
+                _executionTargetClientOverride = _sourceClient;
                 return true;
             }
 
-            _targetClients.TryGetValue(uniqueName, out var client);
+            if (!ExecutionPlanService.TryValidateTargetConnection(step, _targetClients.Keys, _targetClient != null, out error))
+                return false;
 
+            if (string.IsNullOrWhiteSpace(uniqueName))
+                return true;
+
+            _targetClients.TryGetValue(uniqueName, out var client);
             _executionTargetClientOverride = client;
             _targetInstances.TryGetValue(uniqueName, out _executionTargetInstanceOverride);
             return true;

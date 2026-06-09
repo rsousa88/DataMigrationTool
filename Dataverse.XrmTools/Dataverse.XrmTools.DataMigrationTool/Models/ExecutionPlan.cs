@@ -77,6 +77,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
         public List<PushLookupMatchKey> LookupMatchKeys { get; set; }
         // null/empty = all snapshot columns; otherwise only push these columns
         public List<string> SelectedColumns { get; set; }
+        // Full per-column config: include flag, attribute remap, lookup key
+        public List<ColumnAttributeMapping> ColumnMappings { get; set; }
     }
 
     public class PushLookupMatchKey
@@ -85,6 +87,15 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
         public string Mode { get; set; }         // "Guid" | "AlternateKey" | "Custom" | "Skip"
         public string AlternateKeyName { get; set; }
         public List<string> Fields { get; set; } = new List<string>();
+        public string TargetRelatedTable { get; set; }  // null = use snapshot col.RelatedTable
+    }
+
+    public class ColumnAttributeMapping
+    {
+        public string SnapshotColumn { get; set; }
+        public string DataverseAttribute { get; set; }  // null = same as SnapshotColumn
+        public bool Include { get; set; } = true;
+        public PushLookupMatchKey LookupKey { get; set; }
     }
 
     public class ExecutionPlanFailurePolicy
