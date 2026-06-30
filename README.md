@@ -167,6 +167,14 @@ In project workflows, mappings are stored in the active `.dmtproj` per source/ta
 
 ## Release Notes
 
+### 2026.6.30.x
+- [NEW] Snapshot data grid now includes a search field that filters across all columns in real time
+- [NEW] Snapshots can be duplicated from the right-click context menu, copying all rows to a new independent snapshot
+- [NEW] Plan validation now runs a per-row push preview and surfaces lookup and owner resolution issues as step warnings
+- [FIX] owningbusinessunit, owninguser, and owningteam are now excluded from push payloads (derived system attributes that Dataverse computes from ownerid)
+- [FIX] Push error messages now include the record's primary name alongside the source ID for easier identification
+- [FIX] RC column in the snapshot list updates live while Rowcraft is open, reflecting staged change counts as edits arrive
+
 ### 2026.6.9.x
 - [FIX] Lookup fields storing alternate key values (non-GUIDs) now resolve correctly during push via direct alternate key field lookup
 - [FIX] Push and preview no longer classify already-pushed records as Create when the snapshot row has isNew set; ID mappings are checked first

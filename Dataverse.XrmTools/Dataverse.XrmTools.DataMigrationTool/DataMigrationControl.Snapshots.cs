@@ -26,6 +26,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private System.Windows.Forms.Label _inlineDataPageLabel;
         private Button _inlineDataPrevButton;
         private Button _inlineDataNextButton;
+        private TextBox _inlineSearchBox;
+        private System.Windows.Forms.Timer _inlineSearchTimer;
         private DmtSnapshot _inlineSelectedSnapshot;
         private int _inlineDataCurrentPage;
         private int _inlineDataTotalRows;
@@ -174,13 +176,35 @@ namespace Dataverse.XrmTools.DataMigrationTool
             var rightLayout = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                RowCount = 2,
+                RowCount = 3,
                 ColumnCount = 1,
                 Margin = Padding.Empty,
                 Padding = Padding.Empty
             };
+            rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
             rightLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
+
+            var searchPanel = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.LeftToRight,
+                Padding = new Padding(2, 3, 2, 2),
+                WrapContents = false
+            };
+            var searchLabel = new System.Windows.Forms.Label
+            {
+                Text = "Search:",
+                AutoSize = true,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(0, 3, 4, 0)
+            };
+            _inlineSearchBox = new TextBox { Width = 220, Height = 20 };
+            _inlineSearchTimer = new System.Windows.Forms.Timer { Interval = 350 };
+            _inlineSearchTimer.Tick += (s, e) => { _inlineSearchTimer.Stop(); LoadInlineDataPage(0); };
+            _inlineSearchBox.TextChanged += (s, e) => { _inlineSearchTimer.Stop(); _inlineSearchTimer.Start(); };
+            searchPanel.Controls.AddRange(new Control[] { searchLabel, _inlineSearchBox });
+            rightLayout.Controls.Add(searchPanel, 0, 0);
 
             _inlineDataGrid = new DataGridView
             {
@@ -195,7 +219,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 ClipboardCopyMode = DataGridViewClipboardCopyMode.EnableWithoutHeaderText,
                 Font = new Font("Consolas", 8.5f)
             };
-            rightLayout.Controls.Add(_inlineDataGrid, 0, 0);
+            rightLayout.Controls.Add(_inlineDataGrid, 0, 1);
 
             var pagBar = new FlowLayoutPanel
             {
@@ -215,7 +239,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 Padding = new Padding(8, 4, 0, 0)
             };
             pagBar.Controls.AddRange(new Control[] { _inlineDataPrevButton, _inlineDataNextButton, _inlineDataPageLabel });
-            rightLayout.Controls.Add(pagBar, 0, 1);
+            rightLayout.Controls.Add(pagBar, 0, 2);
 
             snapSplit.Panel2.Controls.Add(rightLayout);
             outerLayout.Controls.Add(snapSplit, 0, 1);
@@ -257,6 +281,10 @@ namespace Dataverse.XrmTools.DataMigrationTool
             rename.Click += (s, e) => RenameInlineSnapshot();
             menu.Items.Add(rename);
 
+            var duplicate = new ToolStripMenuItem("Duplicate");
+            duplicate.Click += (s, e) => DuplicateInlineSnapshot();
+            menu.Items.Add(duplicate);
+
             var delete = new ToolStripMenuItem("Delete");
             delete.Click += (s, e) => DeleteInlineSnapshot();
             menu.Items.Add(delete);
@@ -278,6 +306,21 @@ namespace Dataverse.XrmTools.DataMigrationTool
         #endregion
 
         #region Snapshots Operations
+
+        internal void RefreshInlineSnapshotRC()
+        {
+            if (_inlineSnapList == null || _project?.Service == null) return;
+            var pending = _project.Service.GetPendingRowcraftChangeSummaries()
+                .ToDictionary(s => s.SnapshotName, StringComparer.OrdinalIgnoreCase);
+            foreach (ListViewItem item in _inlineSnapList.Items)
+            {
+                var snap = item.Tag as DmtSnapshot;
+                if (snap == null) continue;
+                var hasRC = pending.TryGetValue(snap.Name, out var summary) && summary.Total > 0;
+                item.SubItems[5].Text = hasRC ? summary.Total.ToString("N0") : "";
+                item.BackColor = hasRC ? Color.FromArgb(255, 248, 225) : SystemColors.Window;
+            }
+        }
 
         private void FitSnapshotListColumns()
         {
@@ -637,6 +680,45 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
         }
 
+        private void DuplicateInlineSnapshot()
+        {
+            var snap = GetInlineContextSnapshot();
+            if (snap == null || _project?.Service == null) return;
+
+            using (var dlg = new SnapshotNameDialog("Copy of " + snap.Name, "Duplicate Snapshot"))
+            {
+                if (dlg.ShowDialog(ParentForm) != DialogResult.OK) return;
+                var newName = dlg.SnapshotName;
+
+                if (_project.Service.HasSnapshot(newName))
+                {
+                    MessageBox.Show(this, $"A snapshot named '{newName}' already exists.", "Name Conflict",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                try
+                {
+                    var copy = _project.Service.DuplicateSnapshot(snap.Name, newName);
+                    RefreshInlineSnapshotList();
+                    foreach (ListViewItem item in _inlineSnapList.Items)
+                    {
+                        if (string.Equals((item.Tag as DmtSnapshot)?.Id, copy.Id, StringComparison.OrdinalIgnoreCase))
+                        {
+                            item.Selected = true;
+                            item.EnsureVisible();
+                            break;
+                        }
+                    }
+                    SendMessageToStatusBar?.Invoke(this, new StatusBarMessageEventArgs($"Snapshot duplicated as '{newName}'"));
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this, $"Duplicate failed: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+        }
+
         private void DeleteInlineSnapshot()
         {
             var snap = GetInlineContextSnapshot();
@@ -727,8 +809,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
             _inlineSelectedSnapshot = snap;
             _inlineDataCurrentPage = 0;
-            try { _inlineDataTotalRows = _project.Service.CountSnapshotRows(snap.TableSuffix); }
-            catch { _inlineDataTotalRows = snap.RowCount; }
+            _inlineSearchTimer?.Stop();
+            if (_inlineSearchBox != null) _inlineSearchBox.Text = "";
 
             BuildInlineGridColumns(snap);
             LoadInlineDataPage(0);
@@ -764,6 +846,16 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             if (_inlineSelectedSnapshot == null || _project?.Service == null) return;
             var snap = _inlineSelectedSnapshot;
+            var search = _inlineSearchBox?.Text?.Trim();
+            if (string.IsNullOrEmpty(search)) search = null;
+
+            // Recount when filter changes (search active) or on first load
+            if (page == 0 || search != null)
+            {
+                try { _inlineDataTotalRows = _project.Service.CountSnapshotRows(snap.TableSuffix, snap.ColumnConfig, search); }
+                catch { _inlineDataTotalRows = search == null ? snap.RowCount : 0; }
+            }
+
             var offset = page * InlinePageSize;
 
             var optCache = new Dictionary<string, Dictionary<int, string>>();
@@ -776,7 +868,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             List<Dictionary<string, object>> rows;
             try
             {
-                rows = _project.Service.ReadSnapshotRecords(snap.TableSuffix, snap.ColumnConfig, offset, InlinePageSize).ToList();
+                rows = _project.Service.ReadSnapshotRecords(snap.TableSuffix, snap.ColumnConfig, offset, InlinePageSize, search).ToList();
             }
             catch (Exception ex)
             {

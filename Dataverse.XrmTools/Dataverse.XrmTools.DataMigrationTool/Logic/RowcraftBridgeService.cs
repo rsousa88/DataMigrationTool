@@ -38,6 +38,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
         public bool IsRunning => _listener != null && _listener.IsListening;
         public int Port { get; private set; }
         public string BaseUrl => IsRunning ? $"http://127.0.0.1:{Port}/rowcraft/" : null;
+        public Action OnChangeStaged { get; set; }
 
         public string StartForRowcraft()
         {
@@ -267,6 +268,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 var clientRowId = ExtractClientRowId(body);
                 var change = project.StageRowcraftCreate(sessionId, body, clientRowId);
                 WriteJson(context, 200, ToConnectorChange(change));
+                OnChangeStaged?.Invoke();
                 return;
             }
 
@@ -276,6 +278,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 var body = ReadBody<Dictionary<string, object>>(context);
                 var change = project.StageRowcraftUpdate(sessionId, rowId, body);
                 WriteJson(context, 200, ToConnectorChange(change));
+                OnChangeStaged?.Invoke();
                 return;
             }
 
@@ -284,6 +287,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 var rowId = long.Parse(parts[7]);
                 var change = project.StageRowcraftDelete(sessionId, rowId);
                 WriteJson(context, 200, ToConnectorChange(change));
+                OnChangeStaged?.Invoke();
                 return;
             }
 

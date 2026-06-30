@@ -180,6 +180,10 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             idMappingCache[snapshot.TableLogicalName] = project.GetAllIdMappings(snapshot.TableLogicalName, sourceEnvId, targetEnvId);
             foreach (var table in lookupCols.Select(c => c.RelatedTable).Where(t => !string.IsNullOrWhiteSpace(t)).Distinct(StringComparer.OrdinalIgnoreCase))
                 idMappingCache[table] = project.GetAllIdMappings(table, sourceEnvId, targetEnvId);
+            // Owner columns store relatedTable as "systemuser" but the actual entity may be a team —
+            // always load team mappings too so the preview check covers both cases.
+            if (lookupCols.Any(c => c.Type == "Owner") && !idMappingCache.ContainsKey("team"))
+                idMappingCache["team"] = project.GetAllIdMappings("team", sourceEnvId, targetEnvId);
 
             // Pre-load source IDs for related tables only when not in plan context (used for snapshot-level warnings)
             var allSnapshotSourceIds = new Dictionary<string, ISet<string>>(StringComparer.OrdinalIgnoreCase);
@@ -236,7 +240,10 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                                 || string.Equals(lookupKey?.Mode, "Custom", StringComparison.OrdinalIgnoreCase))
                             && lookupKey?.Fields?.Count == 1)
                             continue;
-                        errors.Add($"Lookup '{col.LogicalName}': value '{srcGuidStr}' is not a valid GUID — field will be NULL on push");
+                        if (col.Type == "Owner" || col.Type == "Customer")
+                            errors.Add($"Lookup '{col.LogicalName}': value '{srcGuidStr}' is not a valid GUID — push will attempt to resolve by team/user name; field will be NULL if not found");
+                        else
+                            errors.Add($"Lookup '{col.LogicalName}': value '{srcGuidStr}' is not a valid GUID — field will be NULL on push");
                         continue;
                     }
 
@@ -260,14 +267,24 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
                     if (allPlanTableNames != null)
                     {
-                        // Plan context: if there's a plan step for this related table, no error
-                        if (!string.IsNullOrEmpty(relatedTable) && allPlanTableNames.Contains(relatedTable))
-                            continue;
-
+                        // For Owner columns, relatedTable is "systemuser" from metadata but the actual
+                        // entity may be a team — check both tables before deciding there is no mapping.
                         var targetResolved = ResolveTargetIdFromPreviewCache(idMappingCache,
                             relatedTable ?? snapshot.TableLogicalName, srcGuidStr);
-                        if (string.IsNullOrEmpty(targetResolved))
+                        if (string.IsNullOrEmpty(targetResolved) && col.Type == "Owner")
+                            targetResolved = ResolveTargetIdFromPreviewCache(idMappingCache, "team", srcGuidStr);
+
+                        if (!string.IsNullOrEmpty(targetResolved)) continue;
+
+                        // No ID mapping found — check if the plan covers this related table.
+                        var planHandlesPrimary = !string.IsNullOrEmpty(relatedTable) && allPlanTableNames.Contains(relatedTable);
+                        var planHandlesTeam = col.Type == "Owner" && allPlanTableNames.Contains("team");
+
+                        if (!planHandlesPrimary && !planHandlesTeam)
                             errors.Add($"Lookup '{col.LogicalName}': no mapping and no plan step for '{relatedTable}'");
+                        else if (col.Type == "Owner")
+                            // Plan covers users/teams but no ID mapping yet for this specific owner GUID.
+                            warnings.Add($"Lookup '{col.LogicalName}': owner has no ID mapping — source GUID will be used if not resolved by prior plan steps");
                     }
                     else
                     {
@@ -282,6 +299,9 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                         {
                             var targetResolved = ResolveTargetIdFromPreviewCache(idMappingCache,
                                 relatedTable ?? snapshot.TableLogicalName, srcGuidStr);
+                            // For Owner columns, also try team mappings (ownerid is polymorphic: systemuser OR team)
+                            if (string.IsNullOrEmpty(targetResolved) && col.Type == "Owner")
+                                targetResolved = ResolveTargetIdFromPreviewCache(idMappingCache, "team", srcGuidStr);
                             if (string.IsNullOrEmpty(targetResolved))
                                 warnings.Add($"Lookup '{col.LogicalName}' → {relatedTable}: no ID mapping (source GUID will be used)");
                         }
@@ -531,7 +551,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             var snapshot = project.GetSnapshot(snapshotName)
                 ?? throw new InvalidOperationException($"Snapshot '{snapshotName}' not found in project.");
 
-            var (tableConfig, _, primaryIdAttr, _) = project.EnsureTableConfigForSnapshot(snapshot);
+            var (tableConfig, _, primaryIdAttr, primaryNameAttr) = project.EnsureTableConfigForSnapshot(snapshot);
             if (string.IsNullOrEmpty(primaryIdAttr))
                 throw new InvalidOperationException($"No primary ID attribute found for '{snapshot.TableLogicalName}'. Load the table attributes first.");
 
@@ -682,6 +702,17 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 }
             }
 
+            string ErrorLabel(string op, string srcId, Dictionary<string, object> row = null)
+            {
+                var idPart = string.IsNullOrEmpty(srcId) ? "" : $" [{srcId}]";
+                var namePart = "";
+                if (!string.IsNullOrEmpty(primaryNameAttr) && row != null
+                    && row.TryGetValue(primaryNameAttr, out var nameVal) && nameVal != null
+                    && !string.IsNullOrWhiteSpace(nameVal.ToString()))
+                    namePart = $" \"{nameVal}\"";
+                return $"{op} failed{idPart}{namePart}";
+            }
+
             // Execute Creates
             var createIdx = 0;
             for (var i = 0; i < toCreate.Count; i += batchSize)
@@ -716,9 +747,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     else
                     {
                         result.Failed++;
-                        var srcId = batch[j].sourceId;
-                        var label = string.IsNullOrEmpty(srcId) ? "Create failed" : $"Create failed [{srcId}]";
-                        result.Errors.Add($"{label}: {resp.Message}");
+                        result.Errors.Add($"{ErrorLabel("Create", batch[j].sourceId, batch[j].row)}: {resp.Message}");
                     }
                 }
                 createIdx += batch.Count;
@@ -748,9 +777,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     else
                     {
                         result.Failed++;
-                        var srcId = batch[j].sourceId;
-                        var label = string.IsNullOrEmpty(srcId) ? "Update failed" : $"Update failed [{srcId}]";
-                        result.Errors.Add($"{label}: {resp.Message}");
+                        result.Errors.Add($"{ErrorLabel("Update", batch[j].sourceId, batch[j].row)}: {resp.Message}");
                     }
                 }
                 updateIdx += batch.Count;
@@ -773,9 +800,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     else
                     {
                         result.Failed++;
-                        var srcId = toDelete[j].sourceId;
-                        var label = string.IsNullOrEmpty(srcId) ? "Delete failed" : $"Delete failed [{srcId}]";
-                        result.Errors.Add($"{label}: {resp.Message}");
+                        result.Errors.Add($"{ErrorLabel("Delete", toDelete[j].sourceId)}: {resp.Message}");
                     }
                 }
             }
@@ -987,6 +1012,13 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 if (string.Equals(col.LogicalName, primaryIdAttr, StringComparison.OrdinalIgnoreCase))
                     continue; // Set by caller, not from row data
 
+                // owningbusinessunit / owninguser / owningteam are read-only in Dataverse —
+                // they are derived from ownerid and must not be sent in create/update payloads.
+                if (string.Equals(col.LogicalName, "owningbusinessunit", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(col.LogicalName, "owninguser", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(col.LogicalName, "owningteam", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
                 if (!row.TryGetValue(col.LogicalName, out var raw) || raw == null)
                     continue;
 
@@ -995,6 +1027,11 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     string.Equals(m.SnapshotColumn, col.LogicalName, StringComparison.OrdinalIgnoreCase))?.LookupKey
                     ?? lookupMatchKeys?.FirstOrDefault(k =>
                         string.Equals(k.LogicalName, col.LogicalName, StringComparison.OrdinalIgnoreCase));
+
+                // LookupKey from a column mapping has no LogicalName (the mapping encodes the column via
+                // SnapshotColumn). ConvertRowValue searches its list by LogicalName, so backfill it.
+                if (colLookupKey != null && string.IsNullOrEmpty(colLookupKey.LogicalName))
+                    colLookupKey.LogicalName = col.LogicalName;
 
                 var value = ConvertRowValue(raw, col, tableLogicalName, project, sourceEnvId, targetEnvId, targetRepo, targetClient, sourceClient,
                     colLookupKey != null ? new List<PushLookupMatchKey> { colLookupKey } : lookupMatchKeys);
@@ -1053,6 +1090,23 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                             if (found != null)
                                 return new EntityReference(relatedTable, found.Id);
                         }
+
+                        // For Owner/Customer: if the value is a name string (no alternate key), try
+                        // resolving by team name then user fullname in the target org.
+                        if ((type == "Owner" || type == "Customer") && targetRepo != null)
+                        {
+                            var nameStr = raw.ToString();
+                            if (!string.IsNullOrWhiteSpace(nameStr))
+                            {
+                                var teamRef = targetRepo.FindByFieldValues("team",
+                                    new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase) { ["name"] = nameStr });
+                                if (teamRef != null) return new EntityReference("team", teamRef.Id);
+                                var userRef = targetRepo.FindByFieldValues("systemuser",
+                                    new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase) { ["fullname"] = nameStr });
+                                if (userRef != null) return new EntityReference("systemuser", userRef.Id);
+                            }
+                        }
+
                         return null;
                     }
 
@@ -1060,6 +1114,15 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     var targetIdStr = project.ResolveTargetId(relatedTable, sourceEnvId, srcGuid.ToString("D"), targetEnvId);
                     if (!string.IsNullOrEmpty(targetIdStr) && Guid.TryParse(targetIdStr, out var resolvedId))
                         return new EntityReference(relatedTable, resolvedId);
+
+                    // For Owner type, also try team mappings — ownerid is polymorphic (systemuser OR team)
+                    // and the metadata relatedTable is always "systemuser" even when the actual owner is a team.
+                    if (type == "Owner" && !string.Equals(relatedTable, "team", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var teamIdStr = project.ResolveTargetId("team", sourceEnvId, srcGuid.ToString("D"), targetEnvId);
+                        if (!string.IsNullOrEmpty(teamIdStr) && Guid.TryParse(teamIdStr, out var teamId))
+                            return new EntityReference("team", teamId);
+                    }
 
                     if (string.Equals(lookupKey?.Mode, "Skip", StringComparison.OrdinalIgnoreCase))
                         return null;
@@ -1359,5 +1422,6 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
 
             return doc.OuterXml;
         }
+
     }
 }

@@ -1983,6 +1983,51 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         AddExecutionPlanValidationMessage(step, "Info", $"Pre-resolved {resolvedCount} lookup GUID(s) into target ID mappings.");
                 }
             }
+
+            // Run push preview to detect per-row lookup/owner issues (non-GUID values, missing mappings)
+            try
+            {
+                var previewSourceEnvId = _project.SourceEnvironment?.Id ?? string.Empty;
+                var previewTargetEnvId = step.TargetEnvironment?.UniqueName ?? string.Empty;
+                var pushMatchKey = BuildPushMatchKeySelection(step.Snapshot);
+                var allPlanTableNames = ComputeAllPlanTableNames();
+                var preview = SqliteDataLogic.PreviewPush(
+                    _project.Service, step.Input.SnapshotName, previewSourceEnvId, previewTargetEnvId,
+                    step.Snapshot?.ImportSettings, pushMatchKey, step.Snapshot?.LookupMatchKeys,
+                    allPlanTableNames, null, SqliteDataLogic.DefaultPushPreviewLimit, false);
+
+                if (preview != null)
+                {
+                    if (step.Validation != null)
+                        step.Validation.Preview = new ExecutionPlanPreviewSummary
+                        {
+                            Rows = preview.TotalRows,
+                            Creates = preview.CreateCount,
+                            Updates = preview.UpdateCount,
+                            Skips = preview.Items?.Count(i => i.Operation == "Skip") ?? 0,
+                            Warnings = preview.WarningCount,
+                            Errors = preview.ErrorCount,
+                            Source = "Validation preview",
+                            IsEstimated = preview.HasMoreRows,
+                            IsStale = false
+                        };
+
+                    // Deduplicate and surface per-row errors as step warnings
+                    var seenErrors = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    var seenWarnings = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var item in preview.Items ?? new System.Collections.Generic.List<SqliteDataLogic.PushPreviewItem>())
+                    {
+                        if (!string.IsNullOrEmpty(item.Errors) && seenErrors.Add(item.Errors))
+                            AddExecutionPlanValidationMessage(step, "Warning", item.Errors);
+                        if (!string.IsNullOrEmpty(item.Warnings) && seenWarnings.Add(item.Warnings))
+                            AddExecutionPlanValidationMessage(step, "Info", item.Warnings);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AddExecutionPlanValidationMessage(step, "Warning", $"Per-row validation preview could not run: {ex.Message}");
+            }
         }
 
         private void OpenPushStepConfigDialog(ExecutionPlanStep step, DmtSnapshot snapshot,

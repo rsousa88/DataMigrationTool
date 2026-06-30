@@ -703,6 +703,63 @@ VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @sfp, @pf, @pid, @
             cmd.ExecuteNonQuery();
         }
 
+        public DmtSnapshot DuplicateSnapshot(string originalName, string newName)
+        {
+            var original = GetSnapshot(originalName)
+                ?? throw new InvalidOperationException($"Snapshot '{originalName}' not found.");
+            var newSuffix = ResolveTableSuffix(newName);
+
+            var copy = new DmtSnapshot
+            {
+                Id             = Guid.NewGuid().ToString("D"),
+                Name           = newName,
+                TableSuffix    = newSuffix,
+                TableLogicalName = original.TableLogicalName,
+                SourceEnvId    = original.SourceEnvId,
+                CreatedOn      = DateTime.UtcNow,
+                UpdatedOn      = DateTime.UtcNow,
+                RowCount       = original.RowCount,
+                Source         = original.Source,
+                SourceFilePath = original.SourceFilePath,
+                PullFilter     = original.PullFilter,
+                PrimaryIdAttribute = original.PrimaryIdAttribute,
+                LoadMatchKeyMode   = original.LoadMatchKeyMode,
+                LoadMatchKeyFields = original.LoadMatchKeyFields != null
+                    ? new List<string>(original.LoadMatchKeyFields)
+                    : new List<string>(),
+                ColumnConfig = original.ColumnConfig?
+                    .Select(CloneColumnConfig)
+                    .ToList() ?? new List<DataTableColumnConfig>()
+            };
+
+            lock (_dbLock)
+            {
+                using var tx = _connection.BeginTransaction();
+                try
+                {
+                    SaveSnapshot(copy, tx);
+                    CreateSnapshotTable(newSuffix, copy.ColumnConfig, tx);
+
+                    var cols = string.Join(", ", new[] { "_source_id", "_is_new" }
+                        .Concat(copy.ColumnConfig.Select(c => $"[{c.LogicalName}]")));
+                    using var copyCmd = _connection.CreateCommand();
+                    copyCmd.Transaction = tx;
+                    copyCmd.CommandText =
+                        $"INSERT INTO [data_{newSuffix}] ({cols}) SELECT {cols} FROM [data_{original.TableSuffix}];";
+                    copyCmd.ExecuteNonQuery();
+
+                    tx.Commit();
+                }
+                catch
+                {
+                    tx.Rollback();
+                    throw;
+                }
+            }
+
+            return copy;
+        }
+
         public void ReplaceSnapshotData(DmtSnapshot snapshot, List<DataTableColumnConfig> columns, IEnumerable<Dictionary<string, object>> rows)
         {
             lock (_dbLock)
@@ -1010,18 +1067,33 @@ VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @sfp, @pf, @pid, @
             string tableSuffix,
             List<DataTableColumnConfig> columns,
             int offset = 0,
-            int limit = -1)  // -1 = no limit (SQLite LIMIT -1 = all rows)
+            int limit = -1,  // -1 = no limit (SQLite LIMIT -1 = all rows)
+            string search = null)
         {
             lock (_dbLock)
             {
                 var colSelect = string.Join(", ", columns.Select(c => $"[{c.LogicalName}]"));
-                var sql = $"SELECT _row_id, _source_id, _is_new{(colSelect.Length > 0 ? ", " + colSelect : "")} " +
-                          $"FROM [data_{tableSuffix}] LIMIT @limit OFFSET @offset;";
+                var baseSelect = $"SELECT _row_id, _source_id, _is_new{(colSelect.Length > 0 ? ", " + colSelect : "")} FROM [data_{tableSuffix}]";
+
+                string sql;
+                if (!string.IsNullOrEmpty(search))
+                {
+                    var whereParts = new List<string> { "_source_id LIKE @search" };
+                    foreach (var col in columns)
+                        whereParts.Add($"CAST([{col.LogicalName}] AS TEXT) LIKE @search");
+                    sql = $"{baseSelect} WHERE {string.Join(" OR ", whereParts)} LIMIT @limit OFFSET @offset;";
+                }
+                else
+                {
+                    sql = $"{baseSelect} LIMIT @limit OFFSET @offset;";
+                }
 
                 using var cmd = _connection.CreateCommand();
                 cmd.CommandText = sql;
                 cmd.Parameters.AddWithValue("@limit", limit < 0 ? -1 : limit);
                 cmd.Parameters.AddWithValue("@offset", offset);
+                if (!string.IsNullOrEmpty(search))
+                    cmd.Parameters.AddWithValue("@search", $"%{search}%");
 
                 var result = new List<Dictionary<string, object>>();
                 using var reader = cmd.ExecuteReader();
@@ -1114,12 +1186,23 @@ VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @sfp, @pf, @pid, @
             }
         }
 
-        public int CountSnapshotRows(string tableSuffix)
+        public int CountSnapshotRows(string tableSuffix, List<DataTableColumnConfig> columns = null, string search = null)
         {
             lock (_dbLock)
             {
                 using var cmd = _connection.CreateCommand();
-                cmd.CommandText = $"SELECT COUNT(*) FROM [data_{tableSuffix}];";
+                if (!string.IsNullOrEmpty(search) && columns?.Count > 0)
+                {
+                    var whereParts = new List<string> { "_source_id LIKE @search" };
+                    foreach (var col in columns)
+                        whereParts.Add($"CAST([{col.LogicalName}] AS TEXT) LIKE @search");
+                    cmd.CommandText = $"SELECT COUNT(*) FROM [data_{tableSuffix}] WHERE {string.Join(" OR ", whereParts)};";
+                    cmd.Parameters.AddWithValue("@search", $"%{search}%");
+                }
+                else
+                {
+                    cmd.CommandText = $"SELECT COUNT(*) FROM [data_{tableSuffix}];";
+                }
                 return (int)(long)cmd.ExecuteScalar();
             }
         }

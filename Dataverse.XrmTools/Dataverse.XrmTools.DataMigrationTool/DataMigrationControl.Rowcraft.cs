@@ -53,6 +53,11 @@ namespace Dataverse.XrmTools.DataMigrationTool
             try
             {
                 var token = RowcraftBridge.StartForRowcraft();
+                RowcraftBridge.OnChangeStaged = () =>
+                {
+                    if (IsHandleCreated && !IsDisposed)
+                        BeginInvoke((Action)RefreshInlineSnapshotRC);
+                };
                 var bridge = Uri.EscapeDataString(RowcraftBridge.BaseUrl);
                 var encodedToken = Uri.EscapeDataString(token);
                 var initialDataset = Uri.EscapeDataString(snap.Name);
