@@ -82,7 +82,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         if (ext == ".json")
                             args.Result = SqliteFileAdapter.LoadFromJson(_project.Service, filePath, snapshotName, sourceEnvId, config, _sourceClient, worker, NormalizeProjectFilePath(filePath));
                         else
-                            args.Result = SqliteFileAdapter.LoadFromExcel(_project.Service, filePath, snapshotName, sourceEnvId, config, _sourceClient, worker, NormalizeProjectFilePath(filePath));
+                            args.Result = SqliteFileAdapter.LoadFromExcel(_project.Service, filePath, snapshotName, sourceEnvId, config, _sourceClient, worker, NormalizeProjectFilePath(filePath), _currentTableLogicalName);
                     },
                     PostWorkCallBack = args =>
                     {

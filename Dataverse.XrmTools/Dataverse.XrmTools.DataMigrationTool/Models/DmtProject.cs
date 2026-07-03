@@ -84,6 +84,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
 
         // OptionSet / MultiSelectPicklist
         public bool IsMultiSelect { get; set; }
+        public string ExportMode { get; set; }  // "Value" | "Label" (OptionSet/MultiOptionSet only)
     }
 
     // Row in _snapshots

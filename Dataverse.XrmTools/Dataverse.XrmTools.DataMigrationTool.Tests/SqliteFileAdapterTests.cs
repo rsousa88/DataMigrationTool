@@ -245,17 +245,45 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
         // ─── Excel ─────────────────────────────────────────────────────────────
 
         [Fact]
-        public void LoadFromExcel_ThrowsWhenMetaSheetMissing()
+        public void LoadFromExcel_ThrowsWhenDataSheetHasNoHeaders()
         {
-            var excelPath = _tmp.GetExcelPath("no-meta.xlsx");
+            var excelPath = _tmp.GetExcelPath("no-headers.xlsx");
             using (var wb = new XLWorkbook())
             {
                 wb.AddWorksheet("Data");
                 wb.SaveAs(excelPath);
             }
 
-            Assert.Throws<InvalidOperationException>(() =>
+            var ex = Assert.Throws<InvalidOperationException>(() =>
                 SqliteFileAdapter.LoadFromExcel(_svc, excelPath, "snap", "env1", null, null));
+            Assert.Contains("no column headers", ex.Message);
+        }
+
+        [Fact]
+        public void LoadFromExcel_LoadsGenericExcel_WithoutDmtSheet()
+        {
+            var id = Guid.NewGuid().ToString();
+            var excelPath = _tmp.GetExcelPath("generic.xlsx");
+            using (var wb = new XLWorkbook())
+            {
+                var data = wb.AddWorksheet("Data");
+                data.Cell(1, 1).SetValue("accountid");
+                data.Cell(1, 2).SetValue("name");
+                data.Cell(2, 1).SetValue(id);
+                data.Cell(2, 2).SetValue("Contoso");
+                wb.SaveAs(excelPath);
+            }
+
+            var snapshot = SqliteFileAdapter.LoadFromExcel(_svc, excelPath, "generic-snap", "env1", null, null, null, null, "account");
+            Assert.NotNull(snapshot);
+            Assert.Equal(1, snapshot.RowCount);
+            Assert.Equal("account", snapshot.TableLogicalName);
+            Assert.Equal("accountid", snapshot.PrimaryIdAttribute);
+
+            var rows = _svc.ReadSnapshotRecords(snapshot.TableSuffix, snapshot.ColumnConfig).ToList();
+            Assert.Single(rows);
+            Assert.Equal("Contoso", rows[0]["name"]?.ToString());
+            Assert.Equal(id, rows[0]["_source_id"]?.ToString());
         }
 
         [Fact]

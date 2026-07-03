@@ -1189,18 +1189,33 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 case "OptionSet":
                 case "State":
                 case "Status":
+                {
+                    if (string.Equals(col.ExportMode, "Label", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var resolved = project?.ResolveOptionSetLabel(tableLogicalName, col.LogicalName, raw.ToString());
+                        return resolved.HasValue ? new OptionSetValue(resolved.Value) : (object)null;
+                    }
                     return raw is long lo ? new OptionSetValue((int)lo)
                         : int.TryParse(raw.ToString(), out var ov) ? new OptionSetValue(ov) : (object)null;
+                }
 
                 case "MultiSelectPicklist":
                 case "MultiOptionSet":
                 {
+                    if (string.Equals(col.ExportMode, "Label", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var labelParts = raw.ToString().Split(new[] { ',', '|' }, StringSplitOptions.RemoveEmptyEntries);
+                        var resolved = labelParts
+                            .Select(p => project?.ResolveOptionSetLabel(tableLogicalName, col.LogicalName, p.Trim()))
+                            .Where(v => v.HasValue)
+                            .Select(v => new OptionSetValue(v.Value));
+                        return new OptionSetValueCollection(resolved.ToList());
+                    }
                     var parts = raw.ToString().Split(new[] { ',', '|' }, StringSplitOptions.RemoveEmptyEntries);
                     var values = parts.Select(p => int.TryParse(p.Trim(), out var pv) ? (int?)pv : null)
                                       .Where(v => v.HasValue)
                                       .Select(v => new OptionSetValue(v.Value));
-                    var col2 = new OptionSetValueCollection(values.ToList());
-                    return col2;
+                    return new OptionSetValueCollection(values.ToList());
                 }
 
                 default:

@@ -2207,11 +2207,20 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     if (srcEnvForDialog != null && !string.IsNullOrWhiteSpace(srcEnvForDialog.UniqueName) && _sourceClient != null)
                         targetClientsByEnvironment[srcEnvForDialog.UniqueName] = _sourceClient;
 
+                    var tableNames = _tables?.Select(t => t.LogicalName).Where(n => !string.IsNullOrEmpty(n)).ToList();
                     using (var dlg = new PushStepConfigDialog(step, snapshot, altKeys, preview, acceptButtonText,
                         _project?.Service, srcId, tgtId, planTableNames, targetClient, availableTargets,
-                        targetClientsByEnvironment, relData, targetAttrs, sampleRowData, lookupTargetsData))
+                        targetClientsByEnvironment, relData, targetAttrs, sampleRowData, lookupTargetsData, tableNames))
                     {
                         if (dlg.ShowDialog(ParentForm) != DialogResult.OK) return;
+                    }
+
+                    // Persist table logical name back to snapshot if user set or changed it in the dialog
+                    if (snapshot != null && !string.IsNullOrWhiteSpace(step.Table?.LogicalName)
+                        && !string.Equals(step.Table.LogicalName, snapshot.TableLogicalName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        snapshot.TableLogicalName = step.Table.LogicalName;
+                        try { _project?.Service?.SaveSnapshot(snapshot); } catch { }
                     }
 
                     // Persist match key selections as per-table defaults for future steps
@@ -2285,7 +2294,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             return result;
         }
 
-        private static List<DataTableColumnConfig> BuildLookupTargetColumnConfigs(AttributeMetadata[] attrs)
+        internal static List<DataTableColumnConfig> BuildLookupTargetColumnConfigs(AttributeMetadata[] attrs)
         {
             if (attrs == null) return new List<DataTableColumnConfig>();
 
@@ -2318,7 +2327,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             return result;
         }
 
-        private static string GetLookupTargetAttributeTypeCode(AttributeMetadata att)
+        internal static string GetLookupTargetAttributeTypeCode(AttributeMetadata att)
         {
             var typeName = att.AttributeTypeName?.Value ?? string.Empty;
             return typeName.EndsWith("Type", StringComparison.Ordinal)

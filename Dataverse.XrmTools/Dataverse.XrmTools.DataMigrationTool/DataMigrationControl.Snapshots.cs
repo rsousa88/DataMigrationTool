@@ -582,7 +582,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 if (string.Equals(source, "JSON", StringComparison.OrdinalIgnoreCase))
                     SqliteFileAdapter.LoadFromJson(_project.Service, path, snapshot.Name, sourceEnvId, config, _sourceClient, worker, snapshot.SourceFilePath);
                 else
-                    SqliteFileAdapter.LoadFromExcel(_project.Service, path, snapshot.Name, sourceEnvId, config, _sourceClient, worker, snapshot.SourceFilePath);
+                    SqliteFileAdapter.LoadFromExcel(_project.Service, path, snapshot.Name, sourceEnvId, config, _sourceClient, worker, snapshot.SourceFilePath, snapshot.TableLogicalName);
                 return;
             }
 

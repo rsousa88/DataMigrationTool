@@ -120,30 +120,51 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             DataTableConfig config,
             IOrganizationService sourceClient,
             BackgroundWorker worker,
-            string sourceFilePath)
+            string sourceFilePath,
+            string fallbackTableLogicalName = null)
         {
             worker?.ReportProgress(5, "Reading Excel file...");
             using (var wb = new XLWorkbook(filePath))
             {
-                if (!wb.Worksheets.Contains(MetaSheetName))
-                    throw new InvalidOperationException("This Excel file was not exported from Data Migration Tool — '_dmt' metadata sheet is missing.");
+                ExcelExportConfig excelConfig;
+                string tableLogicalName;
+                string primaryIdAttr;
+                IXLWorksheet dataSheet;
 
-                var metaSheet = wb.Worksheet(MetaSheetName);
-                var metaJson = metaSheet.Cell("A1").GetString();
-                var excelConfig = JsonConvert.DeserializeObject<ExcelExportConfig>(metaJson, _json)
-                    ?? throw new InvalidOperationException("Excel metadata sheet is empty or corrupt.");
+                if (wb.Worksheets.Contains(MetaSheetName))
+                {
+                    var metaSheet = wb.Worksheet(MetaSheetName);
+                    var metaJson = metaSheet.Cell("A1").GetString();
+                    excelConfig = JsonConvert.DeserializeObject<ExcelExportConfig>(metaJson, _json)
+                        ?? throw new InvalidOperationException("Excel metadata sheet is empty or corrupt.");
+                    tableLogicalName = excelConfig.Table?.LogicalName
+                        ?? throw new InvalidOperationException("Excel metadata is missing table information.");
+                    primaryIdAttr = excelConfig.Table.PrimaryIdAttribute;
+                    if (!wb.Worksheets.Contains(DataSheetName))
+                        throw new InvalidOperationException("Data sheet 'Data' not found in the Excel file.");
+                    dataSheet = wb.Worksheet(DataSheetName);
+                }
+                else
+                {
+                    // Generic Excel — use 'Data' sheet if present, otherwise the first visible sheet
+                    dataSheet = wb.Worksheets.Contains(DataSheetName)
+                        ? wb.Worksheet(DataSheetName)
+                        : wb.Worksheets.FirstOrDefault(ws => ws.Visibility == XLWorksheetVisibility.Visible)
+                          ?? throw new InvalidOperationException("The Excel file has no visible worksheets.");
 
-                var tableLogicalName = excelConfig.Table?.LogicalName
-                    ?? throw new InvalidOperationException("Excel metadata is missing table information.");
-                var primaryIdAttr = excelConfig.Table.PrimaryIdAttribute;
+                    tableLogicalName = fallbackTableLogicalName ?? string.Empty;
+                    var headers = dataSheet.Row(1).CellsUsed()
+                        .Select(c => c.GetString())
+                        .Where(h => !string.IsNullOrWhiteSpace(h))
+                        .ToList();
+                    if (!headers.Any())
+                        throw new InvalidOperationException($"Sheet '{dataSheet.Name}' has no column headers in row 1.");
+                    primaryIdAttr = DetectPrimaryIdAttribute(headers, tableLogicalName, config);
+                    excelConfig = BuildExcelConfigFromHeaders(headers, tableLogicalName, primaryIdAttr, config);
+                }
+
                 var effectiveConfig = BuildConfigFromExcel(config, excelConfig);
-
                 var columns = BuildColumnsFromExcelConfig(excelConfig);
-
-                if (!wb.Worksheets.Contains(DataSheetName))
-                    throw new InvalidOperationException("Data sheet 'Data' not found in the Excel file.");
-
-                var dataSheet = wb.Worksheet(DataSheetName);
                 worker?.ReportProgress(20, "Parsing Excel rows...");
                 var rows = ReadExcelRows(dataSheet, excelConfig, columns, primaryIdAttr, worker);
                 ResolveSourceIdentity(rows, columns, tableLogicalName, primaryIdAttr, effectiveConfig, sourceClient, worker);
@@ -479,6 +500,57 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             }
         }
 
+        private static string DetectPrimaryIdAttribute(List<string> headers, string tableLogicalName, DataTableConfig config)
+        {
+            if (!string.IsNullOrWhiteSpace(tableLogicalName))
+            {
+                var conventional = tableLogicalName + "id";
+                if (headers.Any(h => string.Equals(h, conventional, StringComparison.OrdinalIgnoreCase)))
+                    return conventional;
+            }
+
+            if (config?.AllColumns?.Any() == true)
+            {
+                var idCol = config.AllColumns.FirstOrDefault(c =>
+                    string.Equals(c.Type, "Uniqueidentifier", StringComparison.OrdinalIgnoreCase) &&
+                    headers.Any(h => string.Equals(h, c.LogicalName, StringComparison.OrdinalIgnoreCase)));
+                if (idCol != null) return idCol.LogicalName;
+            }
+
+            return headers.FirstOrDefault() ?? string.Empty;
+        }
+
+        private static ExcelExportConfig BuildExcelConfigFromHeaders(
+            List<string> headers,
+            string tableLogicalName,
+            string primaryIdAttr,
+            DataTableConfig config)
+        {
+            var knownColumns = (config?.AllColumns ?? new List<DataTableColumnConfig>())
+                .ToDictionary(c => c.LogicalName, c => c, StringComparer.OrdinalIgnoreCase);
+
+            var columns = headers.Select(h =>
+            {
+                knownColumns.TryGetValue(h, out var known);
+                return new ExcelColumnConfig
+                {
+                    LogicalName = h,
+                    DisplayName = known?.DisplayName ?? h,
+                    Type = known != null ? ToExcelColumnType(known) : null   // null = user must set type manually
+                };
+            }).ToList();
+
+            return new ExcelExportConfig
+            {
+                Table = new ExcelTableConfig
+                {
+                    LogicalName = tableLogicalName ?? string.Empty,
+                    PrimaryIdAttribute = primaryIdAttr ?? string.Empty
+                },
+                Columns = columns
+            };
+        }
+
         private static List<DataTableColumnConfig> BuildColumnsFromExcelConfig(ExcelExportConfig config)
         {
             var cols = new List<DataTableColumnConfig>();
@@ -496,7 +568,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     RelatedTable = c.RelatedTable,
                     Resolution = c.Resolution,
                     AlternateKeyFields = c.AlternateKeyFields != null ? new List<string>(c.AlternateKeyFields) : new List<string>(),
-                    IsMultiSelect = c.Type == "MultiSelectPicklist"
+                    IsMultiSelect = c.Type == "MultiSelectPicklist",
+                    ExportMode = c.ExportMode
                 });
             }
             return cols;

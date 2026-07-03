@@ -167,6 +167,14 @@ In project workflows, mappings are stored in the active `.dmtproj` per source/ta
 
 ## Release Notes
 
+### 2026.7.3.x
+- [NEW] Generic Excel files (no DMT metadata sheet) can now be loaded as snapshots — any visible sheet name is accepted
+- [NEW] Push step config lets users set the Dataverse table for generic snapshots, with autocomplete and persistence in the project file
+- [NEW] Column types in the Column Mappings grid are now editable via dropdown (String, Integer, Boolean, DateTime, Guid, Lookup, OptionSet Value/Label, etc.) and persisted in the project file
+- [NEW] OptionSet columns support Value or Label mapping mode; Label mode resolves text labels to integer codes during push
+- [NEW] Lookup match type (Alternate Key, Custom Columns) now works for user-specified related tables, fetching metadata on demand from the target environment
+- [FIX] Preview refresh no longer fails with "entities of type 'none'" when the snapshot table name was not yet saved to the project file
+
 ### 2026.6.30.x
 - [NEW] Snapshot data grid now includes a search field that filters across all columns in real time
 - [NEW] Snapshots can be duplicated from the right-click context menu, copying all rows to a new independent snapshot
