@@ -261,6 +261,168 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
         }
 
         [Fact]
+        public void Push_EmptySelectedColumns_ExcludesAllNonPrimaryAttributes()
+        {
+            var sourceId = Guid.NewGuid();
+            var createdId = Guid.NewGuid();
+            var columns = new List<DataTableColumnConfig>
+            {
+                new DataTableColumnConfig { LogicalName = "accountid", Type = "Uniqueidentifier", SqliteType = "TEXT" },
+                new DataTableColumnConfig { LogicalName = "name", Type = "String", SqliteType = "TEXT" }
+            };
+            var snapshot = new DmtSnapshot
+            {
+                Name = "empty-selected-columns",
+                TableSuffix = "empty_selected_columns",
+                TableLogicalName = "account",
+                SourceEnvId = "src-env",
+                Source = "JSON",
+                PrimaryIdAttribute = "accountid",
+                ColumnConfig = columns
+            };
+            ExecuteMultipleRequest capturedBatch = null;
+            var target = new FakeOrganizationService
+            {
+                ExecuteHandler = request =>
+                {
+                    if (request is ExecuteMultipleRequest batch)
+                    {
+                        capturedBatch = batch;
+                        var response = new ExecuteMultipleResponse();
+                        response.Results["Responses"] = new ExecuteMultipleResponseItemCollection
+                        {
+                            new ExecuteMultipleResponseItem
+                            {
+                                RequestIndex = 0,
+                                Response = new CreateResponse { Results = { ["id"] = createdId } }
+                            }
+                        };
+                        return response;
+                    }
+
+                    return new OrganizationResponse();
+                }
+            };
+
+            _svc.SaveSnapshot(snapshot);
+            _svc.CreateSnapshotTable(snapshot.TableSuffix, columns);
+            _svc.WriteSnapshotRecords(snapshot.TableSuffix, new[]
+            {
+                new Dictionary<string, object>
+                {
+                    ["_source_id"] = sourceId.ToString("D"),
+                    ["_is_new"] = true,
+                    ["accountid"] = sourceId.ToString("D"),
+                    ["name"] = "Excluded Name"
+                }
+            }, columns);
+
+            var result = SqliteDataLogic.Push(
+                _svc,
+                snapshot.Name,
+                "src-env",
+                "target-env",
+                target,
+                new UiSettings { Action = DmtAction.Create },
+                null,                  // worker
+                null,                  // matchKeyOverride
+                null,                  // lookupMatchKeys
+                new List<string>(),    // selectedColumns (empty = push nothing but primary id)
+                null);                 // sourceClient
+
+            Assert.Equal(1, result.Created);
+            Assert.Empty(result.Errors);
+            Assert.NotNull(capturedBatch);
+            var createRequest = Assert.IsType<CreateRequest>(capturedBatch.Requests.Single());
+            Assert.Equal(sourceId, createRequest.Target.Id);
+            Assert.Empty(createRequest.Target.Attributes);
+        }
+
+        [Fact]
+        public void Push_LookupNameCompanionColumn_IsExcludedFromPayload()
+        {
+            var sourceId = Guid.NewGuid();
+            var createdId = Guid.NewGuid();
+            var columns = new List<DataTableColumnConfig>
+            {
+                new DataTableColumnConfig { LogicalName = "peers_roleid", Type = "Uniqueidentifier", SqliteType = "TEXT" },
+                new DataTableColumnConfig { LogicalName = "peers_name", Type = "String", SqliteType = "TEXT" },
+                new DataTableColumnConfig { LogicalName = "peers_parentgrouptypeid", Type = "Lookup", SqliteType = "TEXT", RelatedTable = "peers_grouptype" },
+                new DataTableColumnConfig { LogicalName = "peers_parentgrouptypeidname", Type = "String", SqliteType = "TEXT" }
+            };
+            var snapshot = new DmtSnapshot
+            {
+                Name = "lookup-name-companion",
+                TableSuffix = "lookup_name_companion",
+                TableLogicalName = "peers_role",
+                SourceEnvId = "src-env",
+                Source = "JSON",
+                PrimaryIdAttribute = "peers_roleid",
+                ColumnConfig = columns
+            };
+            ExecuteMultipleRequest capturedBatch = null;
+            var target = new FakeOrganizationService
+            {
+                ExecuteHandler = request =>
+                {
+                    if (request is ExecuteMultipleRequest batch)
+                    {
+                        capturedBatch = batch;
+                        var response = new ExecuteMultipleResponse();
+                        response.Results["Responses"] = new ExecuteMultipleResponseItemCollection
+                        {
+                            new ExecuteMultipleResponseItem
+                            {
+                                RequestIndex = 0,
+                                Response = new CreateResponse { Results = { ["id"] = createdId } }
+                            }
+                        };
+                        return response;
+                    }
+
+                    return new OrganizationResponse();
+                }
+            };
+
+            _svc.SaveSnapshot(snapshot);
+            _svc.CreateSnapshotTable(snapshot.TableSuffix, columns);
+            _svc.WriteSnapshotRecords(snapshot.TableSuffix, new[]
+            {
+                new Dictionary<string, object>
+                {
+                    ["_source_id"] = sourceId.ToString("D"),
+                    ["_is_new"] = true,
+                    ["peers_roleid"] = sourceId.ToString("D"),
+                    ["peers_name"] = "Role A",
+                    ["peers_parentgrouptypeid"] = Guid.NewGuid().ToString("D"),
+                    ["peers_parentgrouptypeidname"] = "Some Group Type"
+                }
+            }, columns);
+
+            var result = SqliteDataLogic.Push(
+                _svc,
+                snapshot.Name,
+                "src-env",
+                "target-env",
+                target,
+                new UiSettings { Action = DmtAction.Create },
+                null,   // worker
+                null,   // matchKeyOverride
+                null,   // lookupMatchKeys
+                null,   // selectedColumns
+                null);  // sourceClient
+
+            Assert.Equal(1, result.Created);
+            Assert.Empty(result.Errors);
+            Assert.NotNull(capturedBatch);
+            var createRequest = Assert.IsType<CreateRequest>(capturedBatch.Requests.Single());
+            Assert.False(createRequest.Target.Attributes.ContainsKey("peers_parentgrouptypeidname"),
+                "Lookup name companion column must be excluded from the push payload");
+            Assert.True(createRequest.Target.Attributes.ContainsKey("peers_name"),
+                "Regular columns must still be pushed");
+        }
+
+        [Fact]
         public void Push_ImportedSnapshotWithoutTableConfig_UsesSnapshotPrimaryIdAndCreatesConfig()
         {
             var sourceId = Guid.NewGuid();

@@ -571,11 +571,18 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                         .Select(m => m.LookupKey)
                         .ToList();
             }
-            else if (selectedColumns != null && selectedColumns.Any())
+            else if (selectedColumns != null)
                 cols = cols.Where(c =>
                     selectedColumns.Contains(c.LogicalName, StringComparer.OrdinalIgnoreCase)
                     || string.Equals(c.LogicalName, primaryIdAttr, StringComparison.OrdinalIgnoreCase))
                     .ToList();
+
+            // Lookup "<lookup>name" companion columns (e.g. "peers_parentgrouptypeidname") hold the
+            // read-only formatted display value returned by FetchXML/exports. Dataverse rejects them on
+            // create/update ("entity doesn't contain attribute with Name = '...name'"). Drop them from the
+            // payload unless the user explicitly remapped the column to a real target attribute.
+            cols = FilterLookupNameCompanions(cols, snapshot.ColumnConfig, columnMappings);
+
             var matchKeyMode = matchKeyOverride?.Mode
                 ?? tableConfig?.PushMatchKeyMode
                 ?? snapshot.LoadMatchKeyMode
@@ -991,6 +998,48 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             return (errors, warnings, resolved);
         }
 
+        /// <summary>
+        /// Removes lookup "&lt;lookup&gt;name" companion columns from the push payload. These carry the
+        /// read-only formatted display value of a lookup (e.g. "primarycontactidname") and are not writable
+        /// attributes — Dataverse rejects them with "entity doesn't contain attribute ...". A column is treated
+        /// as a companion when a sibling column exists whose logical name is the companion name minus the
+        /// trailing "name", and that sibling is either a lookup-typed column or ends with "id" (covers both
+        /// metadata pulls and generically-loaded files where types are inferred). Columns the user explicitly
+        /// remapped to a real target attribute are kept.
+        /// </summary>
+        private static List<DataTableColumnConfig> FilterLookupNameCompanions(
+            List<DataTableColumnConfig> cols,
+            List<DataTableColumnConfig> allColumns,
+            List<ColumnAttributeMapping> columnMappings)
+        {
+            if (cols == null || cols.Count == 0) return cols;
+
+            var lookupSiblings = new HashSet<string>(
+                (allColumns ?? new List<DataTableColumnConfig>())
+                    .Where(c => c.Type == "Lookup" || c.Type == "Owner" || c.Type == "Customer"
+                        || (c.LogicalName != null && c.LogicalName.EndsWith("id", StringComparison.OrdinalIgnoreCase)))
+                    .Select(c => c.LogicalName),
+                StringComparer.OrdinalIgnoreCase);
+
+            return cols.Where(c =>
+            {
+                if (string.IsNullOrEmpty(c.LogicalName)
+                    || !c.LogicalName.EndsWith("name", StringComparison.OrdinalIgnoreCase))
+                    return true;
+
+                var owner = c.LogicalName.Substring(0, c.LogicalName.Length - "name".Length);
+                if (owner.Length == 0 || !lookupSiblings.Contains(owner))
+                    return true;
+
+                // Keep the column when the user explicitly remapped it to a real target attribute.
+                var explicitRemap = columnMappings?.Any(m =>
+                    string.Equals(m.SnapshotColumn, c.LogicalName, StringComparison.OrdinalIgnoreCase)
+                    && m.Include && !string.IsNullOrWhiteSpace(m.DataverseAttribute)) == true;
+
+                return explicitRemap;
+            }).ToList();
+        }
+
         private static Entity RowToEntity(
             Dictionary<string, object> row,
             List<DataTableColumnConfig> cols,
@@ -1011,6 +1060,11 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             {
                 if (string.Equals(col.LogicalName, primaryIdAttr, StringComparison.OrdinalIgnoreCase))
                     continue; // Set by caller, not from row data
+
+                if (columnMappings?.Any(m =>
+                    string.Equals(m.SnapshotColumn, col.LogicalName, StringComparison.OrdinalIgnoreCase)
+                    && !m.Include) == true)
+                    continue;
 
                 // owningbusinessunit / owninguser / owningteam are read-only in Dataverse —
                 // they are derived from ownerid and must not be sent in create/update payloads.

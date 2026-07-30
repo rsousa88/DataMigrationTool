@@ -167,6 +167,10 @@ In project workflows, mappings are stored in the active `.dmtproj` per source/ta
 
 ## Release Notes
 
+### 2026.7.30.x
+- [FIX] Push no longer fails when a snapshot includes a lookup "...name" companion column (e.g. "peers_parentgrouptypeidname") — these read-only formatted-value columns are now automatically excluded from the push payload
+- [FIX] Column Mappings (disabled columns, attribute remaps, lookup match keys) are now preserved when a push step is cloned across multiple selected target environments
+
 ### 2026.7.3.x
 - [NEW] Generic Excel files (no DMT metadata sheet) can now be loaded as snapshots — any visible sheet name is accepted
 - [NEW] Push step config lets users set the Dataverse table for generic snapshots, with autocomplete and persistence in the project file

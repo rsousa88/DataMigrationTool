@@ -183,6 +183,20 @@ namespace Dataverse.XrmTools.DataMigrationTool
                         Mode = k.Mode,
                         AlternateKeyName = k.AlternateKeyName,
                         Fields = k.Fields != null ? new List<string>(k.Fields) : new List<string>()
+                    }).ToList(),
+                    ColumnMappings = src.ColumnMappings?.Select(m => new ColumnAttributeMapping
+                    {
+                        SnapshotColumn = m.SnapshotColumn,
+                        DataverseAttribute = m.DataverseAttribute,
+                        Include = m.Include,
+                        LookupKey = m.LookupKey != null ? new PushLookupMatchKey
+                        {
+                            LogicalName = m.LookupKey.LogicalName,
+                            Mode = m.LookupKey.Mode,
+                            AlternateKeyName = m.LookupKey.AlternateKeyName,
+                            TargetRelatedTable = m.LookupKey.TargetRelatedTable,
+                            Fields = m.LookupKey.Fields != null ? new List<string>(m.LookupKey.Fields) : new List<string>()
+                        } : null
                     }).ToList()
                 }
             };
