@@ -166,6 +166,9 @@
     <Compile Include="Forms\SnapshotNameDialog.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="Forms\PushTableNameDialog.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="Forms\PickItemDialog.cs">
       <SubType>Form</SubType>
     </Compile>

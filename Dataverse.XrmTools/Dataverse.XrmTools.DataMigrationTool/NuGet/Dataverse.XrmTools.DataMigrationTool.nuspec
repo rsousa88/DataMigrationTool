@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
   <metadata>
     <id>Dataverse.XrmTools.DataMigrationTool</id>
-    <version>2026.7.30.1</version>
+    <version>2026.7.30.2</version>
     <title>Data Migration Tool</title>
     <authors>Rui Sousa</authors>
     <owners>Rui Sousa</owners>
@@ -27,6 +27,8 @@
 		2026.7.30.x
 		- [FIX] Push no longer fails when a snapshot includes a lookup "...name" companion column (e.g. "peers_parentgrouptypeidname") — these read-only formatted-value columns are now automatically excluded from the push payload
 		- [FIX] Column Mappings (disabled columns, attribute remaps, lookup match keys) are now preserved when a push step is cloned across multiple selected target environments
+		- [NEW] Configure Push Step now prompts for the Dataverse table up front when a snapshot has none set (e.g. generic Excel loads), instead of opening with every setting greyed out
+		- [FIX] Column Mappings grid's Related Table cell is now editable for lookups whose target table can't be inferred from metadata, so Alternate Key / Custom Columns matching can be configured
 
 		2026.7.3.x
 		- [NEW] Generic Excel files (no DMT metadata sheet) can now be loaded as snapshots — any visible sheet name is accepted

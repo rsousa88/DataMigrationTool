@@ -475,6 +475,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
         }
 
         // ── Fields ───────────────────────────────────────────────────────────────
+        private readonly bool _tableLockedFromPrompt;
         private readonly ExecutionPlanStep _step;
         private readonly DmtSnapshot _snapshot;
         private readonly IList<ExcelImportAlternateKeyOption> _alternateKeys;
@@ -542,8 +543,10 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
             List<string> targetTableAttributes = null,
             List<Dictionary<string, object>> sampleRows = null,
             Dictionary<string, List<string>> lookupTargets = null,
-            List<string> availableTableLogicalNames = null)
+            List<string> availableTableLogicalNames = null,
+            bool tableLockedFromPrompt = false)
         {
+            _tableLockedFromPrompt = tableLockedFromPrompt;
             _step = step;
             _snapshot = snapshot;
             _alternateKeys = alternateKeys ?? new List<ExcelImportAlternateKeyOption>();
@@ -1357,6 +1360,13 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                 _txtTable.Text = tableLogicalName;
                 if (string.IsNullOrWhiteSpace(tableLogicalName))
                     SetTableControlsEnabled(false);
+                else if (_tableLockedFromPrompt)
+                {
+                    // Table was just resolved via the pre-dialog prompt and all metadata below was
+                    // fetched for it — retyping it here would silently desync the grid from that data.
+                    _txtTable.ReadOnly = true;
+                    _btnLoadTable.Enabled = false;
+                }
 
                 var currentSettings = _step.Snapshot?.ImportSettings;
                 var currentAction = currentSettings?.Action ?? (DmtAction.Create | DmtAction.Update);
@@ -1490,9 +1500,12 @@ namespace Dataverse.XrmTools.DataMigrationTool.Forms
                             _colMappingGrid.Rows[rowIdx].Cells["RelatedTable"].ReadOnly = true;
                             _colMappingGrid.Rows[rowIdx].Cells["Config"].ReadOnly = true;
                         }
-                        else if (!isPolymorphic)
+                        else if (!isPolymorphic && !string.IsNullOrWhiteSpace(relatedTableDisplay))
                         {
-                            // Single-target lookup: RelatedTable is informational only
+                            // Single-target lookup with a known target: RelatedTable is informational only.
+                            // When the target is unknown (e.g. a generic Excel/JSON load with no metadata),
+                            // leave the cell editable so the user can type the related table logical name —
+                            // otherwise Alternate Key / Custom Columns matching has no way to be configured.
                             _colMappingGrid.Rows[rowIdx].Cells["RelatedTable"].ReadOnly = true;
                         }
                         _colMappingGrid.Rows[rowIdx].Tag = new ColumnMappingRowData { Column = col, LookupKey = lookupKey };

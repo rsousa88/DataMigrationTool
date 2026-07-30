@@ -2033,6 +2033,27 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private void OpenPushStepConfigDialog(ExecutionPlanStep step, DmtSnapshot snapshot,
             System.Action<ExecutionPlanStep> onConfigured, string acceptButtonText = "Add to Plan")
         {
+            var tableLockedFromPrompt = false;
+            var currentTableName = step.Table?.LogicalName ?? snapshot?.TableLogicalName ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(currentTableName))
+            {
+                var availableNames = _tables?.Select(t => t.LogicalName).Where(n => !string.IsNullOrEmpty(n)).ToList();
+                using (var tableDlg = new PushTableNameDialog(snapshot?.Name ?? step.Name, availableNames))
+                {
+                    if (tableDlg.ShowDialog(ParentForm) != DialogResult.OK) return;
+                    currentTableName = tableDlg.TableLogicalName;
+                }
+
+                step.Table = step.Table ?? new DmtTableInfo();
+                step.Table.LogicalName = currentTableName;
+                if (snapshot != null)
+                {
+                    snapshot.TableLogicalName = currentTableName;
+                    try { _project?.Service?.SaveSnapshot(snapshot); } catch { }
+                }
+                tableLockedFromPrompt = true;
+            }
+
             ManageWorkingState(true, "Loading snapshot configuration...");
             WorkAsync(new WorkAsyncInfo
             {
@@ -2210,7 +2231,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
                     var tableNames = _tables?.Select(t => t.LogicalName).Where(n => !string.IsNullOrEmpty(n)).ToList();
                     using (var dlg = new PushStepConfigDialog(step, snapshot, altKeys, preview, acceptButtonText,
                         _project?.Service, srcId, tgtId, planTableNames, targetClient, availableTargets,
-                        targetClientsByEnvironment, relData, targetAttrs, sampleRowData, lookupTargetsData, tableNames))
+                        targetClientsByEnvironment, relData, targetAttrs, sampleRowData, lookupTargetsData, tableNames,
+                        tableLockedFromPrompt))
                     {
                         if (dlg.ShowDialog(ParentForm) != DialogResult.OK) return;
                     }
