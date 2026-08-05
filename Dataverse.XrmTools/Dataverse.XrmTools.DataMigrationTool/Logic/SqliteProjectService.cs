@@ -24,7 +24,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
         private bool _disposed;
         private readonly object _dbLock = new object();
 
-        private const int CurrentSchemaVersion = 5;
+        private const int CurrentSchemaVersion = 6;
         private static readonly string[] ReservedColumnNames = { "_row_id", "_source_id", "_is_new" };
 
         private static readonly JsonSerializerSettings _json = new JsonSerializerSettings
@@ -176,7 +176,8 @@ CREATE TABLE IF NOT EXISTS _snapshots (
     load_match_key_mode   TEXT,
     load_match_key_fields TEXT,
     column_config_json    TEXT NOT NULL,
-    sort_order            INTEGER NOT NULL DEFAULT 1
+    sort_order            INTEGER NOT NULL DEFAULT 1,
+    source_table_name     TEXT
 );
 
 CREATE TABLE IF NOT EXISTS _optionset_values (
@@ -338,6 +339,13 @@ UPDATE _snapshots SET sort_order = (SELECT rn FROM ranked WHERE ranked.id = _sna
             if (fromVersion < 5)
             {
                 CreateRowcraftSchema();
+            }
+
+            if (fromVersion < 6)
+            {
+                using var cmd = _connection.CreateCommand();
+                cmd.CommandText = "ALTER TABLE _snapshots ADD COLUMN source_table_name TEXT;";
+                cmd.ExecuteNonQuery();
             }
 
             SetProjectValue("version", CurrentSchemaVersion.ToString());
@@ -679,8 +687,8 @@ VALUES(@ln, @dn, @pid, @pn, @cfg);";
             cmd.CommandText = @"
 INSERT OR REPLACE INTO _snapshots(id, name, table_suffix, table_logical_name, source_env_id,
     created_on, updated_on, row_count, source, source_file_path, pull_filter, primary_id_attr,
-    load_match_key_mode, load_match_key_fields, column_config_json, sort_order)
-VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @sfp, @pf, @pid, @lmkm, @lmkf, @ccj, @so);";
+    load_match_key_mode, load_match_key_fields, column_config_json, sort_order, source_table_name)
+VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @sfp, @pf, @pid, @lmkm, @lmkf, @ccj, @so, @stn);";
             cmd.Parameters.AddWithValue("@id",   snapshot.Id);
             cmd.Parameters.AddWithValue("@name", snapshot.Name);
             cmd.Parameters.AddWithValue("@suffix", snapshot.TableSuffix);
@@ -700,6 +708,7 @@ VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @sfp, @pf, @pid, @
                     : (object)DBNull.Value);
             cmd.Parameters.AddWithValue("@ccj", JsonConvert.SerializeObject(snapshot.ColumnConfig, _json));
             cmd.Parameters.AddWithValue("@so",   snapshot.SortOrder);
+            cmd.Parameters.AddWithValue("@stn",  (object)snapshot.SourceTableName ?? DBNull.Value);
             cmd.ExecuteNonQuery();
         }
 
@@ -721,6 +730,7 @@ VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @sfp, @pf, @pid, @
                 RowCount       = original.RowCount,
                 Source         = original.Source,
                 SourceFilePath = original.SourceFilePath,
+                SourceTableName = original.SourceTableName,
                 PullFilter     = original.PullFilter,
                 PrimaryIdAttribute = original.PrimaryIdAttribute,
                 LoadMatchKeyMode   = original.LoadMatchKeyMode,
@@ -785,7 +795,7 @@ VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @sfp, @pf, @pid, @
             lock (_dbLock)
             {
                 using var cmd = _connection.CreateCommand();
-                cmd.CommandText = "SELECT id,name,table_suffix,table_logical_name,source_env_id,created_on,updated_on,row_count,source,source_file_path,pull_filter,primary_id_attr,load_match_key_mode,load_match_key_fields,column_config_json,sort_order FROM _snapshots WHERE name=@name;";
+                cmd.CommandText = "SELECT id,name,table_suffix,table_logical_name,source_env_id,created_on,updated_on,row_count,source,source_file_path,pull_filter,primary_id_attr,load_match_key_mode,load_match_key_fields,column_config_json,sort_order,source_table_name FROM _snapshots WHERE name=@name;";
                 cmd.Parameters.AddWithValue("@name", name);
                 using var reader = cmd.ExecuteReader();
                 return reader.Read() ? ReadSnapshot(reader) : null;
@@ -797,7 +807,7 @@ VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @sfp, @pf, @pid, @
             lock (_dbLock)
             {
                 using var cmd = _connection.CreateCommand();
-                cmd.CommandText = "SELECT id,name,table_suffix,table_logical_name,source_env_id,created_on,updated_on,row_count,source,source_file_path,pull_filter,primary_id_attr,load_match_key_mode,load_match_key_fields,column_config_json,sort_order FROM _snapshots ORDER BY sort_order;";
+                cmd.CommandText = "SELECT id,name,table_suffix,table_logical_name,source_env_id,created_on,updated_on,row_count,source,source_file_path,pull_filter,primary_id_attr,load_match_key_mode,load_match_key_fields,column_config_json,sort_order,source_table_name FROM _snapshots ORDER BY sort_order;";
                 var result = new List<DmtSnapshot>();
                 using var reader = cmd.ExecuteReader();
                 while (reader.Read()) result.Add(ReadSnapshot(reader));
@@ -904,7 +914,8 @@ VALUES(@id, @name, @suffix, @tln, @seid, @co, @uo, @rc, @src, @sfp, @pf, @pid, @
                     ? JsonConvert.DeserializeObject<List<string>>(fieldsJson)
                     : new List<string>(),
                 ColumnConfig       = JsonConvert.DeserializeObject<List<DataTableColumnConfig>>(r.GetString(14)),
-                SortOrder          = r.IsDBNull(15) ? 0 : (int)r.GetInt64(15)
+                SortOrder          = r.IsDBNull(15) ? 0 : (int)r.GetInt64(15),
+                SourceTableName    = r.IsDBNull(16) ? null : r.GetString(16)
             };
         }
 

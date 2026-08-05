@@ -98,8 +98,9 @@ namespace Dataverse.XrmTools.DataMigrationTool.Models
         public DateTime CreatedOn { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedOn { get; set; } = DateTime.UtcNow;
         public int RowCount { get; set; }
-        public string Source { get; set; }               // "Pull" | "Excel" | "JSON"
-        public string SourceFilePath { get; set; }       // Excel/JSON refresh source; relative to project when possible
+        public string Source { get; set; }               // "Pull" | "Excel" | "JSON" | "Sqlite" | "Manual"
+        public string SourceFilePath { get; set; }       // Excel/JSON/Sqlite refresh source; relative to project when possible
+        public string SourceTableName { get; set; }      // Sqlite source: originating table name within SourceFilePath, needed to refresh
         public string PullFilter { get; set; }           // Pull refresh filter snapshot
         public string PrimaryIdAttribute { get; set; }
         public string LoadMatchKeyMode { get; set; }

@@ -69,10 +69,17 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 Padding = new Padding(0),
                 Stretch = true
             };
+            var newBtn = new ToolStripButton("New") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, ToolTipText = "Create a blank snapshot to type or paste data into" };
+            newBtn.Click += (s, e) => NewManualSnapshot();
             var pullBtn = new ToolStripButton("Pull") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true };
             pullBtn.Click += (s, e) => PullToProject();
-            var loadBtn = new ToolStripButton("Import") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true };
-            loadBtn.Click += (s, e) => LoadFileToProject();
+            var loadBtn = new ToolStripDropDownButton("Import") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, ToolTipText = "Import a snapshot from a file" };
+            var loadFileItem = new ToolStripMenuItem("Import from File...");
+            loadFileItem.Click += (s, e) => LoadFileToProject();
+            var loadSqliteItem = new ToolStripMenuItem("Import from SQLite Database...");
+            loadSqliteItem.Click += (s, e) => ImportSqliteToProject();
+            loadBtn.DropDownItems.Add(loadFileItem);
+            loadBtn.DropDownItems.Add(loadSqliteItem);
             var exportBtn = new ToolStripButton("Export") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, ToolTipText = "Export selected snapshot" };
             exportBtn.Click += (s, e) => ExportInlineSnapshot();
             var viewBtn = new ToolStripButton("⛶") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, ToolTipText = "View snapshots full screen", Alignment = ToolStripItemAlignment.Right };
@@ -111,6 +118,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
             _snapMoveUpBtn.Click += (s, e) => MoveInlineSnapshot(-1);
             _snapMoveDownBtn = new ToolStripButton("↓") { DisplayStyle = ToolStripItemDisplayStyle.Text, AutoSize = true, Enabled = false, ToolTipText = "Move snapshot down" };
             _snapMoveDownBtn.Click += (s, e) => MoveInlineSnapshot(1);
+            headerStrip.Items.Add(newBtn);
             headerStrip.Items.Add(pullBtn);
             headerStrip.Items.Add(loadBtn);
             headerStrip.Items.Add(exportBtn);
@@ -442,13 +450,20 @@ namespace Dataverse.XrmTools.DataMigrationTool
         {
             var snap = GetInlineContextSnapshot();
             if (snap == null) return;
+            if (string.Equals(snap.Source, "Manual", StringComparison.OrdinalIgnoreCase))
+            {
+                MessageBox.Show(this, "Manual snapshots don't have a source file to refresh from.", "Not Refreshable", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
             RefreshSnapshots(new List<DmtSnapshot> { snap }, $"Refreshing snapshot '{snap.Name}'...");
         }
 
         private void RefreshAllSnapshots()
         {
             if (_project?.Service == null) return;
-            var snapshots = _project.Service.GetSnapshots();
+            var snapshots = _project.Service.GetSnapshots()
+                .Where(s => !string.Equals(s.Source, "Manual", StringComparison.OrdinalIgnoreCase))
+                .ToList();
             if (snapshots.Count == 0) return;
 
             var result = MessageBox.Show(this,
@@ -538,7 +553,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
         private static bool IsFileSnapshot(DmtSnapshot snapshot)
         {
             return string.Equals(snapshot?.Source, "JSON", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(snapshot?.Source, "Excel", StringComparison.OrdinalIgnoreCase);
+                || string.Equals(snapshot?.Source, "Excel", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(snapshot?.Source, "Sqlite", StringComparison.OrdinalIgnoreCase);
         }
 
         private static string GetSnapshotSourceFileFilter(DmtSnapshot snapshot)
@@ -547,7 +563,9 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 return "JSON files (*.json)|*.json|All files (*.*)|*.*";
             if (string.Equals(snapshot?.Source, "Excel", StringComparison.OrdinalIgnoreCase))
                 return "Excel files (*.xlsx)|*.xlsx|All files (*.*)|*.*";
-            return "Supported files (*.json;*.xlsx)|*.json;*.xlsx|All files (*.*)|*.*";
+            if (string.Equals(snapshot?.Source, "Sqlite", StringComparison.OrdinalIgnoreCase))
+                return "SQLite database files (*.db;*.sqlite;*.sqlite3)|*.db;*.sqlite;*.sqlite3|All files (*.*)|*.*";
+            return "Supported files (*.json;*.xlsx;*.db;*.sqlite;*.sqlite3)|*.json;*.xlsx;*.db;*.sqlite;*.sqlite3|All files (*.*)|*.*";
         }
 
         private void RefreshSnapshot(DmtSnapshot snapshot, System.ComponentModel.BackgroundWorker worker)
@@ -570,7 +588,8 @@ namespace Dataverse.XrmTools.DataMigrationTool
             }
 
             if (string.Equals(source, "JSON", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(source, "Excel", StringComparison.OrdinalIgnoreCase))
+                || string.Equals(source, "Excel", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(source, "Sqlite", StringComparison.OrdinalIgnoreCase))
             {
                 var path = ResolveSnapshotSourcePath(snapshot);
                 if (string.IsNullOrWhiteSpace(path))
@@ -581,10 +600,19 @@ namespace Dataverse.XrmTools.DataMigrationTool
                 var config = BuildSnapshotRefreshConfig(snapshot);
                 if (string.Equals(source, "JSON", StringComparison.OrdinalIgnoreCase))
                     SqliteFileAdapter.LoadFromJson(_project.Service, path, snapshot.Name, sourceEnvId, config, _sourceClient, worker, snapshot.SourceFilePath);
-                else
+                else if (string.Equals(source, "Excel", StringComparison.OrdinalIgnoreCase))
                     SqliteFileAdapter.LoadFromExcel(_project.Service, path, snapshot.Name, sourceEnvId, config, _sourceClient, worker, snapshot.SourceFilePath, snapshot.TableLogicalName);
+                else
+                {
+                    if (string.IsNullOrWhiteSpace(snapshot.SourceTableName))
+                        throw new InvalidOperationException($"Snapshot '{snapshot.Name}' does not have a stored source table name. Import it again to enable refresh.");
+                    SqliteFileAdapter.LoadFromSqlite(_project.Service, path, snapshot.SourceTableName, snapshot.Name, sourceEnvId, config, _sourceClient, worker, snapshot.SourceFilePath, snapshot.TableLogicalName);
+                }
                 return;
             }
+
+            if (string.Equals(source, "Manual", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException($"Snapshot '{snapshot.Name}' was created manually and has no source file to refresh from.");
 
             throw new InvalidOperationException($"Snapshot '{snapshot.Name}' has unsupported source '{snapshot.Source}'.");
         }

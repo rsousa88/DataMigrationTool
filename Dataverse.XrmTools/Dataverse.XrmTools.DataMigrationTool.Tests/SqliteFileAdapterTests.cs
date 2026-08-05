@@ -1,12 +1,14 @@
 // System
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 
 // ClosedXML
 using ClosedXML.Excel;
 
 // Microsoft
+using Microsoft.Data.Sqlite;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
 
@@ -389,6 +391,181 @@ namespace Dataverse.XrmTools.DataMigrationTool.Tests
             var snap2 = SqliteFileAdapter.LoadFromExcel(_svc, path2, "shared-snap", "env1", null, null);
 
             Assert.Equal(2, snap2.RowCount);
+        }
+
+        // ─── SQLite database file ─────────────────────────────────────────────
+
+        [Fact]
+        public void GetSqliteTables_ReturnsUserTables_WithRowCounts()
+        {
+            var dbPath = BuildTestSqliteDb("tables.db", "contacts",
+                new[] { "contactid", "name" },
+                new[] { new object[] { Guid.NewGuid().ToString(), "Alice" }, new object[] { Guid.NewGuid().ToString(), "Bob" } });
+
+            var tables = SqliteFileAdapter.GetSqliteTables(dbPath);
+
+            Assert.Single(tables);
+            Assert.Equal("contacts", tables[0].Name);
+            Assert.Equal(2, tables[0].RowCount);
+        }
+
+        [Fact]
+        public void LoadFromSqlite_CreatesSnapshot_WithCorrectRowCount()
+        {
+            var id = Guid.NewGuid().ToString();
+            var dbPath = BuildTestSqliteDb("accts.db", "accounts",
+                new[] { "accountid", "name" },
+                new[] { new object[] { id, "Contoso" } });
+
+            var snapshot = SqliteFileAdapter.LoadFromSqlite(_svc, dbPath, "accounts", "sqlite-snap", "env1", null, null, null, null);
+
+            Assert.NotNull(snapshot);
+            Assert.Equal(1, snapshot.RowCount);
+            Assert.Equal("Sqlite", snapshot.Source);
+            Assert.Equal("accounts", snapshot.SourceTableName);
+        }
+
+        [Fact]
+        public void LoadFromSqlite_RowsAreReadable_FromProject()
+        {
+            var id = Guid.NewGuid().ToString();
+            var dbPath = BuildTestSqliteDb("r.db", "accounts",
+                new[] { "accountid", "name" },
+                new[] { new object[] { id, "Fabrikam" } });
+
+            var snapshot = SqliteFileAdapter.LoadFromSqlite(_svc, dbPath, "accounts", "snap-sq", "env1", null, null, null, null);
+            var rows = _svc.ReadSnapshotRecords(snapshot.TableSuffix, snapshot.ColumnConfig).ToList();
+
+            Assert.Single(rows);
+            Assert.Equal("Fabrikam", rows[0]["name"]?.ToString());
+        }
+
+        [Fact]
+        public void LoadFromSqlite_UsesFirstColumn_AsPrimaryIdAttribute_WhenTableNameUnknown()
+        {
+            var id = Guid.NewGuid().ToString();
+            var dbPath = BuildTestSqliteDb("noid.db", "misc",
+                new[] { "recid", "label" },
+                new[] { new object[] { id, "Widget" } });
+
+            var snapshot = SqliteFileAdapter.LoadFromSqlite(_svc, dbPath, "misc", "snap-noid", "env1", null, null, null, null);
+
+            Assert.Equal("recid", snapshot.PrimaryIdAttribute);
+        }
+
+        [Fact]
+        public void LoadFromSqlite_ThrowsWhenFileMissing()
+        {
+            var missingPath = _tmp.GetPath("does-not-exist.db");
+            Assert.Throws<FileNotFoundException>(() =>
+                SqliteFileAdapter.LoadFromSqlite(_svc, missingPath, "any", "snap", "env1", null, null, null, null));
+        }
+
+        [Fact]
+        public void LoadFromSqlite_InfersColumnTypes_FromSourceColumnDeclarations()
+        {
+            var path = _tmp.GetPath("typed.db");
+            var builder = new SqliteConnectionStringBuilder { DataSource = path, Mode = SqliteOpenMode.ReadWriteCreate };
+            using (var conn = new SqliteConnection(builder.ToString()))
+            {
+                conn.Open();
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = "CREATE TABLE [widgets] ([id] INTEGER, [name] TEXT, [price] REAL, [active] BOOLEAN, [created] DATETIME);";
+                    cmd.ExecuteNonQuery();
+                }
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = "INSERT INTO [widgets] ([id],[name],[price],[active],[created]) VALUES (1,'Widget',9.99,1,'2024-01-01');";
+                    cmd.ExecuteNonQuery();
+                }
+            }
+
+            var snapshot = SqliteFileAdapter.LoadFromSqlite(_svc, path, "widgets", "typed-snap", "env1", null, null, null, null);
+            var byName = snapshot.ColumnConfig.ToDictionary(c => c.LogicalName, StringComparer.OrdinalIgnoreCase);
+
+            Assert.Equal("Integer", byName["id"].Type);
+            Assert.Equal("INTEGER", byName["id"].SqliteType);
+            Assert.Equal("String", byName["name"].Type);
+            Assert.Equal("TEXT", byName["name"].SqliteType);
+            Assert.Equal("Decimal", byName["price"].Type);
+            Assert.Equal("REAL", byName["price"].SqliteType);
+            Assert.Equal("Boolean", byName["active"].Type);
+            Assert.Equal("INTEGER", byName["active"].SqliteType);
+            Assert.Equal("DateTime", byName["created"].Type);
+            Assert.Equal("TEXT", byName["created"].SqliteType);
+        }
+
+        private string BuildTestSqliteDb(string fileName, string tableName, string[] columns, object[][] rows)
+        {
+            var path = _tmp.GetPath(fileName);
+            var builder = new SqliteConnectionStringBuilder { DataSource = path, Mode = SqliteOpenMode.ReadWriteCreate };
+            using (var conn = new SqliteConnection(builder.ToString()))
+            {
+                conn.Open();
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = $"CREATE TABLE [{tableName}] ({string.Join(", ", columns.Select(c => $"[{c}] TEXT"))});";
+                    cmd.ExecuteNonQuery();
+                }
+
+                foreach (var row in rows)
+                {
+                    using (var cmd = conn.CreateCommand())
+                    {
+                        var colList = string.Join(", ", columns.Select(c => $"[{c}]"));
+                        var paramList = string.Join(", ", columns.Select((c, i) => $"@p{i}"));
+                        cmd.CommandText = $"INSERT INTO [{tableName}] ({colList}) VALUES ({paramList});";
+                        for (var i = 0; i < row.Length; i++)
+                            cmd.Parameters.AddWithValue($"@p{i}", row[i] ?? DBNull.Value);
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+            }
+            return path;
+        }
+
+        // ─── Manual snapshot ───────────────────────────────────────────────────
+
+        [Fact]
+        public void CreateManualSnapshot_CreatesSnapshot_WithCorrectRowCount()
+        {
+            var columns = new List<DataTableColumnConfig>
+            {
+                new DataTableColumnConfig { LogicalName = "name", DisplayName = "Name", SqliteType = "TEXT" },
+                new DataTableColumnConfig { LogicalName = "amount", DisplayName = "Amount", SqliteType = "TEXT" }
+            };
+            var rows = new List<Dictionary<string, object>>
+            {
+                new Dictionary<string, object> { ["name"] = "Row One", ["amount"] = "100" },
+                new Dictionary<string, object> { ["name"] = "Row Two", ["amount"] = "200" }
+            };
+
+            var snapshot = SqliteFileAdapter.CreateManualSnapshot(_svc, "manual-snap", columns, rows, "env1");
+
+            Assert.NotNull(snapshot);
+            Assert.Equal(2, snapshot.RowCount);
+            Assert.Equal("Manual", snapshot.Source);
+        }
+
+        [Fact]
+        public void CreateManualSnapshot_AssignsFreshSourceId_ToEachRow_AndMarksNew()
+        {
+            var columns = new List<DataTableColumnConfig>
+            {
+                new DataTableColumnConfig { LogicalName = "name", DisplayName = "Name", SqliteType = "TEXT" }
+            };
+            var rows = new List<Dictionary<string, object>>
+            {
+                new Dictionary<string, object> { ["name"] = "Pasted Row" }
+            };
+
+            var snapshot = SqliteFileAdapter.CreateManualSnapshot(_svc, "manual-new", columns, rows, "env1");
+            var readRows = _svc.ReadSnapshotRecords(snapshot.TableSuffix, snapshot.ColumnConfig).ToList();
+
+            Assert.Single(readRows);
+            Assert.True(Guid.TryParse(readRows[0]["_source_id"]?.ToString(), out _));
+            Assert.True((bool)readRows[0]["_is_new"]);
         }
 
         // ─── Snapshot persistence ──────────────────────────────────────────────

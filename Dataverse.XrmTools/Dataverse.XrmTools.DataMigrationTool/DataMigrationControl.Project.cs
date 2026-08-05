@@ -98,6 +98,7 @@ namespace Dataverse.XrmTools.DataMigrationTool
 
             InitializePullPanel();
             InitializeLoadFilePanel();
+            InitializeLoadSqlitePanel();
             _tsmiData.DropDownItems.Add(new ToolStripSeparator());
             InitializeViewDataPanel();
 

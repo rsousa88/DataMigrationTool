@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
   <metadata>
     <id>Dataverse.XrmTools.DataMigrationTool</id>
-    <version>2026.7.30.2</version>
+    <version>2026.8.5.1</version>
     <title>Data Migration Tool</title>
     <authors>Rui Sousa</authors>
     <owners>Rui Sousa</owners>
@@ -24,6 +24,11 @@
     </description>
     <summary>Migrate data between Dataverse instances</summary>
 	<releaseNotes>
+		2026.8.5.x
+		- [NEW] Snapshots can now be imported directly from a SQLite database file: pick the file, then pick one table, via Import > Import from SQLite Database
+		- [NEW] SQLite imports automatically infer column types (Integer, Decimal, Boolean, DateTime, String) from the source table's own column types, so a fresh import doesn't land with every column classified as plain text
+		- [NEW] A new snapshot panel "New" button creates a blank snapshot in an editable grid — type values directly, add rows/columns, or paste tab-delimited data copied from Excel, SQL 4 CDS, or a DB browser, with the grid growing automatically to fit pasted data
+
 		2026.7.30.x
 		- [FIX] Push no longer fails when a snapshot includes a lookup "...name" companion column (e.g. "peers_parentgrouptypeidname") — these read-only formatted-value columns are now automatically excluded from the push payload
 		- [FIX] Column Mappings (disabled columns, attribute remaps, lookup match keys) are now preserved when a push step is cloned across multiple selected target environments

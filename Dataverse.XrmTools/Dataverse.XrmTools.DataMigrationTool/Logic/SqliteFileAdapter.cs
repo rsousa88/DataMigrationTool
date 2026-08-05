@@ -2,11 +2,15 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 
 // ClosedXML
 using ClosedXML.Excel;
+
+// SQLite
+using Microsoft.Data.Sqlite;
 
 // Microsoft
 using Microsoft.Xrm.Sdk;
@@ -176,6 +180,202 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             }
         }
 
+        // ─── SQLite database file ──────────────────────────────────────────────
+
+        public static DmtSnapshot LoadFromSqlite(
+            SqliteProjectService project,
+            string dbFilePath,
+            string tableName,
+            string snapshotName,
+            string sourceEnvId,
+            DataTableConfig config,
+            IOrganizationService sourceClient,
+            BackgroundWorker worker,
+            string sourceFilePath,
+            string fallbackTableLogicalName = null)
+        {
+            worker?.ReportProgress(5, "Reading SQLite database...");
+            var tableLogicalName = fallbackTableLogicalName ?? string.Empty;
+
+            using (var conn = OpenExternalSqlite(dbFilePath))
+            {
+                var columnInfo = GetSqliteColumnInfo(conn, tableName);
+                if (!columnInfo.Any())
+                    throw new InvalidOperationException($"Table '{tableName}' has no columns.");
+                var headers = columnInfo.Select(c => c.Name).ToList();
+
+                var primaryIdAttr = DetectPrimaryIdAttribute(headers, tableLogicalName, config);
+                var excelConfig = BuildExcelConfigFromHeaders(headers, tableLogicalName, primaryIdAttr, config);
+                var effectiveConfig = BuildConfigFromExcel(config, excelConfig);
+                var columns = BuildColumnsFromExcelConfig(excelConfig);
+                ApplySqliteTypeInference(columns, columnInfo);
+
+                worker?.ReportProgress(20, "Reading rows...");
+                var rows = ReadSqliteRows(conn, tableName, headers, excelConfig, columns, primaryIdAttr, worker);
+                ResolveSourceIdentity(rows, columns, tableLogicalName, primaryIdAttr, effectiveConfig, sourceClient, worker);
+
+                return WriteSnapshot(project, rows, columns, snapshotName, tableLogicalName,
+                    primaryIdAttr, sourceEnvId, "Sqlite", effectiveConfig, worker, sourceFilePath, tableName);
+            }
+        }
+
+        // Enumerates user tables (name, row count) in an external SQLite database file.
+        public static List<(string Name, long RowCount)> GetSqliteTables(string dbFilePath)
+        {
+            using (var conn = OpenExternalSqlite(dbFilePath))
+            {
+                var names = new List<string>();
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name;";
+                    using (var reader = cmd.ExecuteReader())
+                        while (reader.Read()) names.Add(reader.GetString(0));
+                }
+
+                var result = new List<(string, long)>();
+                foreach (var name in names)
+                {
+                    using (var cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText = $"SELECT COUNT(*) FROM {QuoteIdentifier(name)};";
+                        result.Add((name, (long)cmd.ExecuteScalar()));
+                    }
+                }
+                return result;
+            }
+        }
+
+        private static SqliteConnection OpenExternalSqlite(string dbFilePath)
+        {
+            if (!File.Exists(dbFilePath))
+                throw new FileNotFoundException("SQLite database file not found.", dbFilePath);
+
+            SQLitePCL.Batteries_V2.Init();
+            var builder = new SqliteConnectionStringBuilder
+            {
+                DataSource = dbFilePath,
+                Mode = SqliteOpenMode.ReadOnly
+            };
+            var conn = new SqliteConnection(builder.ToString());
+            conn.Open();
+            return conn;
+        }
+
+        private static string QuoteIdentifier(string name) => "[" + (name ?? string.Empty).Replace("]", "]]") + "]";
+
+        // Returns (name, declared SQLite column type) for each column, in table order.
+        private static List<(string Name, string DeclaredType)> GetSqliteColumnInfo(SqliteConnection conn, string tableName)
+        {
+            var result = new List<(string, string)>();
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = $"PRAGMA table_info({QuoteIdentifier(tableName)});";
+                using (var reader = cmd.ExecuteReader())
+                    while (reader.Read())
+                        result.Add((reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetString(2))); // name, type
+            }
+            return result;
+        }
+
+        // Fills in Type/SqliteType for columns that weren't already matched to known Dataverse metadata,
+        // guessing from the source SQLite column's own declared type/affinity so a fresh import doesn't
+        // land with every column classified as plain text.
+        private static void ApplySqliteTypeInference(List<DataTableColumnConfig> columns, List<(string Name, string DeclaredType)> columnInfo)
+        {
+            var declaredTypes = columnInfo.ToDictionary(c => c.Name, c => c.DeclaredType, StringComparer.OrdinalIgnoreCase);
+            foreach (var col in columns)
+            {
+                if (!string.IsNullOrWhiteSpace(col.Type)) continue;
+                if (!declaredTypes.TryGetValue(col.LogicalName, out var declared)) continue;
+
+                col.Type = InferTypeFromSqliteDeclaredType(declared);
+                col.SqliteType = SqliteProjectService.GetSqliteType(col.Type);
+            }
+        }
+
+        private static string InferTypeFromSqliteDeclaredType(string declaredType)
+        {
+            var t = (declaredType ?? string.Empty).ToUpperInvariant();
+            if (t.Contains("BOOL")) return "Boolean";
+            if (t.Contains("GUID") || t.Contains("UNIQUEIDENTIFIER")) return "Uniqueidentifier";
+            if (t.Contains("DATE") || t.Contains("TIME")) return "DateTime";
+            if (t.Contains("INT")) return "Integer";
+            if (t.Contains("REAL") || t.Contains("FLOA") || t.Contains("DOUB") || t.Contains("NUMERIC") || t.Contains("DECIMAL")) return "Decimal";
+            return "String";
+        }
+
+        private static List<Dictionary<string, object>> ReadSqliteRows(
+            SqliteConnection conn,
+            string tableName,
+            List<string> headers,
+            ExcelExportConfig excelConfig,
+            List<DataTableColumnConfig> columns,
+            string primaryIdAttr,
+            BackgroundWorker worker)
+        {
+            var colIndex = columns.ToDictionary(c => c.LogicalName, c => c, StringComparer.OrdinalIgnoreCase);
+            var excelColumns = (excelConfig.Columns ?? new List<ExcelColumnConfig>())
+                .Where(c => !string.IsNullOrWhiteSpace(c.LogicalName))
+                .GroupBy(c => c.LogicalName, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+            var rows = new List<Dictionary<string, object>>();
+
+            using (var cmd = conn.CreateCommand())
+            {
+                var selectCols = string.Join(", ", headers.Select(QuoteIdentifier));
+                cmd.CommandText = $"SELECT {selectCols} FROM {QuoteIdentifier(tableName)};";
+                using (var reader = cmd.ExecuteReader())
+                {
+                    var count = 0;
+                    while (reader.Read())
+                    {
+                        var row = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+                        string sourceId = null;
+
+                        for (var i = 0; i < headers.Count; i++)
+                        {
+                            var header = headers[i];
+                            if (!colIndex.TryGetValue(header, out var col)) continue;
+
+                            var raw = reader.IsDBNull(i) ? null : Convert.ToString(reader.GetValue(i), CultureInfo.InvariantCulture);
+                            excelColumns.TryGetValue(header, out var excelColumn);
+                            row[header] = ParseCellValue(raw, col, excelColumn);
+
+                            if (string.Equals(header, primaryIdAttr, StringComparison.OrdinalIgnoreCase)
+                                && !string.IsNullOrWhiteSpace(raw))
+                                sourceId = raw;
+                        }
+
+                        if (!string.IsNullOrEmpty(sourceId))
+                            row["_source_id"] = sourceId;
+
+                        rows.Add(row);
+                        count++;
+                        if (count % 25 == 0)
+                            worker?.ReportProgress(20 + Math.Min(40, count / 25), $"Reading row {count}...");
+                    }
+                }
+            }
+
+            return rows;
+        }
+
+        // ─── Manual (typed/pasted) snapshot ────────────────────────────────────
+
+        public static DmtSnapshot CreateManualSnapshot(
+            SqliteProjectService project,
+            string snapshotName,
+            List<DataTableColumnConfig> columns,
+            List<Dictionary<string, object>> rows,
+            string sourceEnvId,
+            BackgroundWorker worker = null)
+        {
+            worker?.ReportProgress(10, "Preparing snapshot...");
+            var config = new DataTableConfig { LoadMatchKeyMode = "Guid", LoadMatchKeyFields = new List<string>() };
+            ResolveSourceIdentity(rows, columns, string.Empty, null, config, null, worker);
+            return WriteSnapshot(project, rows, columns, snapshotName, string.Empty, null, sourceEnvId, "Manual", config, worker);
+        }
+
         // ─── Shared write ──────────────────────────────────────────────────────
 
         private static DmtSnapshot WriteSnapshot(
@@ -189,7 +389,8 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
             string source,
             DataTableConfig config,
             BackgroundWorker worker,
-            string sourceFilePath = null)
+            string sourceFilePath = null,
+            string sourceTableName = null)
         {
             var existing = project.GetSnapshot(snapshotName);
             string tableSuffix;
@@ -205,6 +406,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                 snapshot.Source = source;
                 snapshot.SourceEnvId = sourceEnvId;
                 snapshot.SourceFilePath = sourceFilePath ?? snapshot.SourceFilePath;
+                snapshot.SourceTableName = sourceTableName ?? snapshot.SourceTableName;
                 snapshot.PrimaryIdAttribute = primaryIdAttr;
                 snapshot.LoadMatchKeyMode = config?.LoadMatchKeyMode ?? snapshot.LoadMatchKeyMode ?? "Guid";
                 snapshot.LoadMatchKeyFields = config?.LoadMatchKeyFields ?? snapshot.LoadMatchKeyFields ?? new List<string>();
@@ -220,6 +422,7 @@ namespace Dataverse.XrmTools.DataMigrationTool.Logic
                     SourceEnvId = sourceEnvId,
                     Source = source,
                     SourceFilePath = sourceFilePath,
+                    SourceTableName = sourceTableName,
                     PrimaryIdAttribute = primaryIdAttr,
                     RowCount = rows.Count,
                     LoadMatchKeyMode = config?.LoadMatchKeyMode ?? "Guid",

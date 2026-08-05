@@ -109,6 +109,14 @@
       <DependentUpon>DataMigrationControl.cs</DependentUpon>
       <SubType>UserControl</SubType>
     </Compile>
+    <Compile Include="DataMigrationControl.LoadSqlite.cs">
+      <DependentUpon>DataMigrationControl.cs</DependentUpon>
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="DataMigrationControl.NewSnapshot.cs">
+      <DependentUpon>DataMigrationControl.cs</DependentUpon>
+      <SubType>UserControl</SubType>
+    </Compile>
     <Compile Include="DataMigrationControl.Push.cs">
       <DependentUpon>DataMigrationControl.cs</DependentUpon>
       <SubType>UserControl</SubType>
@@ -176,6 +184,12 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Forms\SnapshotViewerDialog.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\SqliteImportDialog.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\ManualSnapshotDialog.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Forms\ExecutionPlanResultsDialog.cs">
